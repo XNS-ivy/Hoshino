@@ -1,11 +1,12 @@
 import { db } from './connection'
 import { redis } from './redis'
 import type { AuthenticationCreds, AuthenticationState, SignalKeyStore } from 'baileys'
+import { initAuthCreds } from 'baileys/lib/Utils'
 
 export type { AuthenticationCreds, AuthenticationState, SignalKeyStore }
 
 const CREDS_CACHE_KEY = (phone: string) => `whatsapp:creds:${phone}`
-const SIGNAL_KEYS_CACHE_KEY = (phone: string) => `whatsapp:keys:${phone}`
+const SIGNAL_KEYS_CACHE_KEY = (phone: string, type: string) => `whatsapp:keys:${phone}:${type}`
 const CACHE_TTL = 24 * 60 * 60 // 24 hours
 
 export async function initDatabase() {
@@ -21,9 +22,9 @@ export async function initDatabase() {
     CREATE TABLE IF NOT EXISTS signal_keys (
       id SERIAL PRIMARY KEY,
       phone_number VARCHAR(20) NOT NULL,
-      key_type VARCHAR(50) NOT NULL,
+      key_type VARCHAR(100) NOT NULL,
       key_id VARCHAR(100) NOT NULL,
-      key_data BYTEA NOT NULL,
+      key_data TEXT NOT NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(phone_number, key_type, key_id),
       FOREIGN KEY (phone_number) REFERENCES whatsapp_creds(phone_number) ON DELETE CASCADE
@@ -56,7 +57,7 @@ export async function usePostgresAuthState(
       creds = cachedCreds
     }
   } catch (error) {
-    console.warn('Redis cache miss, checking PostgreSQL:', error)
+    console.warn('Redis cache miss:', error)
   }
 
   // 2. If not in Redis, try PostgreSQL
@@ -81,39 +82,25 @@ export async function usePostgresAuthState(
     }
   }
 
-  // 3. If still no credentials, return empty state (Baileys will generate new ones)
+  // 3. If still no credentials, generate new ones using Baileys' proper initialization
   if (!creds) {
-    console.log(`⚙️ Creating new credentials for ${phoneNumber}`)
-    creds = {
-      noiseKey: undefined,
-      pairingEphemeralKeyPair: undefined,
-      advSecretKey: '',
-      firstUnuploadedPreKeyId: 1,
-      nextPreKeyId: 1,
-      processedHistoryMessages: [],
-      accountSyncCounter: 0,
-      accountSettings: {},
-      registered: false,
-      pairingCode: undefined,
-      lastPropHash: undefined,
-      routingInfo: undefined,
-    } as any
+    console.log(`⚙️ Generating new credentials for ${phoneNumber}`)
+    creds = initAuthCreds()
   }
 
   const signalKeyStore: SignalKeyStore = {
     async get(type, ids) {
       const data: { [id: string]: any } = {}
-      const keysKey = SIGNAL_KEYS_CACHE_KEY(phoneNumber)
+      const keysKey = SIGNAL_KEYS_CACHE_KEY(phoneNumber, type)
 
       // Try Redis cache first
       try {
         const cachedKeys = await redis.get<{ [id: string]: any }>(keysKey)
         if (cachedKeys) {
-          console.log(`✓ Signal keys loaded from Redis cache (${type})`)
           return cachedKeys
         }
       } catch (error) {
-        console.warn('Redis signal keys cache miss:', error)
+        console.warn(`Redis signal keys cache miss for ${type}:`, error)
       }
 
       // Load from PostgreSQL
@@ -125,10 +112,14 @@ export async function usePostgresAuthState(
         )
 
         for (const row of result.rows) {
-          data[row.key_id] = Buffer.from(row.key_data, 'binary')
+          try {
+            data[row.key_id] = JSON.parse(row.key_data)
+          } catch {
+            data[row.key_id] = row.key_data
+          }
         }
 
-        // Cache in Redis
+        // Cache in Redis if we found keys
         if (Object.keys(data).length > 0) {
           try {
             await redis.set(keysKey, data, CACHE_TTL)
@@ -137,36 +128,38 @@ export async function usePostgresAuthState(
           }
         }
       } catch (error) {
-        console.error('Error getting signal keys:', error)
+        console.error(`Error getting signal keys (${type}):`, error)
       }
 
       return data
     },
 
     async set(data) {
-      const keysKey = SIGNAL_KEYS_CACHE_KEY(phoneNumber)
-
       try {
-        // Save to PostgreSQL
-        for (const [keyId, keyData] of Object.entries(data)) {
-          const keyBuffer = Buffer.isBuffer(keyData)
-            ? keyData
-            : Buffer.from(JSON.stringify(keyData))
+        // data format: { [type]: { [id]: value } }
+        for (const type in data) {
+          const keysKey = SIGNAL_KEYS_CACHE_KEY(phoneNumber, type)
 
-          await db.query(
-            `INSERT INTO signal_keys (phone_number, key_type, key_id, key_data)
-             VALUES ($1, $2, $3, $4)
-             ON CONFLICT (phone_number, key_type, key_id)
-             DO UPDATE SET key_data = $4`,
-            [phoneNumber, 'session', keyId, keyBuffer],
-          )
-        }
+          // Save each key to PostgreSQL
+          for (const id in data[type]) {
+            const value = data[type][id]
+            const keyData = typeof value === 'string' ? value : JSON.stringify(value)
 
-        // Invalidate Redis cache (will be re-populated on next get)
-        try {
-          await redis.del(keysKey)
-        } catch (redisError) {
-          console.warn('Failed to invalidate Redis cache:', redisError)
+            await db.query(
+              `INSERT INTO signal_keys (phone_number, key_type, key_id, key_data)
+               VALUES ($1, $2, $3, $4)
+               ON CONFLICT (phone_number, key_type, key_id)
+               DO UPDATE SET key_data = $4`,
+              [phoneNumber, type, id, keyData],
+            )
+          }
+
+          // Invalidate Redis cache for this type
+          try {
+            await redis.del(keysKey)
+          } catch (redisError) {
+            console.warn(`Failed to invalidate Redis cache for ${type}:`, redisError)
+          }
         }
       } catch (error) {
         console.error('Error setting signal keys:', error)
@@ -174,17 +167,19 @@ export async function usePostgresAuthState(
     },
 
     async clear() {
-      const keysKey = SIGNAL_KEYS_CACHE_KEY(phoneNumber)
-
       try {
         // Clear from PostgreSQL
         await db.query('DELETE FROM signal_keys WHERE phone_number = $1', [phoneNumber])
 
-        // Clear from Redis cache
-        try {
-          await redis.del(keysKey)
-        } catch (redisError) {
-          console.warn('Failed to clear Redis cache:', redisError)
+        // Clear from Redis cache - clear all key types
+        const keyTypes = ['pre-key', 'signed-pre-key', 'session', 'sender-key', 'app-state-sync-key', 'app-state-sync-version']
+        for (const type of keyTypes) {
+          const keysKey = SIGNAL_KEYS_CACHE_KEY(phoneNumber, type)
+          try {
+            await redis.del(keysKey)
+          } catch (redisError) {
+            console.warn(`Failed to clear Redis cache for ${type}:`, redisError)
+          }
         }
 
         console.log(`✓ Signal keys cleared for ${phoneNumber}`)

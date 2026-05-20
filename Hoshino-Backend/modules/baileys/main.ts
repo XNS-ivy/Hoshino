@@ -4,10 +4,14 @@ import { db } from '@modules/database/connection'
 import { redis } from '@modules/database/redis'
 import { usePostgresAuthState, initDatabase } from '@modules/database/auth-state'
 import { pino } from 'pino'
+import qrcode from 'qrcode-terminal'
 
 class Whatsapp {
     private sock: WASocket | null = null
     private phoneNumber: string = process.env.PHONE_NUMBER || '1234567890'
+    private reconnectAttempts = 0
+    private maxReconnectAttempts = 5
+    private isInitialConnection = true
 
     constructor() { }
 
@@ -28,7 +32,7 @@ class Whatsapp {
 
         this.sock = makeWASocket({
             auth: state,
-            browser: Browsers.ubuntu('Chrome'),
+            browser: Browsers.appropriate('Chrome'),
             version: (await fetchLatestWaWebVersion()).version,
             logger: pino({ level: 'silent' })
         })
@@ -38,15 +42,42 @@ class Whatsapp {
 
         // Handle connection updates
         this.sock.ev.on('connection.update', async (update) => {
-            const { connection, lastDisconnect } = update
-            if (connection === 'close') {
+            const { connection, lastDisconnect, qr } = update
+            
+            // Display QR code if needed
+            if (qr) {
+                console.log('\n📱 Scan QR code to login:')
+                console.log(qrcode.generate(qr, { small: true }))
+                this.isInitialConnection = false
+            }
+
+            if (connection === 'open') {
+                this.reconnectAttempts = 0
+                console.log('✅ Bot connected!')
+            } else if (connection === 'close') {
                 const code = (lastDisconnect?.error as any)?.output?.statusCode
-                console.log('Connection closed with code:', code)
-                if (code !== 401) {
+                const shouldReconnect = code && code !== 401
+                
+                if (code === 401) {
+                    console.log('❌ Unauthorized (invalid credentials). Please scan QR code again.')
+                    this.isInitialConnection = true
+                } else if (this.isInitialConnection) {
+                    console.log('⏳ Waiting for QR code scan...')
+                    // Don't reconnect on first close if waiting for QR
+                    return
+                } else if (shouldReconnect && this.reconnectAttempts < this.maxReconnectAttempts) {
+                    this.reconnectAttempts++
+                    console.log(`🔄 Reconnecting... (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`)
+                    
+                    // Exponential backoff delay
+                    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000)
+                    await new Promise(resolve => setTimeout(resolve, delay))
+                    
                     await this.start()
+                } else if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+                    console.error('❌ Max reconnection attempts reached. Exiting.')
+                    process.exit(1)
                 }
-            } else if (connection === 'open') {
-                console.log('Bot connected!')
             }
         })
 
