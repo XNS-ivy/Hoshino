@@ -1,3 +1,3 @@
 import Hoshino from "@modules/baileys/main"
 
-await Hoshino.start()
+await Hoshino.createBotInstance("user1", null)

@@ -1,2 +1,2 @@
 # Hoshino
-Whatsapp bot using docker compose
+Whatsapp bot using multiple instance
