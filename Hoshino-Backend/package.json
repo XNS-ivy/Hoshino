@@ -4,6 +4,7 @@
   "type": "module",
   "private": true,
   "devDependencies": {
+    "@types/boom": "^7.3.5",
     "@types/bun": "latest",
     "@types/node-cache": "^4.2.5",
     "@types/qrcode-terminal": "^0.12.2"
@@ -13,6 +14,7 @@
   },
   "dependencies": {
     "baileys": "^7.0.0-rc11",
+    "boom": "^7.3.0",
     "node-cache": "^5.1.2",
     "pino": "^10.3.1",
     "qrcode-terminal": "^0.12.0"

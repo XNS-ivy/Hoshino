@@ -1,3 +1,8 @@
-import Hoshino from "@modules/baileys/main"
+import { bootAllAgents, registerAgent, stopAgent, getRunningAgents, isRunning, reRegisterAgent, onPairingCode } from '@modules/baileys/main'
 
-await Hoshino.createBotInstance("user1", null)
+async function main() {
+    await bootAllAgents()
+}
+
+
+main()
