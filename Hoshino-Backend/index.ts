@@ -1,8 +1,9 @@
-import { bootAllAgents, registerAgent, stopAgent, getRunningAgents, isRunning, reRegisterAgent, onPairingCode } from '@modules/baileys/main'
+import hoshino from '@modules/baileys/main'
+
+hoshino.registerAgent('2', null)
 
 async function main() {
-    await bootAllAgents()
+    await hoshino.bootAllAgents()
 }
-
 
 main()

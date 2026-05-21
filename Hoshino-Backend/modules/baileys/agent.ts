@@ -56,11 +56,39 @@ export function addAgent(userId: string, phoneNumber: string | null): Agent {
 
 export function cleanAgentAuth(userId: string) {
     const authDir = path.resolve(`./auth/${userId}`)
-    
+
     if (fs.existsSync(authDir)) {
-        fs.rmSync(authDir, { recursive: true, force: true })
-        console.log(`[${userId}] Auth folder cleaned`)
+        try {
+            fs.rmSync(authDir, { recursive: true, force: true })
+            console.log(`[${userId}] Auth folder cleaned`)
+        } catch (err) {
+            console.error(`[${userId}] Failed to clean auth folder:`, err)
+        }
     }
+}
+
+export async function cleanAgentAuthWithRetry(userId: string, maxRetries = 3) {
+    const authDir = path.resolve(`./auth/${userId}`)
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        if (!fs.existsSync(authDir)) {
+            console.log(`[${userId}] Auth folder cleaned (attempt ${attempt})`)
+            return true
+        }
+
+        try {
+            fs.rmSync(authDir, { recursive: true, force: true })
+            console.log(`[${userId}] Auth folder cleaned (attempt ${attempt})`)
+            return true
+        } catch (err) {
+            if (attempt === maxRetries) {
+                console.error(`[${userId}] Failed to clean auth folder after ${maxRetries} attempts:`, err)
+                return false
+            }
+            await new Promise(r => setTimeout(r, 100 * attempt))
+        }
+    }
+    return false
 }
 
 export function updateAgentStatus(userId: string, status: AgentStatus) {
