@@ -19,3 +19,19 @@ class BotManager {
 
 const Hoshino = new BotManager()
 export default Hoshino
+
+type BotStatus = 'idle' | 'connecting' | 'pairing' | 'connected' | 'disconnected'
+
+ /**
+  * @interface BotInstance - this is bot controller interface
+  * @param BotInstance - the unique user id
+  * @param status - bot status from {@link BotStatus}
+  * @param PN - this is a phone number
+  * @param socket - {@link WASocket}
+  */
+interface BotInstance {
+    userID: string,
+    status: BotStatus,
+    PN: string | null,
+    socket: WASocket 
+}
