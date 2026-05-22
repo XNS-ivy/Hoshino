@@ -40,7 +40,7 @@ export class ImprovedAuth {
                 if (parsed) return parsed
             }
         } catch (e) {
-            // logger.log(`Failed to read ${file}: ${e}`, 'WARN', 'auth')
+            logger.error(`/modules/baileys/auth.ts`, `Failed to read ${file}: ${e}`)
         }
         return null
     }
@@ -58,7 +58,7 @@ export class ImprovedAuth {
             fs.writeFileSync(safeFile + '.tmp', JSON.stringify(data, BufferJSON.replacer, 2))
             fs.renameSync(safeFile + '.tmp', safeFile)
         } catch {
-            // logger.log(`Failed to save file`, 'ERROR', 'auth')
+            logger.error(`/modules/baileys/auth.ts`, `Failed to save file`)
         }
     }
     private deleteFile(file: string) {
@@ -71,7 +71,7 @@ export class ImprovedAuth {
         try {
             this.saveAuth(this.credsPath, this.creds)
         } catch (e) {
-            // logger.log(`Failed to save creds: ${e}`, 'ERROR', 'auth')
+            logger.error(`/modules/baileys/auth.ts`, `Failed to save creds: ${e}`)
         }
     }
 

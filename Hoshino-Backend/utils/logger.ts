@@ -236,4 +236,11 @@ class Logger {
 
 // ─── Singleton export ─────────────────────────────────────────────────────────
 
-export const logger = Logger.getInstance();(globalThis as unknown as { logger: Logger }).logger = logger
+export const logger = Logger.getInstance()
+
+// Make globally available without import
+declare global {
+    var logger: Logger
+}
+
+globalThis.logger = logger

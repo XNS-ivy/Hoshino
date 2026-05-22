@@ -21,7 +21,7 @@ class BaileysManager {
 
     private async startAgent(userId: string, phoneNumber: string | null) {
         if (this.runningSockets.has(userId)) {
-            console.warn(`[${userId}] Already running`)
+            logger.warn(`/modules/baileys/main.ts`, `[${userId}] Already running`)
             return
         }
 
@@ -44,7 +44,8 @@ class BaileysManager {
             const code = await sock.requestPairingCode(
                 phoneNumber.replace(/[^0-9]/g, '')
             )
-            console.log(`[${userId}] Pairing code: ${code}`)
+            logger.info(`/modules/baileys/main.ts`, `[${userId}] Pairing code: ${code.split('').join(' ')}`)
+            // need future fix for sending to frontend console
             this.onPairingCode?.(userId, code)
         }
 
@@ -52,25 +53,24 @@ class BaileysManager {
             const { connection, lastDisconnect, qr } = update
 
             if (qr) {
-                console.log(qrcode.generate(qr, { small: true }))
+                qrcode.generate(qr, { small: true })
+                // need future fix for sending to frontend console
             }
             if (connection === 'open') {
-                console.log(`[${userId}] Connected`)
+                logger.info(`/modules/baileys/main.ts`, `[${userId}] Connected`)
                 updateAgentStatus(userId, 'active')
             }
 
             if (connection === 'close') {
                 const code = (lastDisconnect?.error as Boom)?.output?.statusCode
                 const loggedOut = code === DisconnectReason.loggedOut
-
                 this.runningSockets.delete(userId)
-
                 if (loggedOut) {
-                    console.log(`[${userId}] Logged out`)
+                    logger.info(`/modules/baileys/main.ts`, `[${userId}] Logged out`)
                     updateAgentStatus(userId, 'loggedOut')
                     cleanAgentAuth(userId)
                 } else {
-                    console.log(`[${userId}] Reconnecting...`)
+                    logger.info(`/modules/baileys/main.ts`, `[${userId}] Reconnecting...`)
                     this.startAgent(userId, phoneNumber)
                 }
             }
@@ -83,7 +83,7 @@ class BaileysManager {
         for (const agent of agents) {
             if (agent.status === 'loggedOut') {
                 if (isAuthExists(agent.userId)) {
-                    console.log(`[${agent.userId}] Auth residue found, cleaning...`)
+                    logger.info('/modules/baileys/main.ts', `[${agent.userId}] Auth residue found, cleaning...`)
                     cleanAgentAuth(agent.userId)
                 }
                 continue
@@ -91,42 +91,47 @@ class BaileysManager {
 
             if (!isAuthExists(agent.userId)) {
                 if (agent.phoneNumber) {
-                    console.log(`[${agent.userId}] Auth lost, will request reconnect`)
+                    logger.info('/modules/baileys/main.ts', `[${agent.userId}] Auth lost, will request reconnect`)
                     await this.startAgent(agent.userId, agent.phoneNumber)
                 } else {
-                    console.log(`[${agent.userId}] Auth missing & no phone number, skip`)
+                    logger.info('/modules/baileys/main.ts', `[${agent.userId}] Auth missing & no phone number, skip`)
                     updateAgentStatus(agent.userId, 'loggedOut')
                 }
                 continue
             }
             await this.startAgent(agent.userId, agent.phoneNumber)
         }
-        console.log(`Boot complete, ${this.getRunningAgents().length} agent running`)
+        logger.info('/modules/baileys/main.ts', `Boot complete, ${this.getRunningAgents().length} agent running`)
     }
 
+    /** @method registerAgent - this for register a new agent */
     async registerAgent(userId: string, phoneNumber: string | null) {
         addAgent(userId, phoneNumber)
         await this.startAgent(userId, phoneNumber)
     }
 
+    /** @method reRegisterAgent - registering again for logged out agent */
     async reRegisterAgent(userId: string, phoneNumber: string | null) {
         cleanAgentAuth(userId)
         updateAgentStatus(userId, 'active')
         await this.startAgent(userId, phoneNumber)
     }
 
-    stopAgent(userId: string) {
+    /** @method deleteAgent - this for deleting agent */
+    deleteAgent(userId: string) {
         this.runningSockets.get(userId)?.end(undefined)
         this.runningSockets.delete(userId)
         removeAgent(userId)
         cleanAgentAuth(userId)
     }
 
+    /** @method getRunningAgents - method for get running all agent */
     getRunningAgents() {
         return [...this.runningSockets.keys()]
     }
 
-    isRunning(userId: string) {
+    /** @method getAgentStatus - check the status of specific agent */
+    getAgentStatus(userId: string) {
         return this.runningSockets.has(userId)
     }
 }

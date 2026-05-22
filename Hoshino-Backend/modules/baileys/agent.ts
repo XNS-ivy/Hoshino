@@ -60,9 +60,9 @@ export function cleanAgentAuth(userId: string) {
     if (fs.existsSync(authDir)) {
         try {
             fs.rmSync(authDir, { recursive: true, force: true })
-            console.log(`[${userId}] Auth folder cleaned`)
+            logger.system('/modules/baileys/agent.ts', `[${userId}] Auth folder cleaned`)
         } catch (err) {
-            console.error(`[${userId}] Failed to clean auth folder:`, err)
+            logger.error(`/modules/baileys/agent.ts`, `[${userId}] Failed to clean auth folder: ${err}`)
         }
     }
 }
@@ -72,17 +72,17 @@ export async function cleanAgentAuthWithRetry(userId: string, maxRetries = 3) {
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         if (!fs.existsSync(authDir)) {
-            console.log(`[${userId}] Auth folder cleaned (attempt ${attempt})`)
+            logger.system(`/modules/baileys/agent.ts`, `[${userId}] Auth folder cleaned (attempt ${attempt})`)
             return true
         }
 
         try {
             fs.rmSync(authDir, { recursive: true, force: true })
-            console.log(`[${userId}] Auth folder cleaned (attempt ${attempt})`)
+            logger.system(`/modules/baileys/agent.ts`, `[${userId}] Auth folder cleaned (attempt ${attempt})`)
             return true
         } catch (err) {
             if (attempt === maxRetries) {
-                console.error(`[${userId}] Failed to clean auth folder after ${maxRetries} attempts:`, err)
+                logger.error(`/modules/baileys/agent.ts`, `[${userId}] Failed to clean auth folder after ${maxRetries} attempts: ${err}`)
                 return false
             }
             await new Promise(r => setTimeout(r, 100 * attempt))
@@ -93,7 +93,7 @@ export async function cleanAgentAuthWithRetry(userId: string, maxRetries = 3) {
 
 export function updateAgentStatus(userId: string, status: AgentStatus) {
     const agents = read()
-    const idx    = agents.findIndex(a => a.userId === userId)
+    const idx = agents.findIndex(a => a.userId === userId)
     if (idx === -1) return
     const agent = agents[idx]
     if (!agent) return
@@ -106,7 +106,7 @@ export function removeAgent(userId: string) {
 }
 
 export function isAuthExists(userId: string): boolean {
-    const authDir  = path.resolve(`./auth/${userId}`)
+    const authDir = path.resolve(`./auth/${userId}`)
     const credsPath = path.join(authDir, 'creds.json')
     return fs.existsSync(credsPath)
 }

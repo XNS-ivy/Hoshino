@@ -31,7 +31,8 @@
     // project modules path
     "types": ["bun"],
     "paths": {
-      "@modules/*": ["./modules/*"]
+      "@modules/*": ["./modules/*"],
+      "@utils/*":["./utils/*"]
     }
   }
 }
