@@ -5,6 +5,7 @@ import { pino } from 'pino'
 import path from 'path'
 import { ImprovedAuth } from './auth'
 import qrcode from 'qrcode-terminal'
+import { convertLID } from './baileys-functions'
 
 import {
     getAllAgents,
@@ -56,23 +57,44 @@ class BaileysManager {
                 qrcode.generate(qr, { small: true })
                 // need future fix for sending to frontend console
             }
-            if (connection === 'open') {
-                logger.info(`/modules/baileys/main.ts`, `[${userId}] Connected`)
-                updateAgentStatus(userId, 'active')
-            }
 
-            if (connection === 'close') {
-                const code = (lastDisconnect?.error as Boom)?.output?.statusCode
-                const loggedOut = code === DisconnectReason.loggedOut
-                this.runningSockets.delete(userId)
-                if (loggedOut) {
-                    logger.info(`/modules/baileys/main.ts`, `[${userId}] Logged out`)
-                    updateAgentStatus(userId, 'loggedOut')
-                    cleanAgentAuth(userId)
-                } else {
-                    logger.info(`/modules/baileys/main.ts`, `[${userId}] Reconnecting...`)
-                    this.startAgent(userId, phoneNumber)
-                }
+            switch (connection) {
+                case 'open':
+                    logger.info(`/modules/baileys/main.ts`, `[${userId}] Connected With : ${sock?.user?.name} Lid : ${convertLID(sock?.user?.lid ?? null)}`)
+                    updateAgentStatus(userId, 'active')
+                    break
+
+                case 'close':
+                    {
+                        const disconnected = (lastDisconnect?.error && 'output' in lastDisconnect.error)
+                            ? (lastDisconnect.error as Boom).output?.statusCode
+                            : undefined
+                        logger.info(`/modules/baileys/main.ts`, `[${userId}] Disconnected : ${lastDisconnect?.error?.message}`)
+
+                        switch (disconnected) {
+                            case DisconnectReason.loggedOut:
+                            case DisconnectReason.forbidden:
+                                logger.info(`/modules/baileys/main.ts`, `[${userId}] ${lastDisconnect?.error?.message}`)
+                                updateAgentStatus(userId, 'loggedOut')
+                                cleanAgentAuth(userId)
+                                break
+                            case DisconnectReason.restartRequired:
+                            case DisconnectReason.connectionLost:
+                            case DisconnectReason.unavailableService:
+                            case DisconnectReason.connectionClosed:
+                            case DisconnectReason.multideviceMismatch:
+                            case DisconnectReason.connectionReplaced:
+                            case DisconnectReason.badSession:
+                                logger.info(`/modules/baileys/main.ts`, `[${userId}] Reconnecting...`)
+                                this.startAgent(userId, phoneNumber)
+                                break
+                            default:
+                                break
+                        }
+                        break
+                    }
+                default:
+                    break
             }
         })
     }
