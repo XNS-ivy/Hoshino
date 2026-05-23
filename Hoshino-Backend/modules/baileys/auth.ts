@@ -127,7 +127,7 @@ export class ImprovedAuth {
                         try {
                             this.saveJSON(file, value)
                         } catch (e) {
-                            // logger.log(`Failed to save key ${safeKey}`, 'ERROR', 'auth')
+                            logger.error('/modules/baileys/auth.ts', `Failed to save key ${safeKey}`)
                         }
                     }, 0)
                 }

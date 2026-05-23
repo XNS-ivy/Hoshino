@@ -15,6 +15,7 @@
   "dependencies": {
     "baileys": "^7.0.0-rc11",
     "boom": "^7.3.0",
+    "elysia": "^1.4.28",
     "node-cache": "^5.1.2",
     "pino": "^10.3.1",
     "qrcode-terminal": "^0.12.0"

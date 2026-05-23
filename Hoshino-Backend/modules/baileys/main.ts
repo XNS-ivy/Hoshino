@@ -13,12 +13,15 @@ import {
     updateAgentStatus,
     removeAgent,
     cleanAgentAuth,
-    isAuthExists
+    isAuthExists,
+    cleanOrphanAuth,
+    updateAgentPhone
 } from './agent'
 
 class BaileysManager {
     private runningSockets = new Map<string, WASocket>()
     onPairingCode: ((userId: string, code: string) => void) | undefined
+    onQRCode: ((userId: string, qr: string) => void) | undefined
 
     private async startAgent(userId: string, phoneNumber: string | null) {
         if (this.runningSockets.has(userId)) {
@@ -40,30 +43,42 @@ class BaileysManager {
         this.runningSockets.set(userId, sock)
         sock.ev.on('creds.update', auth.saveCreds)
 
-        if (!auth.state.creds.registered && phoneNumber) {
+        if (!!auth.state.creds.registered && phoneNumber) {
             await new Promise(r => setTimeout(r, 3000))
             const code = await sock.requestPairingCode(
                 phoneNumber.replace(/[^0-9]/g, '')
             )
-            logger.info(`/modules/baileys/main.ts`, `[${userId}] Pairing code: ${code.split('').join(' ')}`)
-            // need future fix for sending to frontend console
             this.onPairingCode?.(userId, code)
         }
 
-        sock.ev.on('connection.update', (update) => {
+        sock.ev.on('connection.update', async (update) => {
             const { connection, lastDisconnect, qr } = update
 
             if (qr) {
-                qrcode.generate(qr, { small: true })
-                // need future fix for sending to frontend console
+                this.onQRCode?.(userId, qr)
             }
 
             switch (connection) {
                 case 'open':
                     logger.info(`/modules/baileys/main.ts`, `[${userId}] Connected With : ${sock?.user?.name} Lid : ${convertLID(sock?.user?.lid ?? null)}`)
                     updateAgentStatus(userId, 'active')
-                    break
 
+                    if (!phoneNumber) {
+                        try {
+                            const pn = await sock.signalRepository.lidMapping.getPNForLID(sock.user?.lid ?? '')
+                            if (pn) {
+                                const phone = pn.split('@')[0]?.split(":")[0]
+                                if (phone) {
+                                    updateAgentPhone(userId, phone)
+                                    phoneNumber = phone
+                                    logger.info(`/modules/baileys/main.ts`, `[${userId}] Phone updated: ${phone}`)
+                                }
+                            }
+                        } catch (err) {
+                            logger.error(`/modules/baileys/main.ts`, `[${userId}] Failed to get PN from LID: ${err}`)
+                        }
+                    }
+                    break
                 case 'close':
                     {
                         const disconnected = (lastDisconnect?.error && 'output' in lastDisconnect.error)
@@ -71,6 +86,7 @@ class BaileysManager {
                             : undefined
                         logger.info(`/modules/baileys/main.ts`, `[${userId}] Disconnected : ${lastDisconnect?.error?.message}`)
 
+                        this.runningSockets.delete(userId) /* this function is for socket guard while agent is disconnected */
                         switch (disconnected) {
                             case DisconnectReason.loggedOut:
                             case DisconnectReason.forbidden:
@@ -100,6 +116,7 @@ class BaileysManager {
     }
 
     async bootAllAgents() {
+        cleanOrphanAuth()
         const agents = getAllAgents()
 
         for (const agent of agents) {
@@ -155,6 +172,16 @@ class BaileysManager {
     /** @method getAgentStatus - check the status of specific agent */
     getAgentStatus(userId: string) {
         return this.runningSockets.has(userId)
+    }
+
+    /** @member getSocket - this just getting socket from user agent */
+    getSocket(userId: string): WASocket | null {
+        return this.runningSockets.get(userId) ?? null
+    }
+
+    /** @member getAllSockets - this just getting socket from all agent */
+    getAllSockets(): Map<string, WASocket> {
+        return this.runningSockets
     }
 }
 

@@ -110,3 +110,36 @@ export function isAuthExists(userId: string): boolean {
     const credsPath = path.join(authDir, 'creds.json')
     return fs.existsSync(credsPath)
 }
+
+export function cleanOrphanAuth() {
+    const authDir = path.resolve('./auth')
+
+    if (!fs.existsSync(authDir)) return
+
+    const registeredIds = new Set(read().map(a => a.userId))
+
+    const folders = fs.readdirSync(authDir, { withFileTypes: true })
+        .filter(f => f.isDirectory())
+        .map(f => f.name)
+
+    for (const folder of folders) {
+        if (!registeredIds.has(folder)) {
+            try {
+                fs.rmSync(path.join(authDir, folder), { recursive: true, force: true })
+                logger.system('/modules/baileys/agent.ts', `[${folder}] Orphan auth folder removed`)
+            } catch (err) {
+                logger.error('/modules/baileys/agent.ts', `[${folder}] Failed to remove orphan auth: ${err}`)
+            }
+        }
+    }
+}
+
+export function updateAgentPhone(userId: string, phoneNumber: string) {
+    const agents = read()
+    const idx = agents.findIndex(a => a.userId === userId)
+    if (idx === -1) return
+    const agent = agents[idx]
+    if (!agent) return
+    agent.phoneNumber = phoneNumber
+    write(agents)
+}

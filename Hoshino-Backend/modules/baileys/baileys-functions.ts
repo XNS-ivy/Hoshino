@@ -1,4 +1,4 @@
-export function convertLID(lid: string | null): string | null {
+export function convertLID(lid: string | null | undefined): string | null  {
     if (!lid) return null
     const result = (lid
         .replace(/@lid$/i, '')
