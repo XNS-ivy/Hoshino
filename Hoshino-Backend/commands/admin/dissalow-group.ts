@@ -1,8 +1,8 @@
 import { groupDb } from "@modules/databases-handler/groupDB"
 
 export default {
-    name: 'allowgroup',
-    usage: 'allowgroup',
+    name: 'dissallow',
+    usage: 'disallow',
     category: 'admin',
     inGroup: true,
     inGroupAccess: 'admin',
@@ -10,8 +10,8 @@ export default {
         if (!whoAMI.ownerRole && whoAMI.groupRole !== 'admin') return
 
         try {
-            await groupDb.allow(msg.remoteJid, msg.agentId)
-            await socket.sendMessage(msg.remoteJid, { text: '✅ Group allowed now hoshino can help this group uhe.' }, { quoted: msg.raw })
+            await groupDb.disallow(msg.remoteJid, msg.agentId)
+            await socket.sendMessage(msg.remoteJid, { text: '✅ ' }, { quoted: msg.raw })
         } catch (err: any) {
             await socket.sendMessage(msg.remoteJid, { text: `❌ ${err.message}` })
         }
