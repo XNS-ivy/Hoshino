@@ -1,100 +1,167 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <!-- JUST FOR EXAMPLE -->
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>WhatsApp Agent Dashboard</title>
+  <title>Hoshino Dashboard</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: system-ui, sans-serif; background: #f5f5f0; color: #1a1a1a; min-height: 100vh; }
     .container { max-width: 860px; margin: 0 auto; padding: 2rem 1rem; }
     .top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; }
     h1 { font-size: 20px; font-weight: 600; }
+    h2 { font-size: 16px; font-weight: 600; margin-bottom: 1rem; }
     .card { background: #fff; border: 1px solid #e5e5e0; border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
     .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
     .badge { font-size: 12px; padding: 3px 10px; border-radius: 6px; font-weight: 500; }
-    .badge-active    { background: #eaf3de; color: #3b6d11; }
-    .badge-pairing   { background: #faeeda; color: #854f0b; }
-    .badge-logout    { background: #fcebeb; color: #a32d2d; }
-    .badge-idle      { background: #e6f1fb; color: #185fa5; }
+    .badge-active  { background: #eaf3de; color: #3b6d11; }
+    .badge-logout  { background: #fcebeb; color: #a32d2d; }
+    .badge-idle    { background: #e6f1fb; color: #185fa5; }
     .agent-name  { font-weight: 600; font-size: 15px; flex: 1; }
     .agent-phone { font-size: 13px; color: #666; margin-top: 4px; }
     hr { border: none; border-top: 1px solid #f0f0ec; margin: 12px 0; }
-    .form-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; margin-bottom: 10px; }
-    input[type=text] {
+    .form-row { display: grid; gap: 8px; margin-bottom: 10px; }
+    .form-row.col2 { grid-template-columns: 1fr 1fr; }
+    .form-row.col3 { grid-template-columns: 1fr 1fr auto; }
+    .form-row.col4 { grid-template-columns: 1fr 1fr 1fr auto; }
+    input[type=text], select {
       width: 100%; padding: 8px 12px; border: 1px solid #ddd;
       border-radius: 8px; font-size: 14px; outline: none;
-      transition: border-color 0.15s;
+      transition: border-color 0.15s; background: #fff;
     }
-    input[type=text]:focus { border-color: #888; }
+    input[type=text]:focus, select:focus { border-color: #888; }
     button {
       padding: 8px 14px; border: 1px solid #ccc; border-radius: 8px;
       background: #fff; font-size: 13px; cursor: pointer;
-      transition: background 0.15s, border-color 0.15s;
-      white-space: nowrap;
+      transition: background 0.15s, border-color 0.15s; white-space: nowrap;
     }
     button:hover { background: #f5f5f0; border-color: #999; }
     button:active { transform: scale(0.98); }
     button.danger { color: #a32d2d; border-color: #f09595; }
     button.danger:hover { background: #fcebeb; }
+    button.primary { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
+    button.primary:hover { background: #333; }
     .actions { display: flex; gap: 8px; flex-wrap: wrap; }
-    .qr-wrap {
-      display: none; flex-direction: column;
-      align-items: center; gap: 12px; padding: 1rem 0;
-    }
-    .qr-wrap img {
-      width: 180px; height: 180px;
-      border-radius: 8px; border: 1px solid #e5e5e0;
-    }
-    .pairing-code {
-      font-size: 32px; font-weight: 700;
-      letter-spacing: 8px; font-family: monospace; color: #1a1a1a;
-    }
+    .qr-wrap { display: none; flex-direction: column; align-items: center; gap: 12px; padding: 1rem 0; }
+    .qr-wrap img { width: 180px; height: 180px; border-radius: 8px; border: 1px solid #e5e5e0; }
+    .pairing-code { font-size: 32px; font-weight: 700; letter-spacing: 8px; font-family: monospace; color: #1a1a1a; }
     .label { font-size: 13px; color: #666; }
-    .log {
-      background: #f5f5f0; border-radius: 8px; padding: 12px;
-      font-size: 12px; font-family: monospace; color: #555;
-      height: 100px; overflow-y: auto;
-    }
+    .log { background: #f5f5f0; border-radius: 8px; padding: 12px; font-size: 12px; font-family: monospace; color: #555; height: 100px; overflow-y: auto; }
     .log-line { margin-bottom: 4px; }
+    .list-area { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+    .list-item {
+      padding: 8px 12px; background: #fff; border: 1px solid #e5e5e0;
+      border-radius: 6px; font-size: 13px; cursor: pointer;
+      transition: background 0.15s; display: flex; align-items: center; justify-content: space-between;
+    }
+    .list-item:hover { background: #f9f9f7; }
+    .list-item.selected { background: #eaf3de; border-color: #639922; }
+    .list-item-key { font-weight: 600; color: #1a1a1a; }
+    .list-item-val { color: #666; font-size: 12px; }
+    .pill { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; }
+    .pill-master { background: #eaf3de; color: #3b6d11; }
+    .pill-owner  { background: #e6f1fb; color: #185fa5; }
+    .pill-enabled  { background: #eaf3de; color: #3b6d11; }
+    .pill-disabled { background: #fcebeb; color: #a32d2d; }
     .ws-status { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #666; }
     .ws-dot { width: 8px; height: 8px; border-radius: 50%; background: #E24B4A; }
     .ws-dot.on { background: #639922; }
-    .empty { font-size: 13px; color: #999; padding: 0.5rem 0; }
-    .section-label { font-size: 13px; color: #666; margin-bottom: 10px; }
+    .empty { font-size: 13px; color: #999; padding: 0.5rem 0; text-align: center; }
+    .section-label { font-size: 13px; color: #666; margin-bottom: 10px; font-weight: 500; }
+    .divider { border: none; border-top: 1px solid #f0f0ec; margin: 16px 0; }
   </style>
 </head>
 <body>
 <div class="container">
 
   <div class="top">
-    <h1>WhatsApp agents</h1>
+    <h1>🌸 Hoshino Dashboard</h1>
     <div class="ws-status">
       <span class="ws-dot" id="wsDot"></span>
       <span id="wsLabel">WS disconnected</span>
     </div>
   </div>
 
-  <!-- Register form -->
+  <!-- ── Register Agent ── -->
   <div class="card">
-    <div class="section-label">Register agent</div>
-    <div class="form-row">
-      <input type="text" id="inUserId" placeholder="User ID (e.g. user-123)" />
-      <input type="text" id="inPhone" placeholder="Phone number (kosongkan untuk QR)" />
-      <button id="btnRegister">Register</button>
+    <div class="section-label">Register Agent</div>
+    <div class="form-row col3">
+      <input type="text" id="inUserId" placeholder="User ID (e.g. agent-ney)" />
+      <input type="text" id="inPhone" placeholder="Phone (kosongkan untuk QR)" />
+      <button class="primary" id="btnRegister">Register</button>
     </div>
     <div class="actions">
       <button id="btnList">↺ Refresh list</button>
     </div>
   </div>
 
-  <!-- Agent list -->
+  <!-- ── Agent List ── -->
   <div id="agentList"></div>
 
-  <!-- WS Log -->
-  <div class="card" style="margin-top: 1rem;">
-    <div class="section-label">WebSocket log</div>
+  <!-- ── Agent Config ── -->
+  <div class="card">
+    <div class="section-label">Agent Config</div>
+    <div class="form-row col3">
+      <input type="text" id="inConfigUserId" placeholder="User ID" />
+      <input type="text" id="inPrefix" placeholder="Prefix (e.g. /)" />
+      <button id="btnGetConfig">Get</button>
+    </div>
+    <div class="actions">
+      <button id="btnUpdateConfig">Update Config</button>
+    </div>
+    <div class="list-area" id="configOutput"></div>
+  </div>
+
+  <!-- ── Command Management ── -->
+  <div class="card">
+    <div class="section-label">Command Management</div>
+    <div class="form-row col3">
+      <input type="text" id="inCommandUserId" placeholder="User ID" />
+      <div></div>
+      <button id="btnGetCommands">Get Commands</button>
+    </div>
+    <div class="list-area" id="commandList"></div>
+  </div>
+
+  <!-- ── Owner Management ── -->
+  <div class="card">
+    <div class="section-label">Owner Management</div>
+    <div class="form-row col4">
+      <input type="text" id="inOwnerAgentId" placeholder="Agent User ID" />
+      <input type="text" id="inOwnerLid" placeholder="Owner LID / Phone" />
+      <select id="inOwnerLevel">
+        <option value="owner">Owner</option>
+        <option value="master">Master</option>
+      </select>
+      <button class="primary" id="btnAddOwner">Add</button>
+    </div>
+    <div class="actions">
+      <button id="btnListOwners">↺ List Owners</button>
+      <button id="btnChangeLevel">Change Level</button>
+      <button class="danger" id="btnRemoveOwner">Remove Selected</button>
+    </div>
+    <div class="list-area" id="ownerList"></div>
+  </div>
+
+  <!-- ── Group Allowlist ── -->
+  <div class="card">
+    <div class="section-label">Group Allowlist</div>
+    <div class="form-row col4">
+      <input type="text" id="inGroupAgentId" placeholder="Agent User ID" />
+      <input type="text" id="inGroupJid" placeholder="Group JID (xxx@g.us)" />
+      <div></div>
+      <button class="primary" id="btnAllowGroup">Allow</button>
+    </div>
+    <div class="actions">
+      <button id="btnListGroups">↺ List Groups</button>
+      <button class="danger" id="btnDisallowGroup">Disallow Selected</button>
+    </div>
+    <div class="list-area" id="groupList"></div>
+  </div>
+
+  <!-- ── WS Log ── -->
+  <div class="card">
+    <div class="section-label">WebSocket Log</div>
     <div class="log" id="wsLog"></div>
   </div>
 
@@ -103,7 +170,10 @@
 <script>
   const BASE = 'http://localhost:3010'
   const agentSockets = {}
+  let selectedOwnerLid = null
+  let selectedGroupJid = null
 
+  // ── Logger ──
   function log(msg) {
     const el = document.getElementById('wsLog')
     const line = document.createElement('div')
@@ -113,6 +183,7 @@
     el.scrollTop = el.scrollHeight
   }
 
+  // ── WS Indicator ──
   function setWSIndicator() {
     const on = Object.keys(agentSockets).length > 0
     document.getElementById('wsDot').className = 'ws-dot' + (on ? ' on' : '')
@@ -121,46 +192,28 @@
       : 'WS disconnected'
   }
 
+  // ── WebSocket ──
   function connectWS(userId) {
-    if (agentSockets[userId]) {
-      log(`[${userId}] already connected`)
-      return
-    }
-
+    if (agentSockets[userId]) { log(`[${userId}] already connected`); return }
     const socket = new WebSocket(`ws://localhost:3010/ws/agent/${userId}`)
     agentSockets[userId] = socket
 
-    socket.onopen = () => {
-      log(`[${userId}] WS connected`)
-      setWSIndicator()
-      updateWsButton(userId, true)
-    }
-
-    socket.onclose = () => {
-      log(`[${userId}] WS closed`)
-      delete agentSockets[userId]
-      setWSIndicator()
-      updateWsButton(userId, false)
-    }
-
-    socket.onerror = () => {
-      log(`[${userId}] WS error`)
-    }
+    socket.onopen  = () => { log(`[${userId}] WS connected`); setWSIndicator(); updateWsButton(userId, true) }
+    socket.onclose = () => { log(`[${userId}] WS closed`); delete agentSockets[userId]; setWSIndicator(); updateWsButton(userId, false) }
+    socket.onerror = () => log(`[${userId}] WS error`)
 
     socket.onmessage = (e) => {
       const { event, data } = JSON.parse(e.data)
       log(`[${userId}] ← ${event}`)
 
       if (event === 'qr') {
-        fetch(`${BASE}/agent/${userId}/qr`)
-          .then(r => r.json())
-          .then(r => {
-            if (!r.data) return
-            const img  = document.getElementById(`qr-img-${userId}`)
-            const wrap = document.getElementById(`qr-wrap-${userId}`)
-            if (img)  img.src = r.data
-            if (wrap) wrap.style.display = 'flex'
-          })
+        fetch(`${BASE}/agent/${userId}/qr`).then(r => r.json()).then(r => {
+          if (!r.data) return
+          const img  = document.getElementById(`qr-img-${userId}`)
+          const wrap = document.getElementById(`qr-wrap-${userId}`)
+          if (img)  img.src = r.data
+          if (wrap) wrap.style.display = 'flex'
+        })
       }
 
       if (event === 'pairing-code') {
@@ -171,25 +224,19 @@
       }
 
       if (event === 'connected') {
-        const qrWrap   = document.getElementById(`qr-wrap-${userId}`)
-        const codeWrap = document.getElementById(`code-wrap-${userId}`)
-        if (qrWrap)   qrWrap.style.display = 'none'
-        if (codeWrap) codeWrap.style.display = 'none'
+        document.getElementById(`qr-wrap-${userId}`)?.style?.setProperty('display', 'none')
+        document.getElementById(`code-wrap-${userId}`)?.style?.setProperty('display', 'none')
         fetchList()
       }
 
-      if (event === 'disconnected') {
-        fetchList()
-      }
+      if (event === 'disconnected') fetchList()
     }
   }
 
   function disconnectWS(userId) {
-    if (agentSockets[userId]) {
-      agentSockets[userId].close()
-      delete agentSockets[userId]
-      setWSIndicator()
-    }
+    agentSockets[userId]?.close()
+    delete agentSockets[userId]
+    setWSIndicator()
   }
 
   function updateWsButton(userId, connected) {
@@ -197,6 +244,11 @@
     if (btn) btn.textContent = connected ? 'Disconnect WS' : 'Connect WS'
   }
 
+  function handleWS(userId) {
+    agentSockets[userId] ? disconnectWS(userId) : connectWS(userId)
+  }
+
+  // ── Agent List ──
   async function fetchList() {
     const r = await fetch(`${BASE}/agent/list`).then(r => r.json()).catch(() => null)
     const list = document.getElementById('agentList')
@@ -208,36 +260,29 @@
     }
 
     r.data.forEach(agent => {
-      let badge = ''
-      if (agent.running) {
-        badge = '<span class="badge badge-active">connected</span>'
-      } else if (agent.status === 'loggedOut') {
-        badge = '<span class="badge badge-logout">logged out</span>'
-      } else {
-        badge = '<span class="badge badge-idle">idle</span>'
-      }
+      const badge = agent.running
+        ? '<span class="badge badge-active">connected</span>'
+        : agent.status === 'loggedOut'
+          ? '<span class="badge badge-logout">logged out</span>'
+          : '<span class="badge badge-idle">idle</span>'
 
       const div = document.createElement('div')
       div.className = 'card'
-      div.id = `agent-card-${agent.userId}`
       div.innerHTML = `
         <div class="row">
           <span class="agent-name">${agent.userId}</span>
           ${badge}
         </div>
-        <div class="agent-phone">${agent.phoneNumber ?? 'QR mode'}</div>
+        <div class="agent-phone">${agent.phoneNumber ?? 'QR mode'} · prefix: <b>${agent.prefix}</b></div>
         <hr/>
-
         <div id="qr-wrap-${agent.userId}" class="qr-wrap">
           <img id="qr-img-${agent.userId}" src="" alt="QR Code" />
           <span class="label">Scan dengan WhatsApp</span>
         </div>
-
         <div id="code-wrap-${agent.userId}" class="qr-wrap">
           <span class="label">Masukkan kode pairing di WhatsApp</span>
           <span class="pairing-code" id="code-${agent.userId}">----</span>
         </div>
-
         <div class="actions">
           <button id="ws-btn-${agent.userId}" onclick="handleWS('${agent.userId}')">Connect WS</button>
           ${agent.status === 'loggedOut'
@@ -247,21 +292,12 @@
         </div>
       `
       list.appendChild(div)
-
-      // update WS button state kalau sudah connect
       if (agentSockets[agent.userId]) updateWsButton(agent.userId, true)
     })
   }
 
-  function handleWS(userId) {
-    if (agentSockets[userId]) {
-      disconnectWS(userId)
-    } else {
-      connectWS(userId)
-    }
-  }
-
   async function handleDelete(userId) {
+    if (!confirm(`Delete agent ${userId}?`)) return
     disconnectWS(userId)
     await fetch(`${BASE}/agent/${userId}`, { method: 'DELETE' })
     log(`[${userId}] deleted`)
@@ -278,17 +314,185 @@
     fetchList()
   }
 
+  // ── Config ──
+  async function handleGetConfig() {
+    const userId = document.getElementById('inConfigUserId').value.trim()
+    if (!userId) { log('User ID tidak boleh kosong'); return }
+    const r = await fetch(`${BASE}/agent/${userId}/config`).then(r => r.json()).catch(() => null)
+    const output = document.getElementById('configOutput')
+    if (!r?.success) { output.innerHTML = `<div class="list-item" style="color:#a32d2d;">${r?.message ?? 'Error'}</div>`; return }
+    output.innerHTML = `<div class="list-item"><span class="list-item-key">Prefix</span><span class="list-item-val">${r.data.prefix}</span></div>`
+    document.getElementById('inPrefix').value = r.data.prefix
+    log(`Config fetched for [${userId}]`)
+  }
+
+  async function handleUpdateConfig() {
+    const userId = document.getElementById('inConfigUserId').value.trim()
+    const prefix = document.getElementById('inPrefix').value.trim()
+    if (!userId || !prefix) { log('User ID & prefix wajib diisi'); return }
+    const r = await fetch(`${BASE}/agent/${userId}/config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prefix })
+    }).then(r => r.json()).catch(() => null)
+    const output = document.getElementById('configOutput')
+    if (!r?.success) { output.innerHTML = `<div class="list-item" style="color:#a32d2d;">${r?.message ?? 'Error'}</div>`; return }
+    output.innerHTML = `<div class="list-item" style="background:#eaf3de;"><span class="list-item-key">✓ Updated!</span><span class="list-item-val">prefix: ${r.data.prefix}</span></div>`
+    log(`Config updated for [${userId}]`)
+    fetchList()
+  }
+
+  // ── Commands ──
+  async function handleGetCommands() {
+    const userId = document.getElementById('inCommandUserId').value.trim()
+    if (!userId) { log('User ID tidak boleh kosong'); return }
+    const r = await fetch(`${BASE}/agent/${userId}/commands`).then(r => r.json()).catch(() => null)
+    const output = document.getElementById('commandList')
+    if (!r?.success || !r.data?.length) { output.innerHTML = '<div class="empty">No commands found</div>'; return }
+    output.innerHTML = r.data.map(cmd => `
+      <div class="list-item">
+        <span class="list-item-key">${cmd.name}</span>
+        <button onclick="toggleCommand('${userId}', '${cmd.name}', '${cmd.status === 'enabled' ? 'disabled' : 'enabled'}')"
+          class="pill ${cmd.status === 'enabled' ? 'pill-enabled' : 'pill-disabled'}" style="border:none; cursor:pointer;">
+          ${cmd.status === 'enabled' ? '✓ Enabled' : '✗ Disabled'}
+        </button>
+      </div>
+    `).join('')
+    log(`Loaded ${r.data.length} commands for [${userId}]`)
+  }
+
+  async function toggleCommand(userId, commandName, newStatus) {
+    const r = await fetch(`${BASE}/agent/${userId}/commands/${commandName}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: newStatus })
+    }).then(r => r.json()).catch(() => null)
+    if (!r?.success) { log(`Error: ${r?.message ?? 'Failed'}`); return }
+    log(`Command ${commandName} → ${newStatus}`)
+    handleGetCommands()
+  }
+
+  // ── Owner ──
+  async function handleListOwners() {
+    const userId = document.getElementById('inOwnerAgentId').value.trim()
+    if (!userId) { log('Agent User ID tidak boleh kosong'); return }
+    const r = await fetch(`${BASE}/agent/${userId}/owner/list`).then(r => r.json()).catch(() => null)
+    const output = document.getElementById('ownerList')
+    if (!r?.success || !r.data?.length) { output.innerHTML = '<div class="empty">No owners found</div>'; return }
+    output.innerHTML = r.data.map(owner => `
+      <div class="list-item" onclick="selectOwner('${owner.lid}', this)">
+        <span class="list-item-key">${owner.lid}</span>
+        <span class="pill ${owner.level === 'master' ? 'pill-master' : 'pill-owner'}">${owner.level}</span>
+      </div>
+    `).join('')
+    log(`Loaded ${r.data.length} owners for [${userId}]`)
+  }
+
+  function selectOwner(lid, el) {
+    selectedOwnerLid = lid
+    document.getElementById('inOwnerLid').value = lid
+    document.querySelectorAll('#ownerList .list-item').forEach(e => e.classList.remove('selected'))
+    el.classList.add('selected')
+  }
+
+  async function handleAddOwner() {
+    const userId = document.getElementById('inOwnerAgentId').value.trim()
+    const lid    = document.getElementById('inOwnerLid').value.trim()
+    const level  = document.getElementById('inOwnerLevel').value
+    if (!userId || !lid) { log('Agent ID & LID wajib diisi'); return }
+    const r = await fetch(`${BASE}/agent/${userId}/owner/add`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lid, level })
+    }).then(r => r.json()).catch(() => null)
+    if (!r?.success) { log(`Error: ${r?.message ?? 'Failed'}`); return }
+    log(`Owner added: ${lid} (${level}) for [${userId}]`)
+    handleListOwners()
+  }
+
+  async function handleRemoveOwner() {
+    const userId = document.getElementById('inOwnerAgentId').value.trim()
+    if (!selectedOwnerLid || !userId) { log('Pilih owner dan isi Agent ID dulu'); return }
+    if (!confirm(`Remove owner ${selectedOwnerLid}?`)) return
+    const r = await fetch(`${BASE}/agent/${userId}/owner/${selectedOwnerLid}`, { method: 'DELETE' }).then(r => r.json()).catch(() => null)
+    if (!r?.success) { log(`Error: ${r?.message ?? 'Failed'}`); return }
+    log(`Owner removed: ${selectedOwnerLid}`)
+    selectedOwnerLid = null
+    handleListOwners()
+  }
+
+  async function handleChangeLevel() {
+    const userId = document.getElementById('inOwnerAgentId').value.trim()
+    if (!selectedOwnerLid || !userId) { log('Pilih owner dan isi Agent ID dulu'); return }
+    const level = document.getElementById('inOwnerLevel').value
+    const r = await fetch(`${BASE}/agent/${userId}/owner/${selectedOwnerLid}/level`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ level })
+    }).then(r => r.json()).catch(() => null)
+    if (!r?.success) { log(`Error: ${r?.message ?? 'Failed'}`); return }
+    log(`Owner ${selectedOwnerLid} → ${level}`)
+    handleListOwners()
+  }
+
+  // ── Group ──
+  async function handleListGroups() {
+    const userId = document.getElementById('inGroupAgentId').value.trim()
+    if (!userId) { log('Agent User ID tidak boleh kosong'); return }
+    const r = await fetch(`${BASE}/agent/${userId}/group/allowlist`).then(r => r.json()).catch(() => null)
+    const output = document.getElementById('groupList')
+    if (!r?.success || !r.data?.length) { output.innerHTML = '<div class="empty">No groups found</div>'; return }
+    output.innerHTML = r.data.map(group => `
+      <div class="list-item" onclick="selectGroup('${group.jid}', this)">
+        <span class="list-item-key">${group.jid}</span>
+        <span class="list-item-val">${new Date(group.allowedAt).toLocaleDateString()}</span>
+      </div>
+    `).join('')
+    log(`Loaded ${r.data.length} groups for [${userId}]`)
+  }
+
+  function selectGroup(jid, el) {
+    selectedGroupJid = jid
+    document.getElementById('inGroupJid').value = jid
+    document.querySelectorAll('#groupList .list-item').forEach(e => e.classList.remove('selected'))
+    el.classList.add('selected')
+  }
+
+  async function handleAllowGroup() {
+    const userId   = document.getElementById('inGroupAgentId').value.trim()
+    const groupJid = document.getElementById('inGroupJid').value.trim()
+    if (!userId || !groupJid) { log('Agent ID & Group JID wajib diisi'); return }
+    const r = await fetch(`${BASE}/agent/${userId}/group/allow`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ groupJid })
+    }).then(r => r.json()).catch(() => null)
+    if (!r?.success) { log(`Error: ${r?.message ?? 'Failed'}`); return }
+    log(`Group allowed: ${groupJid} for [${userId}]`)
+    handleListGroups()
+  }
+
+  async function handleDisallowGroup() {
+    const userId = document.getElementById('inGroupAgentId').value.trim()
+    if (!selectedGroupJid || !userId) { log('Pilih group dan isi Agent ID dulu'); return }
+    if (!confirm(`Disallow group ${selectedGroupJid}?`)) return
+    const r = await fetch(`${BASE}/agent/${userId}/group/${selectedGroupJid}`, { method: 'DELETE' }).then(r => r.json()).catch(() => null)
+    if (!r?.success) { log(`Error: ${r?.message ?? 'Failed'}`); return }
+    log(`Group disallowed: ${selectedGroupJid}`)
+    selectedGroupJid = null
+    handleListGroups()
+  }
+
+  // ── Register ──
   document.getElementById('btnRegister').onclick = async () => {
     const userId = document.getElementById('inUserId').value.trim()
     const phone  = document.getElementById('inPhone').value.trim()
     if (!userId) { log('User ID tidak boleh kosong'); return }
-
     const r = await fetch(`${BASE}/agent/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, phoneNumber: phone || undefined })
     }).then(r => r.json()).catch(() => null)
-
     log(`register [${userId}]: ${r?.message ?? 'error'}`)
     if (r?.success) {
       fetchList()
@@ -297,7 +501,18 @@
     }
   }
 
-  document.getElementById('btnList').onclick = fetchList
+  // ── Bind buttons ──
+  document.getElementById('btnList').onclick           = fetchList
+  document.getElementById('btnGetConfig').onclick      = handleGetConfig
+  document.getElementById('btnUpdateConfig').onclick   = handleUpdateConfig
+  document.getElementById('btnGetCommands').onclick    = handleGetCommands
+  document.getElementById('btnListOwners').onclick     = handleListOwners
+  document.getElementById('btnAddOwner').onclick       = handleAddOwner
+  document.getElementById('btnRemoveOwner').onclick    = handleRemoveOwner
+  document.getElementById('btnChangeLevel').onclick    = handleChangeLevel
+  document.getElementById('btnListGroups').onclick     = handleListGroups
+  document.getElementById('btnAllowGroup').onclick     = handleAllowGroup
+  document.getElementById('btnDisallowGroup').onclick  = handleDisallowGroup
 
   fetchList()
 </script>

@@ -38,3 +38,6 @@ auth/
 
 # agent and store files
 store/
+
+# databases
+databases/

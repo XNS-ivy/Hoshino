@@ -5,6 +5,7 @@ import { pino } from 'pino'
 import path from 'path'
 import { ImprovedAuth } from './auth'
 import type { ServerWebSocket } from 'bun'
+import NodeCache from 'node-cache'
 
 import {
     getAllAgents,
@@ -14,8 +15,12 @@ import {
     cleanAgentAuth,
     isAuthExists,
     cleanOrphanAuth,
-    updateAgentPhone
+    updateAgentPhone,
+    getAgentConfig,
 } from './agent'
+
+import { message as messageParse } from '@modules/baileys/mesage-parse'
+import command from '@modules/handlers/commands-loader'
 
 class BaileysManager {
     private runningSockets = new Map<string, WASocket>()
@@ -32,7 +37,7 @@ class BaileysManager {
             logger.warn(`/modules/baileys/main.ts`, `[${userId}] Already running`)
             return
         }
-
+        const groupCache = new NodeCache({ stdTTL: 300, checkperiod: 60 })
         const auth = new ImprovedAuth(path.resolve(`./auth/${userId}`))
         const { version } = await fetchLatestWaWebVersion()
 
@@ -42,12 +47,13 @@ class BaileysManager {
             browser: Browsers.appropriate('Chrome'),
             logger: pino({ level: 'silent' }),
             printQRInTerminal: false,
+            cachedGroupMetadata: async (jid) => groupCache.get(jid) ?? undefined
         })
 
         this.runningSockets.set(userId, sock)
         sock.ev.on('creds.update', auth.saveCreds)
 
-        if (!!auth.state.creds.registered && phoneNumber) {
+        if (!auth.state.creds.registered && phoneNumber) {
             await new Promise(r => setTimeout(r, 3000))
             const code = await sock.requestPairingCode(
                 phoneNumber.replace(/[^0-9]/g, '')
@@ -76,6 +82,7 @@ class BaileysManager {
                     })
                     logger.info(`/modules/baileys/main.ts`, `[${userId}] Connected With : ${sock?.user?.name} Phone Number : ${String(await sock.signalRepository.lidMapping.getPNForLID(sock.user?.lid ?? ''))?.split('@')[0]?.split(":")[0]}`)
                     updateAgentStatus(userId, 'active')
+                    await command.initOwner(sock, userId)
 
                     if (!phoneNumber) {
                         try {
@@ -122,6 +129,8 @@ class BaileysManager {
                                 this.startAgent(userId, phoneNumber)
                                 break
                             default:
+                                logger.warn(`/modules/baileys/main.ts`, `[${userId}] Unknown disconnect reason: ${disconnected}, reconnecting...`)
+                                this.startAgent(userId, phoneNumber)
                                 break
                         }
                         break
@@ -129,6 +138,39 @@ class BaileysManager {
                 default:
                     break
             }
+        })
+
+        sock.ev.on('messages.upsert', async (messageContainer) => {
+            const { messages, type } = messageContainer
+            for (const msg of messages) {
+                if (type !== 'notify') continue
+
+                try {
+                    const parsed = await messageParse.fetch(msg, sock, userId)
+                    if (!parsed) continue
+
+                    if (!parsed.isGroupAllowed && !parsed.isAdmin) continue
+
+                    await command.execute(parsed, sock, userId)
+                } catch (err: any) {
+                    logger.error(`/modules/baileys/main.ts`, `[${userId}] Message processing error: ${err?.message}`)
+                }
+            }
+        })
+
+        sock.ev.on('groups.update', (updates) => {
+            for (const update of updates) {
+                if (!update.id) continue
+                const cached = groupCache.get<any>(update.id)
+                if (cached) groupCache.set(update.id, { ...cached, ...update })
+            }
+        })
+
+        sock.ev.on('group-participants.update', async ({ id }) => {
+            try {
+                const meta = await sock.groupMetadata(id)
+                groupCache.set(id, meta)
+            } catch { }
         })
     }
 
@@ -174,7 +216,8 @@ class BaileysManager {
     }
 
     /** @method deleteAgent - this for deleting agent */
-    deleteAgent(userId: string) {
+    async deleteAgent(userId: string) {
+        await this.runningSockets.get(userId)?.logout()
         this.runningSockets.get(userId)?.end(undefined)
         this.runningSockets.delete(userId)
         removeAgent(userId)

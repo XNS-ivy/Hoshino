@@ -3,10 +3,22 @@ import path from 'path'
 
 export type AgentStatus = 'active' | 'loggedOut'
 
+export interface CommandStatus {
+    name: string
+    status: 'enabled' | 'disabled'
+}
+
+export interface AgentConfig {
+    prefix: string
+    commandsEnabled: boolean
+}
+
 export interface Agent {
     userId: string
     phoneNumber: string | null
     status: AgentStatus
+    prefix: string
+    commands: CommandStatus[]
     createdAt: string
 }
 
@@ -47,6 +59,8 @@ export function addAgent(userId: string, phoneNumber: string | null): Agent {
         userId,
         phoneNumber,
         status: 'active',
+        prefix: '.',
+        commands: [],
         createdAt: new Date().toISOString(),
     }
 
@@ -142,4 +156,73 @@ export function updateAgentPhone(userId: string, phoneNumber: string) {
     if (!agent) return
     agent.phoneNumber = phoneNumber
     write(agents)
+}
+
+export function getAgentConfig(userId: string): AgentConfig | null {
+    const agent = getAgent(userId)
+    return agent ? { prefix: agent.prefix, commandsEnabled: true } : null
+}
+
+export function updateAgentConfig(userId: string, config: Partial<{ prefix: string; commandsEnabled: boolean }>): void {
+    const agents = read()
+    const idx = agents.findIndex(a => a.userId === userId)
+    if (idx === -1) return
+    const agent = agents[idx]
+    if (!agent) return
+    if (config.prefix) agent.prefix = config.prefix
+    write(agents)
+}
+
+export function updateAgentCommands(userId: string, commands: CommandStatus[]): void {
+    const agents = read()
+    const idx = agents.findIndex(a => a.userId === userId)
+    if (idx === -1) return
+    const agent = agents[idx]
+    if (!agent) return
+    agent.commands = commands
+    write(agents)
+}
+
+export function getAgentCommands(userId: string): CommandStatus[] {
+    const agent = getAgent(userId)
+    return agent?.commands ?? []
+}
+
+export function updateCommandStatus(userId: string, commandName: string, status: 'enabled' | 'disabled'): void {
+    const agents = read()
+    const idx = agents.findIndex(a => a.userId === userId)
+    if (idx === -1) return
+    const agent = agents[idx]
+    if (!agent) return
+
+    const cmdIdx = agent.commands.findIndex(c => c.name === commandName)
+    if (cmdIdx !== -1) {
+        const cmd = agent.commands[cmdIdx]
+        if (!cmd) return
+        cmd.status = status
+    } else {
+        agent.commands.push({ name: commandName, status })
+    }
+    write(agents)
+}
+
+export class ConfigManager {
+    constructor(private userId: string) { }
+
+    getPrefix(): string | null {
+        const agent = getAgent(this.userId)
+        return agent?.prefix ?? null
+    }
+
+    setPrefix(prefix: string): void {
+        updateAgentConfig(this.userId, { prefix })
+    }
+
+    getCommands(): CommandStatus[] {
+        return getAgentCommands(this.userId)
+    }
+
+    setCommandStatus(commandName: string, status: 'enabled' | 'disabled'): void {
+        updateCommandStatus(this.userId, commandName, status)
+    }
 }

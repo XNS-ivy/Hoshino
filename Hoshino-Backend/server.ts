@@ -12,4 +12,5 @@ export const server = new Elysia()
     .listen(port, () => {
         logger.info('/server.ts', `Server running on port http://localhost:${port}`)
     })
-console.log(server.routes.map(r => `${r.method} ${r.path}`))
+logger.info('/server.ts', `Loaded API :`)
+logger.info('/server.ts', server.routes.map(r => `${r.method} ${r.path}`))

@@ -1,8 +1,10 @@
 import BaileysManager from '@modules/baileys/main'
 import qrcode from 'qrcode-terminal'
 import { server } from './server'
+import command from '@modules/handlers/commands-loader'
 
 async function main() {
+    await command.init()
     await BaileysManager.bootAllAgents()
     server
     BaileysManager.onPairingCode = (userId, code) => {
