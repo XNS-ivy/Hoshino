@@ -149,7 +149,7 @@ class BaileysManager {
                     const parsed = await messageParse.fetch(msg, sock, userId)
                     if (!parsed) continue
 
-                    if (!parsed.isGroupAllowed && !parsed.isAdmin) continue
+                    if (!parsed.isGroupAllowed && !parsed.isAdmin) continue // bypass for admin use only
 
                     await command.execute(parsed, sock, userId)
                 } catch (err: any) {
