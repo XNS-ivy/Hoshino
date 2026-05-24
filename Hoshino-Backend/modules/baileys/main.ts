@@ -4,8 +4,7 @@ import { Boom } from '@hapi/boom'
 import { pino } from 'pino'
 import path from 'path'
 import { ImprovedAuth } from './auth'
-import qrcode from 'qrcode-terminal'
-import { convertLID } from './baileys-functions'
+import type { ServerWebSocket } from 'bun'
 
 import {
     getAllAgents,
@@ -20,8 +19,13 @@ import {
 
 class BaileysManager {
     private runningSockets = new Map<string, WASocket>()
+    private qrStore = new Map<string, string>()
+    private pairingStore = new Map<string, string>()
+    private wsClients = new Map<string, ServerWebSocket<any>>()
+
     onPairingCode: ((userId: string, code: string) => void) | undefined
     onQRCode: ((userId: string, qr: string) => void) | undefined
+    onConnected: ((userId: string) => void) | undefined
 
     private async startAgent(userId: string, phoneNumber: string | null) {
         if (this.runningSockets.has(userId)) {
@@ -48,19 +52,29 @@ class BaileysManager {
             const code = await sock.requestPairingCode(
                 phoneNumber.replace(/[^0-9]/g, '')
             )
+            this.pairingStore.set(userId, code)
             this.onPairingCode?.(userId, code)
+            this.pushToClient(userId, 'pairing-code', { code })
         }
 
         sock.ev.on('connection.update', async (update) => {
             const { connection, lastDisconnect, qr } = update
 
             if (qr) {
+                this.qrStore.set(userId, qr)
                 this.onQRCode?.(userId, qr)
+                this.pushToClient(userId, 'qr', { qr })
             }
 
             switch (connection) {
                 case 'open':
-                    logger.info(`/modules/baileys/main.ts`, `[${userId}] Connected With : ${sock?.user?.name} Lid : ${convertLID(sock?.user?.lid ?? null)}`)
+                    this.qrStore.delete(userId)
+                    this.pairingStore.delete(userId)
+                    this.onConnected?.(userId)
+                    this.pushToClient(userId, 'connected', {
+                        name: sock?.user?.name,
+                    })
+                    logger.info(`/modules/baileys/main.ts`, `[${userId}] Connected With : ${sock?.user?.name} Phone Number : ${String(await sock.signalRepository.lidMapping.getPNForLID(sock.user?.lid ?? ''))?.split('@')[0]?.split(":")[0]}`)
                     updateAgentStatus(userId, 'active')
 
                     if (!phoneNumber) {
@@ -85,8 +99,11 @@ class BaileysManager {
                             ? (lastDisconnect.error as Boom).output?.statusCode
                             : undefined
                         logger.info(`/modules/baileys/main.ts`, `[${userId}] Disconnected : ${lastDisconnect?.error?.message}`)
-
+                        this.qrStore.delete(userId) /* quard for qrstore */
                         this.runningSockets.delete(userId) /* this function is for socket guard while agent is disconnected */
+                        this.pushToClient(userId, 'disconnected', {
+                            reason: (lastDisconnect?.error as Boom)?.output?.statusCode
+                        })
                         switch (disconnected) {
                             case DisconnectReason.loggedOut:
                             case DisconnectReason.forbidden:
@@ -182,6 +199,28 @@ class BaileysManager {
     /** @member getAllSockets - this just getting socket from all agent */
     getAllSockets(): Map<string, WASocket> {
         return this.runningSockets
+    }
+
+    getQR(userId: string): string | null {
+        return this.qrStore.get(userId) ?? null
+    }
+
+    getPairingCode(userId: string): string | null {
+        return this.pairingStore.get(userId) ?? null
+    }
+    setWSClient(userId: string, ws: ServerWebSocket<any>) {
+        this.wsClients.set(userId, ws)
+    }
+
+    removeWSClient(userId: string) {
+        this.wsClients.delete(userId)
+    }
+
+    private pushToClient(userId: string, event: string, data: unknown) {
+        const ws = this.wsClients.get(userId)
+        if (ws && ws.readyState === 1) {
+            ws.send(JSON.stringify({ event, data }))
+        }
     }
 }
 

@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- JUST FOR EXAMPLE -->
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WhatsApp Agent Dashboard</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f5f5f0; color: #1a1a1a; min-height: 100vh; }
+    .container { max-width: 860px; margin: 0 auto; padding: 2rem 1rem; }
+    .top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; }
+    h1 { font-size: 20px; font-weight: 600; }
+    .card { background: #fff; border: 1px solid #e5e5e0; border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
+    .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .badge { font-size: 12px; padding: 3px 10px; border-radius: 6px; font-weight: 500; }
+    .badge-active    { background: #eaf3de; color: #3b6d11; }
+    .badge-pairing   { background: #faeeda; color: #854f0b; }
+    .badge-logout    { background: #fcebeb; color: #a32d2d; }
+    .badge-idle      { background: #e6f1fb; color: #185fa5; }
+    .agent-name  { font-weight: 600; font-size: 15px; flex: 1; }
+    .agent-phone { font-size: 13px; color: #666; margin-top: 4px; }
+    hr { border: none; border-top: 1px solid #f0f0ec; margin: 12px 0; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; margin-bottom: 10px; }
+    input[type=text] {
+      width: 100%; padding: 8px 12px; border: 1px solid #ddd;
+      border-radius: 8px; font-size: 14px; outline: none;
+      transition: border-color 0.15s;
+    }
+    input[type=text]:focus { border-color: #888; }
+    button {
+      padding: 8px 14px; border: 1px solid #ccc; border-radius: 8px;
+      background: #fff; font-size: 13px; cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+      white-space: nowrap;
+    }
+    button:hover { background: #f5f5f0; border-color: #999; }
+    button:active { transform: scale(0.98); }
+    button.danger { color: #a32d2d; border-color: #f09595; }
+    button.danger:hover { background: #fcebeb; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .qr-wrap {
+      display: none; flex-direction: column;
+      align-items: center; gap: 12px; padding: 1rem 0;
+    }
+    .qr-wrap img {
+      width: 180px; height: 180px;
+      border-radius: 8px; border: 1px solid #e5e5e0;
+    }
+    .pairing-code {
+      font-size: 32px; font-weight: 700;
+      letter-spacing: 8px; font-family: monospace; color: #1a1a1a;
+    }
+    .label { font-size: 13px; color: #666; }
+    .log {
+      background: #f5f5f0; border-radius: 8px; padding: 12px;
+      font-size: 12px; font-family: monospace; color: #555;
+      height: 100px; overflow-y: auto;
+    }
+    .log-line { margin-bottom: 4px; }
+    .ws-status { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #666; }
+    .ws-dot { width: 8px; height: 8px; border-radius: 50%; background: #E24B4A; }
+    .ws-dot.on { background: #639922; }
+    .empty { font-size: 13px; color: #999; padding: 0.5rem 0; }
+    .section-label { font-size: 13px; color: #666; margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <div class="top">
+    <h1>WhatsApp agents</h1>
+    <div class="ws-status">
+      <span class="ws-dot" id="wsDot"></span>
+      <span id="wsLabel">WS disconnected</span>
+    </div>
+  </div>
+
+  <!-- Register form -->
+  <div class="card">
+    <div class="section-label">Register agent</div>
+    <div class="form-row">
+      <input type="text" id="inUserId" placeholder="User ID (e.g. user-123)" />
+      <input type="text" id="inPhone" placeholder="Phone number (kosongkan untuk QR)" />
+      <button id="btnRegister">Register</button>
+    </div>
+    <div class="actions">
+      <button id="btnList">↺ Refresh list</button>
+    </div>
+  </div>
+
+  <!-- Agent list -->
+  <div id="agentList"></div>
+
+  <!-- WS Log -->
+  <div class="card" style="margin-top: 1rem;">
+    <div class="section-label">WebSocket log</div>
+    <div class="log" id="wsLog"></div>
+  </div>
+
+</div>
+
+<script>
+  const BASE = 'http://localhost:3010'
+  const agentSockets = {}
+
+  function log(msg) {
+    const el = document.getElementById('wsLog')
+    const line = document.createElement('div')
+    line.className = 'log-line'
+    line.textContent = `${new Date().toLocaleTimeString()}  ${msg}`
+    el.appendChild(line)
+    el.scrollTop = el.scrollHeight
+  }
+
+  function setWSIndicator() {
+    const on = Object.keys(agentSockets).length > 0
+    document.getElementById('wsDot').className = 'ws-dot' + (on ? ' on' : '')
+    document.getElementById('wsLabel').textContent = on
+      ? `WS connected (${Object.keys(agentSockets).length})`
+      : 'WS disconnected'
+  }
+
+  function connectWS(userId) {
+    if (agentSockets[userId]) {
+      log(`[${userId}] already connected`)
+      return
+    }
+
+    const socket = new WebSocket(`ws://localhost:3010/ws/agent/${userId}`)
+    agentSockets[userId] = socket
+
+    socket.onopen = () => {
+      log(`[${userId}] WS connected`)
+      setWSIndicator()
+      updateWsButton(userId, true)
+    }
+
+    socket.onclose = () => {
+      log(`[${userId}] WS closed`)
+      delete agentSockets[userId]
+      setWSIndicator()
+      updateWsButton(userId, false)
+    }
+
+    socket.onerror = () => {
+      log(`[${userId}] WS error`)
+    }
+
+    socket.onmessage = (e) => {
+      const { event, data } = JSON.parse(e.data)
+      log(`[${userId}] ← ${event}`)
+
+      if (event === 'qr') {
+        fetch(`${BASE}/agent/${userId}/qr`)
+          .then(r => r.json())
+          .then(r => {
+            if (!r.data) return
+            const img  = document.getElementById(`qr-img-${userId}`)
+            const wrap = document.getElementById(`qr-wrap-${userId}`)
+            if (img)  img.src = r.data
+            if (wrap) wrap.style.display = 'flex'
+          })
+      }
+
+      if (event === 'pairing-code') {
+        const el   = document.getElementById(`code-${userId}`)
+        const wrap = document.getElementById(`code-wrap-${userId}`)
+        if (el)   el.textContent = data.code
+        if (wrap) wrap.style.display = 'flex'
+      }
+
+      if (event === 'connected') {
+        const qrWrap   = document.getElementById(`qr-wrap-${userId}`)
+        const codeWrap = document.getElementById(`code-wrap-${userId}`)
+        if (qrWrap)   qrWrap.style.display = 'none'
+        if (codeWrap) codeWrap.style.display = 'none'
+        fetchList()
+      }
+
+      if (event === 'disconnected') {
+        fetchList()
+      }
+    }
+  }
+
+  function disconnectWS(userId) {
+    if (agentSockets[userId]) {
+      agentSockets[userId].close()
+      delete agentSockets[userId]
+      setWSIndicator()
+    }
+  }
+
+  function updateWsButton(userId, connected) {
+    const btn = document.getElementById(`ws-btn-${userId}`)
+    if (btn) btn.textContent = connected ? 'Disconnect WS' : 'Connect WS'
+  }
+
+  async function fetchList() {
+    const r = await fetch(`${BASE}/agent/list`).then(r => r.json()).catch(() => null)
+    const list = document.getElementById('agentList')
+    list.innerHTML = ''
+
+    if (!r?.success || r.data.length === 0) {
+      list.innerHTML = '<p class="empty">Belum ada agent.</p>'
+      return
+    }
+
+    r.data.forEach(agent => {
+      let badge = ''
+      if (agent.running) {
+        badge = '<span class="badge badge-active">connected</span>'
+      } else if (agent.status === 'loggedOut') {
+        badge = '<span class="badge badge-logout">logged out</span>'
+      } else {
+        badge = '<span class="badge badge-idle">idle</span>'
+      }
+
+      const div = document.createElement('div')
+      div.className = 'card'
+      div.id = `agent-card-${agent.userId}`
+      div.innerHTML = `
+        <div class="row">
+          <span class="agent-name">${agent.userId}</span>
+          ${badge}
+        </div>
+        <div class="agent-phone">${agent.phoneNumber ?? 'QR mode'}</div>
+        <hr/>
+
+        <div id="qr-wrap-${agent.userId}" class="qr-wrap">
+          <img id="qr-img-${agent.userId}" src="" alt="QR Code" />
+          <span class="label">Scan dengan WhatsApp</span>
+        </div>
+
+        <div id="code-wrap-${agent.userId}" class="qr-wrap">
+          <span class="label">Masukkan kode pairing di WhatsApp</span>
+          <span class="pairing-code" id="code-${agent.userId}">----</span>
+        </div>
+
+        <div class="actions">
+          <button id="ws-btn-${agent.userId}" onclick="handleWS('${agent.userId}')">Connect WS</button>
+          ${agent.status === 'loggedOut'
+            ? `<button onclick="handleReregister('${agent.userId}', '${agent.phoneNumber ?? ''}')">Re-register</button>`
+            : ''}
+          <button class="danger" onclick="handleDelete('${agent.userId}')">Delete</button>
+        </div>
+      `
+      list.appendChild(div)
+
+      // update WS button state kalau sudah connect
+      if (agentSockets[agent.userId]) updateWsButton(agent.userId, true)
+    })
+  }
+
+  function handleWS(userId) {
+    if (agentSockets[userId]) {
+      disconnectWS(userId)
+    } else {
+      connectWS(userId)
+    }
+  }
+
+  async function handleDelete(userId) {
+    disconnectWS(userId)
+    await fetch(`${BASE}/agent/${userId}`, { method: 'DELETE' })
+    log(`[${userId}] deleted`)
+    fetchList()
+  }
+
+  async function handleReregister(userId, phone) {
+    const r = await fetch(`${BASE}/agent/reregister`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, phoneNumber: phone || null })
+    }).then(r => r.json()).catch(() => null)
+    log(`[${userId}] reregister: ${r?.message ?? 'error'}`)
+    fetchList()
+  }
+
+  document.getElementById('btnRegister').onclick = async () => {
+    const userId = document.getElementById('inUserId').value.trim()
+    const phone  = document.getElementById('inPhone').value.trim()
+    if (!userId) { log('User ID tidak boleh kosong'); return }
+
+    const r = await fetch(`${BASE}/agent/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, phoneNumber: phone || undefined })
+    }).then(r => r.json()).catch(() => null)
+
+    log(`register [${userId}]: ${r?.message ?? 'error'}`)
+    if (r?.success) {
+      fetchList()
+      document.getElementById('inUserId').value = ''
+      document.getElementById('inPhone').value  = ''
+    }
+  }
+
+  document.getElementById('btnList').onclick = fetchList
+
+  fetchList()
+</script>
+</body>
+</html>
