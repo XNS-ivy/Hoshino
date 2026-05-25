@@ -11,7 +11,7 @@ export default {
 
         try {
             await groupDb.allow(msg.remoteJid, msg.agentId)
-            await socket.sendMessage(msg.remoteJid, { text: '✅ Group allowed now hoshino can help this group uhe.' }, { quoted: msg.raw })
+            await socket.sendMessage(msg.remoteJid, { text: '✅ Group allowed now ojiisan can help this group uhe.' }, { quoted: msg.raw })
         } catch (err: any) {
             await socket.sendMessage(msg.remoteJid, { text: `❌ ${err.message}` })
         }

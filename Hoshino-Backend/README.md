@@ -6,6 +6,13 @@ To install dependencies:
 bun install
 ```
 
+install node-ytdlp-wrap
+
+```bash
+cd node_modules/node-ytdlp-wrap/lib
+bun run install.js
+```
+
 To run:
 
 ```bash

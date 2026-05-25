@@ -41,3 +41,6 @@ store/
 
 # databases
 databases/
+
+# test files
+test.*
