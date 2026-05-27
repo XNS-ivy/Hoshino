@@ -14,6 +14,15 @@ module.exports = {
       env: {
         NODE_ENV: "production"
       },
+    },
+    {
+      name: "hoshino-dashboard",
+      script: "bunx",
+      args: "serve . -l tcp://10.185.149.106:8080",
+      interpreter: "none",
+      cwd: __dirname,
+      autorestart: true,
+      watch: false,
     }
   ]
 }

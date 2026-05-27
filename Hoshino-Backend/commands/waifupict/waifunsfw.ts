@@ -1,4 +1,5 @@
 import { isGifUrl, fetchBuffer } from '@utils/fetch'
+import { fetchJson } from '@utils/fetch'
 import { gifBufferToMp4 } from '@utils/ffmpeg'
 
 const NEKOBOT_NSFW = [
@@ -31,17 +32,20 @@ export default {
         }
 
         try {
-            const res = await fetch(`https://nekobot.xyz/api/image?type=${category}`)
-            const data = await res.json() as { success: boolean, message: string }
+            const data = await fetchJson<{ success: boolean, message: string }>(
+                `https://nekobot.xyz/api/image?type=${category}`
+            )
 
             if (!data.success) throw new Error('API returned failure')
 
             const imageUrl = data.message
-
+            console.log(imageUrl)
             if (isGifUrl(imageUrl)) {
+                const gifBuffer = await fetchBuffer(imageUrl, 5, false)
+                const mp4Buffer = await gifBufferToMp4(gifBuffer)
                 await socket.sendMessage(
                     msg.remoteJid,
-                    { video: { url: imageUrl }, gifPlayback: true, caption: `✨ Random *${category}*` },
+                    { video: mp4Buffer, gifPlayback: true, caption: `✨ Random *${category}*` },
                     { quoted: msg.raw }
                 )
                 return
