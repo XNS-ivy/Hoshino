@@ -23,7 +23,7 @@ export class ImprovedAuth {
         this.keyDirPath = path.join(this.baseDir, 'keys')
 
         fs.mkdirSync(this.keyDirPath, { recursive: true })
-        this.cache = new NodeCache({ stdTTL: 1800, checkperiod: 600, useClones: false })
+        this.cache = new NodeCache({ stdTTL: 1800, checkperiod: 600, useClones: false, deleteOnExpire: true })
         this.creds = this.loadAuth(this.credsPath) || initAuthCreds()
     }
 

@@ -174,7 +174,14 @@ async function getInfo(url: string): Promise<YtdlpInfo> {
     const { data, err, exitCode } = await getInfoYtdlp(url)
 
     if (exitCode !== 0 || !data) {
-        return await getInfoGalleryDl(url)
+        const isTwitter = /(?:twitter\.com|x\.com)/i.test(url)
+        const isInstagram = /instagram\.com/i.test(url)
+        const isFacebook = /facebook\.com/i.test(url)
+
+        if (isTwitter || isInstagram || isFacebook) {
+            return await getInfoGalleryDl(url)
+        }
+        throw new Error(`yt-dlp info failed: ${err}`)
     }
 
     const ext = (data.ext as string) ?? 'mp4'

@@ -37,7 +37,7 @@ class BaileysManager {
             logger.warn(`/modules/baileys/main.ts`, `[${userId}] Already running`)
             return
         }
-        const groupCache = new NodeCache({ stdTTL: 300, checkperiod: 60 })
+        const groupCache = new NodeCache({ stdTTL: 300, checkperiod: 60, useClones: false, deleteOnExpire: true })
         const auth = new ImprovedAuth(path.resolve(`./auth/${userId}`))
         const { version } = await fetchLatestWaWebVersion()
 
