@@ -2,11 +2,17 @@ import BaileysManager from '@modules/baileys/main'
 import qrcode from 'qrcode-terminal'
 import { server } from './server'
 import command from '@modules/handlers/commands-loader'
+import { initGalleryDlArgs, initYtdlpArgs } from '@utils/ytdlp-gallery-dl'
+
 
 async function main() {
-    await command.init()
-    await BaileysManager.bootAllAgents()
-    server
+    await Promise.all([
+        initYtdlpArgs(),
+        initGalleryDlArgs(),
+        command.init(),
+        BaileysManager.bootAllAgents(),
+        server,
+    ])
     BaileysManager.onPairingCode = (userId, code) => {
         logger.info(`/modules/baileys/main.ts`, `ON TERMINAL Pairing Code For : [${userId}] Pairing code: ${code.split('').join(' ')}`)
     }
