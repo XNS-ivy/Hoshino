@@ -1,5 +1,6 @@
 import fs from 'fs'
 import path from 'path'
+import { convertLID } from './baileys-functions'
 
 export type AgentStatus = 'active' | 'loggedOut'
 
@@ -10,7 +11,8 @@ export interface CommandStatus {
 
 export interface AgentConfig {
     prefix: string
-    commandsEnabled: boolean
+    autodelete: string[]
+    commandBlacklist: string[]
 }
 
 export interface Agent {
@@ -18,6 +20,8 @@ export interface Agent {
     phoneNumber: string | null
     status: AgentStatus
     prefix: string
+    autodelete: string[]
+    commandBlacklist: string[]
     commands: CommandStatus[]
     createdAt: string
 }
@@ -32,12 +36,26 @@ if (!fs.existsSync(FILE)) {
 }
 
 function read(): Agent[] {
-    return JSON.parse(fs.readFileSync(FILE, 'utf-8'))
+    const agents = JSON.parse(fs.readFileSync(FILE, 'utf-8')) as Partial<Agent>[]
+    return agents.map(agent => ({
+        ...agent,
+        autodelete: normalizeLids(agent.autodelete),
+        commandBlacklist: normalizeLids(agent.commandBlacklist),
+        commands: agent.commands ?? [],
+    })) as Agent[]
 }
 
 function write(agents: Agent[]) {
     fs.writeFileSync(FILE + '.tmp', JSON.stringify(agents, null, 2))
     fs.renameSync(FILE + '.tmp', FILE)
+}
+
+function normalizeLids(lids: string[] | undefined): string[] {
+    return [...new Set(
+        (lids ?? [])
+            .map(lid => convertLID(lid))
+            .filter((lid): lid is string => Boolean(lid))
+    )]
 }
 
 export function getAllAgents(): Agent[] {
@@ -60,6 +78,8 @@ export function addAgent(userId: string, phoneNumber: string | null): Agent {
         phoneNumber,
         status: 'active',
         prefix: '.',
+        autodelete: [],
+        commandBlacklist: [],
         commands: [],
         createdAt: new Date().toISOString(),
     }
@@ -160,16 +180,26 @@ export function updateAgentPhone(userId: string, phoneNumber: string) {
 
 export function getAgentConfig(userId: string): AgentConfig | null {
     const agent = getAgent(userId)
-    return agent ? { prefix: agent.prefix, commandsEnabled: true } : null
+    return agent
+        ? {
+            prefix: agent.prefix,
+            autodelete: agent.autodelete,
+            commandBlacklist: agent.commandBlacklist,
+        }
+        : null
 }
 
-export function updateAgentConfig(userId: string, config: Partial<{ prefix: string; commandsEnabled: boolean }>): void {
+export function updateAgentConfig(userId: string, config: Partial<AgentConfig>): void {
     const agents = read()
     const idx = agents.findIndex(a => a.userId === userId)
     if (idx === -1) return
     const agent = agents[idx]
     if (!agent) return
-    if (config.prefix) agent.prefix = config.prefix
+    if (config.prefix !== undefined) agent.prefix = config.prefix
+    if (config.autodelete !== undefined) agent.autodelete = normalizeLids(config.autodelete)
+    if (config.commandBlacklist !== undefined) {
+        agent.commandBlacklist = normalizeLids(config.commandBlacklist)
+    }
     write(agents)
 }
 
@@ -216,6 +246,22 @@ export class ConfigManager {
 
     setPrefix(prefix: string): void {
         updateAgentConfig(this.userId, { prefix })
+    }
+
+    getAutodelete(): string[] {
+        return getAgent(this.userId)?.autodelete ?? []
+    }
+
+    setAutodelete(lids: string[]): void {
+        updateAgentConfig(this.userId, { autodelete: lids })
+    }
+
+    getCommandBlacklist(): string[] {
+        return getAgent(this.userId)?.commandBlacklist ?? []
+    }
+
+    setCommandBlacklist(lids: string[]): void {
+        updateAgentConfig(this.userId, { commandBlacklist: lids })
     }
 
     getCommands(): CommandStatus[] {

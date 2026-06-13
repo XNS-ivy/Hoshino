@@ -23,6 +23,8 @@ declare global {
         phoneNumber: string | null
         status: AgentStatus
         prefix: string
+        autodelete: string[]
+        commandBlacklist: string[]
         commands: CommandStatus[]
         createdAt: string
     }
@@ -74,10 +76,13 @@ declare global {
             cmd: string
             args: string[]
         }
+        shouldDelete: boolean
+        isCommandBlacklisted: boolean
         convertedLid: string | null
         isOwner: boolean
         ownerRole: OwnerRole | null
         isAdmin: boolean
+        isBotAdmin: boolean
         isGroupAllowed: boolean
         agentId: string 
     }

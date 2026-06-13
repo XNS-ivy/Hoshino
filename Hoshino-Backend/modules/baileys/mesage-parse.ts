@@ -69,13 +69,20 @@ export class MessageParse {
         const quoted = quotedMessage
             ? await this.quotedMessageFetch(quotedMessage)
             : null
-        const isOnGroup = remoteJid.endsWith('@g.us') ? (await sock.groupMetadata(remoteJid)).id : false
+        const isOnGroup = remoteJid.endsWith('@g.us') ? remoteJid : false
 
         const agent = getAgent(agentId)
         const prefix = agent?.prefix ?? '.'
+        const convertedLid = lid ? convertLID(lid) : null
+        if (!lid) return null
+
+        const isAutodeleteLid = convertedLid !== null
+            && (agent?.autodelete.includes(convertedLid) ?? false)
+        const isCommandBlacklisted = convertedLid !== null
+            && (agent?.commandBlacklist.includes(convertedLid) ?? false)
         const body: string = textMsg ?? caption ?? ""
         let commandContent: null | { cmd: string; args: string[] } = null
-        if (body?.startsWith(prefix)) {
+        if (!isCommandBlacklisted && body?.startsWith(prefix)) {
             const parts = body
                 .slice(prefix.length)
                 .trim()
@@ -87,8 +94,6 @@ export class MessageParse {
                 args
             }
         }
-        const convertedLid = lid ? convertLID(lid) : null
-        if (!lid) return null
 
         const senderJid = key.participant ?? remoteJid
         const ownerLookup = convertedLid ?? senderJid
@@ -96,17 +101,32 @@ export class MessageParse {
         const isOwner: boolean = ownerRole !== null
 
         let isAdmin = false
+        let isBotAdmin = false
         if (isOnGroup) {
             try {
                 const meta = await sock.groupMetadata(remoteJid)
+                const senderIdentity = normalizeJid(senderJid)
                 const participant = meta.participants.find(
-                    p => p.id === senderJid || p.id === key.participant
+                    p => [p.id, p.lid, p.phoneNumber]
+                        .filter((jid): jid is string => Boolean(jid))
+                        .some(jid => normalizeJid(jid) === senderIdentity)
                 )
                 isAdmin = participant?.admin === 'admin' || participant?.admin === 'superadmin'
+
+                const botJids = [sock.user?.id, sock.user?.lid]
+                    .filter((jid): jid is string => Boolean(jid))
+                    .map(normalizeJid)
+                const botParticipant = meta.participants.find(
+                    p => botJids.includes(normalizeJid(p.id))
+                )
+                isBotAdmin = botParticipant?.admin === 'admin'
+                    || botParticipant?.admin === 'superadmin'
             } catch {
                 isAdmin = false
+                isBotAdmin = false
             }
         }
+        const shouldDelete = isAutodeleteLid && Boolean(isOnGroup) && isBotAdmin
         const isGroupAllowed = isOnGroup
             ? await groupDb.isAllowed(remoteJid, agentId)
             : true
@@ -128,10 +148,13 @@ export class MessageParse {
             raw: msg,
             rawQuoted: quotedMessage ?? null,
             commandContent,
+            shouldDelete,
+            isCommandBlacklisted,
             convertedLid,
             isOwner,
             ownerRole,
             isAdmin,
+            isBotAdmin,
             isGroupAllowed,
             agentId,
         }
@@ -213,10 +236,13 @@ export interface IMessageFetch extends IKeyFetch {
         cmd: string,
         args: Array<string>,
     }
+    shouldDelete: boolean,
+    isCommandBlacklisted: boolean,
     convertedLid: string | null,
     isOwner: boolean,
     ownerRole: OwnerRole | null,
     isAdmin: boolean,
+    isBotAdmin: boolean,
     isGroupAllowed: boolean,
     agentId: string
     // add more type here if needed
@@ -250,4 +276,8 @@ function unwrapMessage(msg: proto.IMessage | undefined | null): proto.IMessage |
         return unwrapMessage(msg.viewOnceMessageV2.message)
 
     return msg
+}
+
+function normalizeJid(jid: string): string {
+    return jid.split(':')[0]?.split('@')[0] ?? jid
 }

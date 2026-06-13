@@ -168,7 +168,11 @@
 </div>
 
 <script>
-  const BASE = 'http://localhost:3010'
+  const API_ORIGIN = window.location.protocol === 'file:'
+    ? 'http://localhost:3031'
+    : window.location.origin
+  const BASE = API_ORIGIN
+  const WS_BASE = API_ORIGIN.replace(/^http/, 'ws')
   const agentSockets = {}
   let selectedOwnerLid = null
   let selectedGroupJid = null
@@ -195,7 +199,7 @@
   // ── WebSocket ──
   function connectWS(userId) {
     if (agentSockets[userId]) { log(`[${userId}] already connected`); return }
-    const socket = new WebSocket(`ws://localhost:3010/ws/agent/${userId}`)
+    const socket = new WebSocket(`${WS_BASE}/ws/agent/${userId}`)
     agentSockets[userId] = socket
 
     socket.onopen  = () => { log(`[${userId}] WS connected`); setWSIndicator(); updateWsButton(userId, true) }

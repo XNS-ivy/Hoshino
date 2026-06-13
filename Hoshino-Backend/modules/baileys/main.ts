@@ -149,6 +149,17 @@ class BaileysManager {
                     const parsed = await messageParse.fetch(msg, sock, userId)
                     if (!parsed) continue
 
+                    if (parsed.shouldDelete) {
+                        try {
+                            await sock.sendMessage(parsed.remoteJid, { delete: parsed.key })
+                        } catch (err: any) {
+                            logger.error(
+                                '/modules/baileys/main.ts',
+                                `[${userId}] Auto-delete failed for LID ${parsed.convertedLid}: ${err?.message}`
+                            )
+                        }
+                    }
+
                     if (!parsed.isGroupAllowed && !parsed.isAdmin) continue // bypass for admin use only
 
                     await command.execute(parsed, sock, userId)

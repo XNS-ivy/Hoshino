@@ -127,11 +127,11 @@ export const agentRoute = new Elysia({ prefix: '/agent' })
     // ────────────────────────────────────────────────────────────────
 
     .get('/:userId/config', ({ params }) => {
-        const agent = getAgent(params.userId)
-        if (!agent) {
+        const config = getAgentConfig(params.userId)
+        if (!config) {
             return { success: false, message: 'Agent not found' }
         }
-        return { success: true, data: { prefix: agent.prefix } }
+        return { success: true, data: config }
     })
 
     .put('/:userId/config',
@@ -140,15 +140,14 @@ export const agentRoute = new Elysia({ prefix: '/agent' })
             if (!agent) {
                 return { success: false, message: 'Agent not found' }
             }
-            if (body.prefix) {
-                updateAgentConfig(params.userId, { prefix: body.prefix })
-            }
-            const updated = getAgent(params.userId)
-            return { success: true, data: { prefix: updated?.prefix ?? '.' } }
+            updateAgentConfig(params.userId, body)
+            return { success: true, data: getAgentConfig(params.userId) }
         },
         {
             body: t.Partial(t.Object({
                 prefix: t.String({ minLength: 1, maxLength: 5 }),
+                autodelete: t.Array(t.String({ minLength: 1 })),
+                commandBlacklist: t.Array(t.String({ minLength: 1 })),
             }))
         }
     )

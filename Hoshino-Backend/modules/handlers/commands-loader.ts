@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from "url"
 import { ownerDb } from '@modules/databases-handler/ownerDB'
 import { updateAgentCommands, getAgent } from '@modules/baileys/agent'
 
-// push command map name ke agent dengan setting default enable
+// push command map name to agent with default setting enable
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -29,6 +29,17 @@ export class CommandHandling {
         if (!command) return
 
         const agent = getAgent(agentId)
+        if (
+            msg.convertedLid
+            && agent?.commandBlacklist.includes(msg.convertedLid)
+        ) {
+            logger.warn(
+                '/modules/handlers/commands-loader.ts',
+                `[${agentId}] Command from blacklisted LID ${msg.convertedLid} ignored`
+            )
+            return
+        }
+
         const commandConfig = agent?.commands.find(c => c.name === cmd)
         if (commandConfig?.status === 'disabled') {
             logger.warn('/modules/handlers/commands-loader.ts', `[${agentId}] Command "${cmd}" is disabled`)
@@ -39,14 +50,7 @@ export class CommandHandling {
 
         let groupRole: 'admin' | 'member' | 'private' = 'private'
         if (msg.isOnGroup) {
-            try {
-                const participants = (await socket.groupMetadata(msg.remoteJid)).participants
-                const user = participants.find(p => p.id === msg.lid)
-                groupRole = user?.admin ? 'admin' : 'member'
-            } catch (err: any) {
-                logger.warn('/modules/handlers/commands-loader.ts', `Failed to get group metadata: ${err?.message}`)
-                groupRole = 'member'
-            }
+            groupRole = msg.isAdmin ? 'admin' : 'member'
         }
 
         const whoAMI: ICTX['whoAMI'] = { groupRole, ownerRole: ownerResult }

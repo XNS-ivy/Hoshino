@@ -1,7 +1,7 @@
 import { groupDb } from "@modules/databases-handler/groupDB"
 
 export default {
-    name: 'dissallow',
+    name: 'disallow',
     usage: 'disallow',
     category: 'admin',
     inGroup: true,
@@ -11,7 +11,7 @@ export default {
 
         try {
             await groupDb.disallow(msg.remoteJid, msg.agentId)
-            await socket.sendMessage(msg.remoteJid, { text: '❌ group dissalowance, sorry ojiisan gonna go. ' }, { quoted: msg.raw })
+            await socket.sendMessage(msg.remoteJid, { text: '❌ Group disalowance, sorry ojiisan gonna go. ' }, { quoted: msg.raw })
         } catch (err: any) {
             await socket.sendMessage(msg.remoteJid, { text: `❌ ${err.message}` })
         }
