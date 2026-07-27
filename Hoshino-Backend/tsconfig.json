@@ -2,7 +2,7 @@
   "compilerOptions": {
     // Environment setup & latest features
     "typeRoots": [
-      "./types",
+      "./src/types",
       "./node_modules/@types"
     ],
     "lib": [
@@ -21,33 +21,26 @@
     // Best practices
     "strict": true,
     "skipLibCheck": true,
-    "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
-    // Some stricter flags
+    // Some stricter flags (disabled by default)`
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false,
-    // project modules path
     "types": [
       "bun"
     ],
     "paths": {
       "@modules/*": [
-        "./modules/*"
+        "./src/modules/*"
+      ],
+      "@whatsappsocket": [
+        "./src/modules/baileys/index.ts"
       ],
       "@utils/*": [
-        "./utils/*"
-      ],
-      "@routes/*": [
-        "./routes/*"
-      ],
+        "./src/utils/*"
+      ]
     }
-  },
-  "include": [
-    "./**/*",
-    "./global.d.ts"
-  ]
+  }
 }

@@ -1,0 +1,36 @@
+{
+  "name": "hoshino-backend",
+  "module": "index.ts",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch ./src/index.ts",
+    "build": "bun build ./src/index.ts --compile --minify --outfile ./dist/hoshino",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.5",
+    "@types/bun": "latest",
+    "@types/node-cache": "^4.2.5",
+    "@types/pino": "^7.0.5",
+    "@types/qrcode": "^1.5.6",
+    "@types/qrcode-terminal": "^0.12.2"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@elysiajs/cors": "^1.4.2",
+    "@elysiajs/websocket": "^0.2.8",
+    "@hapi/boom": "^10.0.1",
+    "baileys": "^7.0.0-rc13",
+    "elysia": "^1.4.29",
+    "jimp": "^1.6.1",
+    "node-cache": "^5.1.2",
+    "pino": "^10.3.1",
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0"
+  }
+}
