@@ -24,7 +24,6 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
-    // Some stricter flags (disabled by default)`
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false,
@@ -34,6 +33,9 @@
     "paths": {
       "@modules/*": [
         "./src/modules/*"
+      ],
+      "@routes/*": [
+        "./src/routes/*"
       ],
       "@whatsappsocket": [
         "./src/modules/baileys/index.ts"

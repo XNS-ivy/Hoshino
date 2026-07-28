@@ -20,4 +20,5 @@ export interface Agent {
 	commandBlacklist: string[]
 	commands: CommandStatus[]
 	createdAt: string
+	isFromTerminal: boolean
 }

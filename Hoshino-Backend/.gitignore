@@ -44,3 +44,6 @@ databases/
 
 # test files
 test.*
+
+# agents files
+.agents/

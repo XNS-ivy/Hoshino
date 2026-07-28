@@ -1,6 +1,6 @@
 import path from "node:path"
 import type { WASocket } from "baileys"
-import { Browsers, fetchLatestWaWebVersion, makeWASocket } from "baileys"
+import { fetchLatestWaWebVersion, makeWASocket } from "baileys"
 import type { ServerWebSocket } from "bun"
 import NodeCache from "node-cache"
 import { pino } from "pino"
@@ -13,22 +13,29 @@ import { handlePairingCode } from "./handlers/pairing-handler"
 
 export class BaileysManager {
 	private runningSockets = new Map<string, WASocket>()
+	private agentModes = new Map<string, "pairing-code" | "qr">()
 	private qrStore = new Map<string, string>()
 	private pairingStore = new Map<string, string>()
 	private wsClients = new Map<string, ServerWebSocket<unknown>>()
 
-	onPairingCode?: (userId: string, code: string) => void
-	onQRCode?: (userId: string, qr: string) => void
+	onPairingCode?: (
+		userId: string,
+		code: string,
+		isFromTerminal: boolean,
+	) => void
+	onQRCode?: (userId: string, qr: string, isFromTerminal: boolean) => void
 	onConnected?: (userId: string) => void
 
 	/**
-	 * Starts a Baileys WhatsApp socket agent.
+	 * Starts a Baileys WhatsApp socket agent with clean socket destruction.
 	 */
 	async startAgent(userId: string, phoneNumber: string | null): Promise<void> {
-		if (this.runningSockets.has(userId)) {
-			logger.warn(`[${userId}] Already running`)
-			return
-		}
+		// Track active registration mode explicitly
+		const mode: "pairing-code" | "qr" = phoneNumber ? "pairing-code" : "qr"
+		this.agentModes.set(userId, mode)
+
+		// If socket exists, cleanly remove all event listeners and close socket
+		this.removeRunningSocket(userId)
 
 		const groupCache = new NodeCache({
 			stdTTL: 300,
@@ -39,10 +46,14 @@ export class BaileysManager {
 		const auth = new ImprovedAuth(path.resolve(`./auth/${userId}`))
 		const { version } = await fetchLatestWaWebVersion()
 
+		logger.info(
+			`[${userId}] Starting agent socket (mode: ${mode}, phone: ${phoneNumber ?? "none"}, creds.registered: ${auth.state.creds.registered})`,
+		)
+
 		const sock = makeWASocket({
 			version,
 			auth: auth.state,
-			browser: Browsers.appropriate("Chrome"),
+			browser: ["Ubuntu", "Chrome", "20.0.04"],
 			logger: pino({ level: "silent" }),
 			printQRInTerminal: false,
 			cachedGroupMetadata: async (jid) => groupCache.get(jid) ?? undefined,
@@ -59,6 +70,10 @@ export class BaileysManager {
 	}
 
 	// ── State & Store Helper Methods ──────────────────────────────────────────
+
+	getAgentMode(userId: string): "pairing-code" | "qr" {
+		return this.agentModes.get(userId) ?? "qr"
+	}
 
 	getRunningAgents(): string[] {
 		return [...this.runningSockets.keys()]
@@ -84,6 +99,10 @@ export class BaileysManager {
 		this.qrStore.set(userId, qr)
 	}
 
+	clearQR(userId: string): void {
+		this.qrStore.delete(userId)
+	}
+
 	getPairingCode(userId: string): string | null {
 		return this.pairingStore.get(userId) ?? null
 	}
@@ -92,12 +111,28 @@ export class BaileysManager {
 		this.pairingStore.set(userId, code)
 	}
 
+	clearPairingCode(userId: string): void {
+		this.pairingStore.delete(userId)
+	}
+
 	clearConnectionInfo(userId: string): void {
 		this.qrStore.delete(userId)
 		this.pairingStore.delete(userId)
 	}
 
 	removeRunningSocket(userId: string): void {
+		const sock = this.runningSockets.get(userId)
+		if (sock) {
+			try {
+				// Remove ALL listeners so creds.update doesn't write old creds on teardown
+				sock.ev.removeAllListeners("connection.update")
+				sock.ev.removeAllListeners("creds.update")
+				sock.ws?.removeAllListeners()
+				sock.end(undefined)
+			} catch {
+				// Ignore cleanup error
+			}
+		}
 		this.runningSockets.delete(userId)
 	}
 

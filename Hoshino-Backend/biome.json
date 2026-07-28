@@ -14,7 +14,8 @@
 			"!node_modules",
 			"!**/*.json",
 			"!databases",
-			"!docs"
+			"!docs",
+			"!*.html"
 		]
 	},
 	"formatter": {

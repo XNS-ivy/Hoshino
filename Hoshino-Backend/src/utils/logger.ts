@@ -324,6 +324,20 @@ export class Logger {
 		})
 
 		process.on("unhandledRejection", (reason: unknown) => {
+			const msg = reason instanceof Error ? reason.message : String(reason)
+			if (
+				msg.includes("Connection Closed") ||
+				msg.includes("Stream Errored") ||
+				msg.includes("Connection Terminated")
+			) {
+				this.log(
+					"process/unhandledRejection",
+					`Baileys socket disconnect: ${msg}`,
+					"warn",
+				)
+				return
+			}
+
 			const err =
 				reason instanceof Error
 					? reason
