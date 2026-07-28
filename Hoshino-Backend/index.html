@@ -380,11 +380,11 @@
         <div class="actions">
           <button type="button" id="ws-btn-${agent.userId}" onclick="handleWS('${agent.userId}')">Connect WS</button>
           <button type="button" onclick="handleRestart('${agent.userId}')">Restart</button>
-          ${agent.running ? `<button type="button" class="danger" onclick="handleLogout('${agent.userId}')">Logout</button>` : ''}
-          ${agent.status === 'loggedOut'
-            ? `<button type="button" onclick="handleReregister('${agent.userId}', 'pairing-code', '${agent.phoneNumber ?? ''}')">Re-register (Pairing Code)</button>
+          ${agent.status !== 'loggedOut'
+            ? `<button type="button" class="danger" onclick="handleLogout('${agent.userId}')">Logout</button>`
+            : `<button type="button" onclick="handleReregister('${agent.userId}', 'pairing-code', '${agent.phoneNumber ?? ''}')">Re-register (Pairing Code)</button>
                <button type="button" onclick="handleReregister('${agent.userId}', 'qr')">Re-register (QR Scan)</button>`
-            : ''}
+          }
           <button type="button" class="danger" onclick="handleDelete('${agent.userId}')">Delete</button>
         </div>
       `
@@ -401,7 +401,7 @@
   }
 
   async function handleLogout(userId) {
-    if (!confirm(`Logout agent ${userId} from WhatsApp?`)) return
+    log(`Logging out agent [${userId}]...`)
     disconnectWS(userId)
     const r = await fetch(`${BASE}/agent/${userId}/logout`, { method: 'POST' }).then(r => r.json()).catch(() => null)
     log(`[${userId}] logout: ${r?.message ?? 'error'}`)
@@ -409,10 +409,10 @@
   }
 
   async function handleDelete(userId) {
-    if (!confirm(`Delete agent ${userId}?`)) return
+    log(`Deleting agent [${userId}]...`)
     disconnectWS(userId)
-    await fetch(`${BASE}/agent/${userId}`, { method: 'DELETE' })
-    log(`[${userId}] deleted`)
+    const r = await fetch(`${BASE}/agent/${userId}`, { method: 'DELETE' }).then(r => r.json()).catch(() => null)
+    log(`[${userId}] delete: ${r?.message ?? 'deleted'}`)
     fetchList()
   }
 
@@ -420,19 +420,24 @@
     let targetPhone = phone
     if (method === 'qr') {
       targetPhone = null
-    } else if (method === 'pairing-code' && !targetPhone) {
-      targetPhone = prompt(`Masukkan nomor HP untuk agent ${userId}:`, '628...')
-      if (!targetPhone) return
+    } else if (method === 'pairing-code') {
+      const defaultVal = (phone && phone !== 'null' && phone !== 'QR mode') ? phone : ''
+      targetPhone = prompt(`Masukkan nomor HP untuk agent ${userId}:`, defaultVal)
+      if (!targetPhone || !targetPhone.trim()) return
+      targetPhone = targetPhone.trim()
     }
 
     log(`Re-registering [${userId}] via ${method}...`)
-    connectWS(userId)
     const r = await fetch(`${BASE}/agent/reregister`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, method, phoneNumber: targetPhone })
     }).then(r => r.json()).catch(() => null)
     log(`[${userId}] reregister: ${r?.message ?? 'error'}`)
+    if (r?.success) {
+      disconnectWS(userId)
+      connectWS(userId)
+    }
     fetchList()
   }
 
@@ -702,17 +707,19 @@
     const userId = document.getElementById('inUserId').value.trim()
     const phone  = document.getElementById('inPhone').value.trim()
     if (!userId) { log('User ID tidak boleh kosong'); return }
-    connectWS(userId)
     const r = await fetch(`${BASE}/agent/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, phoneNumber: phone || undefined })
     }).then(r => r.json()).catch(() => null)
     log(`register [${userId}]: ${r?.message ?? 'error'}`)
-    fetchList()
     if (r?.success) {
+      connectWS(userId)
+      fetchList()
       document.getElementById('inUserId').value = ''
       document.getElementById('inPhone').value  = ''
+    } else {
+      fetchList()
     }
   }
 

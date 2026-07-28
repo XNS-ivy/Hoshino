@@ -1,15 +1,14 @@
 import {
-	cleanAgentAuth,
 	deleteAgent,
 	getAgent,
 	getAgentCommands,
 	getAgentConfig,
 	getAllAgents,
+	logoutAgent,
 	registerAgent,
 	reRegisterAgent,
 	updateAgentConfig,
 	updateAgentPhone,
-	updateAgentStatus,
 	updateCommandStatus,
 } from "@modules/baileys/agent"
 import baileysManager from "@modules/baileys/socket"
@@ -69,7 +68,7 @@ export const agentRoute = new Elysia({ prefix: "/agent" })
 		{
 			body: t.Object({
 				userId: t.String(),
-				phoneNumber: t.Nullable(t.Optional(t.String())),
+				phoneNumber: t.Optional(t.Nullable(t.String())),
 				isFromTerminal: t.Optional(t.Boolean()),
 			}),
 		},
@@ -121,7 +120,7 @@ export const agentRoute = new Elysia({ prefix: "/agent" })
 		{
 			body: t.Object({
 				userId: t.String(),
-				phoneNumber: t.Nullable(t.Optional(t.String())),
+				phoneNumber: t.Optional(t.Nullable(t.String())),
 				method: t.Optional(
 					t.Union([t.Literal("pairing-code"), t.Literal("qr")]),
 				),
@@ -157,16 +156,7 @@ export const agentRoute = new Elysia({ prefix: "/agent" })
 		const agent = getAgent(params.userId)
 		if (!agent) return { success: false, message: "Agent not found" }
 
-		const sock = baileysManager.getSocket(params.userId)
-		if (!sock) {
-			return { success: false, message: "Agent is not currently connected" }
-		}
-
-		await sock.logout()
-		sock.end(undefined)
-		baileysManager.removeRunningSocket(params.userId)
-		cleanAgentAuth(params.userId)
-		updateAgentStatus(params.userId, "loggedOut")
+		await logoutAgent(params.userId)
 
 		return {
 			success: true,

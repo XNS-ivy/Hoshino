@@ -120,6 +120,23 @@ export class BaileysManager {
 		this.pairingStore.delete(userId)
 	}
 
+	async logoutAgent(userId: string): Promise<void> {
+		const sock = this.runningSockets.get(userId)
+		if (sock) {
+			try {
+				void sock.logout().catch(() => null)
+			} catch {
+				// Ignore logout error
+			}
+			try {
+				sock.end(undefined)
+			} catch {
+				// Ignore end error
+			}
+		}
+		this.removeRunningSocket(userId)
+	}
+
 	removeRunningSocket(userId: string): void {
 		const sock = this.runningSockets.get(userId)
 		if (sock) {

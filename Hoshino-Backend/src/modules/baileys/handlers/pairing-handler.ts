@@ -13,27 +13,10 @@ export async function handlePairingCode(
 	auth: ImprovedAuth,
 	manager: BaileysManager,
 ): Promise<void> {
-	// Guard clause: Mode check
-	if (manager.getAgentMode(userId) !== "pairing-code") {
-		logger.info(
-			`[${userId}] Skipping pairing code request: agent is in QR mode`,
-		)
-		return
-	}
-
-	// Guard clauses: skip if already registered or phone number is absent
-	if (auth.state.creds.registered) {
-		logger.info(
-			`[${userId}] Skipping pairing code request: creds already registered`,
-		)
-		return
-	}
-	if (!phoneNumber) {
-		logger.info(
-			`[${userId}] Skipping pairing code request: no phone number provided`,
-		)
-		return
-	}
+	// Guard clauses: silent return if already registered, not in pairing-code mode, or missing phone number
+	if (auth.state.creds.registered) return
+	if (manager.getAgentMode(userId) !== "pairing-code") return
+	if (!phoneNumber) return
 
 	logger.info(
 		`[${userId}] Requesting pairing code for phone: ${phoneNumber}...`,

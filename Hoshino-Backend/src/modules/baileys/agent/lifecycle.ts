@@ -53,17 +53,14 @@ export class AgentLifecycle {
 		await baileysManager.startAgent(userId, phoneNumber)
 	}
 
+	async logout(userId: string): Promise<void> {
+		await baileysManager.logoutAgent(userId)
+		agentStore.cleanAuth(userId)
+		agentStore.updateStatus(userId, "loggedOut")
+	}
+
 	async delete(userId: string): Promise<void> {
-		const sock = baileysManager.getSocket(userId)
-		if (sock) {
-			try {
-				await sock.logout()
-				sock.end(undefined)
-			} catch {
-				// Ignore logout socket error on delete
-			}
-			baileysManager.removeRunningSocket(userId)
-		}
+		await baileysManager.logoutAgent(userId)
 		agentStore.remove(userId)
 		agentStore.cleanAuth(userId)
 	}
@@ -85,4 +82,5 @@ export const reRegisterAgent = (
 	phoneNumber: string | null,
 	isFromTerminal = false,
 ) => agentLifecycle.reRegister(userId, phoneNumber, isFromTerminal)
+export const logoutAgent = (userId: string) => agentLifecycle.logout(userId)
 export const deleteAgent = (userId: string) => agentLifecycle.delete(userId)
