@@ -80,26 +80,29 @@ export const agentRoute = new Elysia({ prefix: "/agent" })
 			if (!agent) {
 				return { success: false, message: "Agent not found" }
 			}
-			if (agent.status !== "loggedOut") {
-				return { success: false, message: "Agent is not logged out" }
-			}
 
+			// Determine method from body, or fallback to current state
 			const method =
 				body.method ??
 				(body.phoneNumber || agent.phoneNumber ? "pairing-code" : "qr")
 
 			let finalPhone: string | null = null
+
 			if (method === "pairing-code") {
-				finalPhone = body.phoneNumber || agent.phoneNumber
+				// Prioritize the phone number provided in the request body
+				finalPhone = body.phoneNumber ? body.phoneNumber.trim() : (agent.phoneNumber || null)
+
 				if (!finalPhone) {
 					return {
 						success: false,
 						message:
-							"Phone number is required for pairing code. Specify phoneNumber or switch method to qr.",
+							"Phone number is required for pairing code mode. Please specify 'phoneNumber' in the request body.",
 					}
 				}
+				// Force update the agent's phone number in the database immediately
 				updateAgentPhone(body.userId, finalPhone)
-			} else {
+			} else if (method === "qr") {
+				// In QR mode, explicitly remove the phone number from the database
 				finalPhone = null
 				updateAgentPhone(body.userId, null)
 			}
@@ -113,8 +116,8 @@ export const agentRoute = new Elysia({ prefix: "/agent" })
 				phoneNumber: finalPhone,
 				message:
 					method === "pairing-code"
-						? `Agent re-registered via pairing code (${finalPhone})`
-						: "Agent re-registered via QR code scan",
+						? `Agent reconnected via pairing code (${finalPhone})`
+						: "Agent reconnected via QR code scan",
 			}
 		},
 		{
@@ -136,7 +139,7 @@ export const agentRoute = new Elysia({ prefix: "/agent" })
 		if (agent.status === "loggedOut") {
 			return {
 				success: false,
-				message: "Agent is logged out. Please re-register instead.",
+				message: "Agent is logged out. Please reconnect instead.",
 			}
 		}
 
@@ -303,6 +306,8 @@ export const agentRoute = new Elysia({ prefix: "/agent" })
 			data: {
 				...agent,
 				running: baileysManager.getAgentStatus(params.userId),
+				hasQR: !!baileysManager.getQR(params.userId),
+				hasPairingCode: !!baileysManager.getPairingCode(params.userId),
 			},
 		}
 	})
@@ -356,6 +361,8 @@ export const agentRoute = new Elysia({ prefix: "/agent" })
 			data: agents.map((a) => ({
 				...a,
 				running: baileysManager.getAgentStatus(a.userId),
+				hasQR: !!baileysManager.getQR(a.userId),
+				hasPairingCode: !!baileysManager.getPairingCode(a.userId),
 			})),
 		}
 	})

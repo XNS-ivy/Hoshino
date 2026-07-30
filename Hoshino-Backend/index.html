@@ -98,7 +98,7 @@
   <div class="card">
     <div class="section-label">Register Agent</div>
     <div class="form-row col3">
-      <input type="text" id="inUserId" placeholder="User ID (e.g. agent-ney)" />
+      <input type="text" id="inUserId" placeholder="User ID (e.g. agent-1)" />
       <input type="text" id="inPhone" placeholder="Phone (kosongkan untuk QR)" />
       <button type="button" class="primary" id="btnRegister">Register</button>
     </div>
@@ -380,10 +380,11 @@
         <div class="actions">
           <button type="button" id="ws-btn-${agent.userId}" onclick="handleWS('${agent.userId}')">Connect WS</button>
           <button type="button" onclick="handleRestart('${agent.userId}')">Restart</button>
+          <button type="button" onclick="handleReregister('${agent.userId}', 'pairing-code', '${agent.phoneNumber ?? ''}')">Reconnect (Pairing Code)</button>
+          <button type="button" onclick="handleReregister('${agent.userId}', 'qr')">Reconnect (QR Scan)</button>
           ${agent.status !== 'loggedOut'
             ? `<button type="button" class="danger" onclick="handleLogout('${agent.userId}')">Logout</button>`
-            : `<button type="button" onclick="handleReregister('${agent.userId}', 'pairing-code', '${agent.phoneNumber ?? ''}')">Re-register (Pairing Code)</button>
-               <button type="button" onclick="handleReregister('${agent.userId}', 'qr')">Re-register (QR Scan)</button>`
+            : ''
           }
           <button type="button" class="danger" onclick="handleDelete('${agent.userId}')">Delete</button>
         </div>
@@ -422,18 +423,21 @@
       targetPhone = null
     } else if (method === 'pairing-code') {
       const defaultVal = (phone && phone !== 'null' && phone !== 'QR mode') ? phone : ''
-      targetPhone = prompt(`Masukkan nomor HP untuk agent ${userId}:`, defaultVal)
-      if (!targetPhone || !targetPhone.trim()) return
+      targetPhone = prompt(`Masukkan nomor HP untuk agent ${userId} (diperlukan untuk Pairing Code):`, defaultVal)
+      if (targetPhone === null || !targetPhone.trim()) {
+        alert("Nomor HP wajib diisi untuk menggunakan Pairing Code!")
+        return
+      }
       targetPhone = targetPhone.trim()
     }
 
-    log(`Re-registering [${userId}] via ${method}...`)
+    log(`Reconnecting [${userId}] via ${method}...`)
     const r = await fetch(`${BASE}/agent/reregister`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, method, phoneNumber: targetPhone })
     }).then(r => r.json()).catch(() => null)
-    log(`[${userId}] reregister: ${r?.message ?? 'error'}`)
+    log(`[${userId}] reconnect: ${r?.message ?? 'error'}`)
     if (r?.success) {
       disconnectWS(userId)
       connectWS(userId)
