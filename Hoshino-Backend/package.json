@@ -19,13 +19,13 @@
     "@types/qrcode-terminal": "^0.12.2"
   },
   "peerDependencies": {
-    "typescript": "^5"
+    "typescript": "^5.9.3"
   },
   "dependencies": {
     "@elysiajs/cors": "^1.4.2",
     "@elysiajs/websocket": "^0.2.8",
     "@hapi/boom": "^10.0.1",
-    "baileys": "^7.0.0-rc13",
+    "baileys": "^7.0.0-rc14",
     "elysia": "^1.4.29",
     "jimp": "^1.6.1",
     "node-cache": "^5.1.2",
