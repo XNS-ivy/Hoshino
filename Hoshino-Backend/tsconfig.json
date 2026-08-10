@@ -37,9 +37,6 @@
       "@routes/*": [
         "./src/routes/*"
       ],
-      "@whatsappsocket": [
-        "./src/modules/baileys/index.ts"
-      ],
       "@utils/*": [
         "./src/utils/*"
       ]
