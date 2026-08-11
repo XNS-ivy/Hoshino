@@ -328,11 +328,15 @@ export class Logger {
 			if (
 				msg.includes("Connection Closed") ||
 				msg.includes("Stream Errored") ||
-				msg.includes("Connection Terminated")
+				msg.includes("Connection Terminated") ||
+				msg.includes("Cancelled") ||
+				msg.includes("Timed Out") ||
+				msg.includes("QR refs attempts ended") ||
+				msg.includes("rate-overlimit")
 			) {
 				this.log(
 					"process/unhandledRejection",
-					`Baileys socket disconnect: ${msg}`,
+					`Baileys background event: ${msg}`,
 					"warn",
 				)
 				return

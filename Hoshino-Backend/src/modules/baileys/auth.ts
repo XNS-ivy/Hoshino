@@ -260,9 +260,10 @@ export class PostgresAuth {
 
 			if (missingIds.length > 0) {
 				try {
+					const pgArrayStr = `{${missingIds.map((id) => `"${id.replace(/"/g, '\\"')}"`).join(",")}}`
 					const rows = await sql`
 						SELECT key_id, value FROM auth.keys
-						WHERE agent_id = ${this.agentId} AND key_id = ANY(${missingIds})
+						WHERE agent_id = ${this.agentId} AND key_id = ANY(${pgArrayStr}::text[])
 					`
 
 					for (const row of rows) {

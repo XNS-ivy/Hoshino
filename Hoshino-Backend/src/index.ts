@@ -1,9 +1,13 @@
+import { cors } from "@elysiajs/cors"
+import { socketManager } from "@modules/baileys/socket"
+import { agentRoutes } from "@routes/agents"
 import { Elysia } from "elysia"
 import "./utils/logger"
-import { socketManager } from "./modules/baileys/socket"
 
 const app = new Elysia()
+	.use(cors())
 	.get("/", () => ({ status: "online", service: "Hoshino Backend" }))
+	.use(agentRoutes)
 	.listen(3000)
 
 // Initialize database schema on startup
@@ -12,7 +16,7 @@ socketManager
 	.then(() => {
 		logger.system(
 			"/index.ts",
-			`Hoshino Backend running at ${app.server?.hostname}:${app.server?.port}`,
+			`Hoshino Backend running at http://${app.server?.hostname}:${app.server?.port}`,
 		)
 	})
 	.catch((err) => {

@@ -43,9 +43,21 @@ export async function initAuthDatabase(): Promise<void> {
 		// 4. Create index for fast key queries per agent
 		await sql`CREATE INDEX IF NOT EXISTS idx_auth_keys_agent_id ON auth.keys(agent_id);`
 
+		// 5. Create public.agents metadata table
+		await sql`
+			CREATE TABLE IF NOT EXISTS public.agents (
+				id VARCHAR(255) PRIMARY KEY,
+				name VARCHAR(255) NOT NULL,
+				phone_number VARCHAR(50),
+				status VARCHAR(50) DEFAULT 'disconnected',
+				created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+				updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+			);
+		`
+
 		logger.system(
 			"/utils/db.ts",
-			"PostgreSQL auth schema and tables initialized successfully",
+			"PostgreSQL auth schema, keys, and agents tables initialized successfully",
 		)
 	} catch (error) {
 		logger.error("/utils/db.ts", `Failed to initialize auth schema: ${error}`)
