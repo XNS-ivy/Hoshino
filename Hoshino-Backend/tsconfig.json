@@ -31,6 +31,9 @@
       "bun"
     ],
     "paths": {
+      "@customTypes/*": [
+        "./src/types/*"
+      ],
       "@services/*": [
         "./src/services/*"
       ],

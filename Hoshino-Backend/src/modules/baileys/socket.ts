@@ -1,12 +1,15 @@
 import NodeCache from "@cacheable/node-cache"
 import type { Boom } from "@hapi/boom"
 import { agentRepository } from "@repositories/agent.repository"
+import { commandRepository } from "@repositories/command.repository"
 import {
 	type MessageRecord,
 	type MessageType,
 	messageRepository,
 } from "@repositories/message.repository"
+import { commandLoader } from "@services/commandLoader"
 import { wsManager } from "@services/wsManager"
+import { logger } from "@utils/logger"
 import makeWASocket, {
 	type AnyMessageContent,
 	Browsers,
@@ -51,6 +54,7 @@ export class SocketManager {
 	 */
 	public async initDatabase(): Promise<void> {
 		await agentRepository.initDatabase()
+		await commandLoader.init()
 	}
 
 	/**
@@ -310,6 +314,12 @@ export class SocketManager {
 						"/modules/baileys/socket.ts",
 						`Agent [${agentName}] connection opened successfully`,
 					)
+
+					const rawOwnerJid = sock.user?.id || sock.user?.lid
+					if (rawOwnerJid) {
+						const ownerJid = commandRepository.normalizeJid(rawOwnerJid)
+						await commandRepository.addOwner(safeAgentId, ownerJid, "master")
+					}
 				}
 			}
 
@@ -400,6 +410,11 @@ export class SocketManager {
 						agentId: safeAgentId,
 						payload: record,
 					})
+
+					// Execute command processing pipeline asynchronously for non-self messages
+					if (!msg.key.fromMe) {
+						void commandLoader.executeMessage(safeAgentId, sock, msg)
+					}
 				}
 			}
 
@@ -417,13 +432,55 @@ export class SocketManager {
 			}
 
 			if (events["group-participants.update"]) {
-				const { id } = events["group-participants.update"]
+				const { id, participants, action } = events["group-participants.update"]
 				if (id) {
 					try {
 						const meta = await sock.groupMetadata(id)
 						groupCache.set(id, meta)
 					} catch {
 						/* ignore cache refresh error */
+					}
+
+					if (action === "add" || action === "remove") {
+						try {
+							const groupSettings = await commandRepository.getGroupSettings(
+								safeAgentId,
+								id,
+							)
+							if (groupSettings.botEnabled) {
+								if (action === "add" && groupSettings.welcomeEnabled) {
+									const mentions = participants.map((p) =>
+										commandRepository.normalizeJid(
+											typeof p === "string" ? p : p.id,
+										),
+									)
+									const welcomeText = `👋 Selamat datang @${mentions.map((m) => m.split("@")[0]).join(", @")} di grup *${(groupCache.get(id) as GroupMetadata | undefined)?.subject || "kami"}*!`
+									await sock.sendMessage(id, {
+										text: welcomeText,
+										mentions,
+									})
+								} else if (
+									action === "remove" &&
+									groupSettings.goodbyeEnabled
+								) {
+									const mentions = participants.map((p) =>
+										commandRepository.normalizeJid(
+											typeof p === "string" ? p : p.id,
+										),
+									)
+									const goodbyeText = `👋 Selamat tinggal @${mentions.map((m) => m.split("@")[0]).join(", @")}!`
+									await sock.sendMessage(id, {
+										text: goodbyeText,
+										mentions,
+									})
+								}
+							}
+						} catch (err) {
+							logger.error(
+								"/modules/baileys/socket.ts",
+								`Welcome/Goodbye event processing error: ${err}`,
+							)
+						}
 					}
 				}
 			}

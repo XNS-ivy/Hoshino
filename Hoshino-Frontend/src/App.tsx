@@ -13,6 +13,7 @@ import {
 	QrCode,
 	RefreshCw,
 	Server,
+	Settings,
 	Smartphone,
 	Trash2,
 	Wifi,
@@ -20,6 +21,7 @@ import {
 	X,
 } from "lucide-react"
 import { QRCodeSVG } from "qrcode.react"
+import { AgentSettingsModal } from "./components/AgentSettingsModal"
 import { ChatConsoleModal } from "./components/ChatConsoleModal"
 import type { Agent, ApiResponse } from "./types"
 
@@ -38,6 +40,9 @@ export function App() {
 
 	// Active chat console modal state
 	const [activeChatAgent, setActiveChatAgent] = useState<Agent | null>(null)
+
+	// Settings modal state
+	const [settingsAgent, setSettingsAgent] = useState<Agent | null>(null)
 
 	// Agent deletion modal state
 	const [agentToDelete, setAgentToDelete] = useState<Agent | null>(null)
@@ -482,9 +487,10 @@ export function App() {
 									display: "flex",
 									alignItems: "center",
 									justifyContent: "space-between",
-									gap: "10px",
+									gap: "8px",
 									borderTop: "1px solid var(--border-color)",
 									paddingTop: "14px",
+									flexWrap: "wrap",
 								}}
 							>
 								{agent.status === "connected" && (
@@ -492,18 +498,28 @@ export function App() {
 										type="button"
 										onClick={() => setActiveChatAgent(agent)}
 										className="gradient-btn"
-										style={{ fontSize: "0.8rem", padding: "6px 12px" }}
+										style={{ fontSize: "0.8rem", padding: "6px 10px" }}
 									>
 										<MessageSquare size={13} />
-										Chat Console
+										Chat
 									</button>
 								)}
 
 								<button
 									type="button"
+									onClick={() => setSettingsAgent(agent)}
+									className="secondary-btn"
+									style={{ fontSize: "0.8rem", padding: "6px 10px" }}
+								>
+									<Settings size={13} />
+									Settings
+								</button>
+
+								<button
+									type="button"
 									onClick={() => handleReconnectAgent(agent.agentId, agent.phoneNumber)}
 									className="secondary-btn"
-									style={{ fontSize: "0.8rem", padding: "6px 12px" }}
+									style={{ fontSize: "0.8rem", padding: "6px 10px" }}
 								>
 									<RefreshCw size={13} />
 									Reconnect
@@ -513,7 +529,7 @@ export function App() {
 									type="button"
 									onClick={() => setAgentToDelete(agent)}
 									className="danger-btn"
-									style={{ fontSize: "0.8rem", padding: "6px 12px" }}
+									style={{ fontSize: "0.8rem", padding: "6px 10px" }}
 								>
 									<Trash2 size={13} />
 									Hapus
@@ -928,6 +944,14 @@ export function App() {
 				<ChatConsoleModal
 					agent={activeChatAgent}
 					onClose={() => setActiveChatAgent(null)}
+				/>
+			)}
+
+			{/* Agent Settings Management Modal */}
+			{settingsAgent && (
+				<AgentSettingsModal
+					agent={settingsAgent}
+					onClose={() => setSettingsAgent(null)}
 				/>
 			)}
 		</div>

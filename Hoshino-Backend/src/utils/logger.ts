@@ -364,9 +364,12 @@ export class Logger {
 	}
 }
 
+export const logger = Logger.getInstance()
+
 // Make globally available without import
 declare global {
+	// biome-ignore lint/suspicious/noRedeclare: global logger instance
 	var logger: Logger
 }
 
-globalThis.logger = Logger.getInstance()
+globalThis.logger = logger
