@@ -55,9 +55,43 @@ export async function initAuthDatabase(): Promise<void> {
 			);
 		`
 
+		// 6. Create public.chats table
+		await sql`
+			CREATE TABLE IF NOT EXISTS public.chats (
+				agent_id VARCHAR(255) NOT NULL,
+				jid VARCHAR(255) NOT NULL,
+				name VARCHAR(255),
+				unread_count INT DEFAULT 0,
+				last_message_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+				created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+				updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+				PRIMARY KEY (agent_id, jid)
+			);
+		`
+
+		// 7. Create public.messages table
+		await sql`
+			CREATE TABLE IF NOT EXISTS public.messages (
+				id VARCHAR(255) NOT NULL,
+				agent_id VARCHAR(255) NOT NULL,
+				jid VARCHAR(255) NOT NULL,
+				from_me BOOLEAN DEFAULT false,
+				sender VARCHAR(255),
+				push_name VARCHAR(255),
+				message_type VARCHAR(50) NOT NULL,
+				content JSONB NOT NULL,
+				status VARCHAR(50) DEFAULT 'received',
+				timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+				PRIMARY KEY (agent_id, id)
+			);
+		`
+
+		// 8. Create index for fast message querying per chat
+		await sql`CREATE INDEX IF NOT EXISTS idx_messages_agent_jid ON public.messages(agent_id, jid, timestamp DESC);`
+
 		logger.system(
 			"/utils/db.ts",
-			"PostgreSQL auth schema, keys, and agents tables initialized successfully",
+			"PostgreSQL auth schema, agents, chats, and messages tables initialized successfully",
 		)
 	} catch (error) {
 		logger.error("/utils/db.ts", `Failed to initialize auth schema: ${error}`)

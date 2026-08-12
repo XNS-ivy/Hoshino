@@ -31,6 +31,9 @@
       "bun"
     ],
     "paths": {
+      "@services/*": [
+        "./src/services/*"
+      ],
       "@repositories/*": [
         "./src/repositories/*"
       ],

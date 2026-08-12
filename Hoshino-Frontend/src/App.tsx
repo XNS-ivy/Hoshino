@@ -8,6 +8,7 @@ import {
 	Clock,
 	Copy,
 	Key,
+	MessageSquare,
 	Plus,
 	QrCode,
 	RefreshCw,
@@ -19,6 +20,7 @@ import {
 	X,
 } from "lucide-react"
 import { QRCodeSVG } from "qrcode.react"
+import { ChatConsoleModal } from "./components/ChatConsoleModal"
 import type { Agent, ApiResponse } from "./types"
 
 const API_BASE_URL = "http://localhost:3000"
@@ -33,6 +35,9 @@ export function App() {
 	const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null)
 	const selectedAgentIdRef = useRef<string | null>(null)
 	const [copied, setCopied] = useState(false)
+
+	// Active chat console modal state
+	const [activeChatAgent, setActiveChatAgent] = useState<Agent | null>(null)
 
 	// Agent deletion modal state
 	const [agentToDelete, setAgentToDelete] = useState<Agent | null>(null)
@@ -482,6 +487,18 @@ export function App() {
 									paddingTop: "14px",
 								}}
 							>
+								{agent.status === "connected" && (
+									<button
+										type="button"
+										onClick={() => setActiveChatAgent(agent)}
+										className="gradient-btn"
+										style={{ fontSize: "0.8rem", padding: "6px 12px" }}
+									>
+										<MessageSquare size={13} />
+										Chat Console
+									</button>
+								)}
+
 								<button
 									type="button"
 									onClick={() => handleReconnectAgent(agent.agentId, agent.phoneNumber)}
@@ -904,6 +921,14 @@ export function App() {
 						</div>
 					</div>
 				</div>
+			)}
+
+			{/* Real-Time Live Chat Console Modal */}
+			{activeChatAgent && (
+				<ChatConsoleModal
+					agent={activeChatAgent}
+					onClose={() => setActiveChatAgent(null)}
+				/>
 			)}
 		</div>
 	)

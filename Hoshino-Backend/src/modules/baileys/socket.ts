@@ -1,14 +1,23 @@
 import NodeCache from "@cacheable/node-cache"
 import type { Boom } from "@hapi/boom"
 import { agentRepository } from "@repositories/agent.repository"
+import {
+	type MessageRecord,
+	type MessageType,
+	messageRepository,
+} from "@repositories/message.repository"
+import { wsManager } from "@services/wsManager"
 import makeWASocket, {
+	type AnyMessageContent,
 	Browsers,
 	DisconnectReason,
 	fetchLatestBaileysVersion,
 	type GroupMetadata,
 	isJidBroadcast,
+	type MiscMessageGenerationOptions,
 	makeCacheableSignalKeyStore,
 	type proto,
+	type WAMessage,
 	type WASocket,
 } from "baileys"
 import type { CacheStore } from "baileys/lib/Types"
@@ -28,7 +37,7 @@ export class SocketManager {
 	private reconnectAttempts: Map<string, number> = new Map()
 	private cachedVersion: [number, number, number] | null = null
 
-	private constructor() { }
+	private constructor() {}
 
 	public static getInstance(): SocketManager {
 		if (!SocketManager.instance) {
@@ -99,6 +108,11 @@ export class SocketManager {
 			"connecting",
 			agentPhoneNumber,
 		)
+		wsManager.broadcast({
+			type: "status_change",
+			agentId: safeAgentId,
+			payload: { status: "connecting" },
+		})
 
 		const sock = makeWASocket({
 			version,
@@ -145,6 +159,11 @@ export class SocketManager {
 							"pairing_code",
 							agentPhoneNumber,
 						)
+						wsManager.broadcast({
+							type: "pairing_code",
+							agentId: safeAgentId,
+							payload: { pairingCode },
+						})
 						logger.system(
 							"/modules/baileys/socket.ts",
 							`Pairing code generated for Agent [${agentName}]: ${pairingCode}`,
@@ -191,6 +210,11 @@ export class SocketManager {
 						"qr_code",
 						agentPhoneNumber,
 					)
+					wsManager.broadcast({
+						type: "qr_code",
+						agentId: safeAgentId,
+						payload: { qrCode: qr },
+					})
 					logger.system(
 						"/modules/baileys/socket.ts",
 						`QR code generated for Agent [${agentName}]`,
@@ -226,6 +250,11 @@ export class SocketManager {
 							"connecting",
 							agentPhoneNumber,
 						)
+						wsManager.broadcast({
+							type: "status_change",
+							agentId: safeAgentId,
+							payload: { status: "connecting" },
+						})
 						logger.warn(
 							"/modules/baileys/socket.ts",
 							`Agent [${agentName}] connection closed. Reconnecting in ${delay / 1000}s (attempt ${attempts})...`,
@@ -249,6 +278,11 @@ export class SocketManager {
 							"disconnected",
 							agentPhoneNumber,
 						)
+						wsManager.broadcast({
+							type: "status_change",
+							agentId: safeAgentId,
+							payload: { status: "disconnected" },
+						})
 						await clearSession()
 						logger.system(
 							"/modules/baileys/socket.ts",
@@ -267,6 +301,11 @@ export class SocketManager {
 						"connected",
 						agentPhoneNumber,
 					)
+					wsManager.broadcast({
+						type: "status_change",
+						agentId: safeAgentId,
+						payload: { status: "connected" },
+					})
 					logger.system(
 						"/modules/baileys/socket.ts",
 						`Agent [${agentName}] connection opened successfully`,
@@ -277,9 +316,90 @@ export class SocketManager {
 			if (events["messages.upsert"]) {
 				const { messages } = events["messages.upsert"]
 				for (const msg of messages) {
-					if (msg.key.id && msg.message) {
-						messageStore.set(`${msg.key.remoteJid}:${msg.key.id}`, msg.message)
+					if (!msg.key.id || !msg.message) continue
+					messageStore.set(`${msg.key.remoteJid}:${msg.key.id}`, msg.message)
+
+					const jid = msg.key.remoteJid
+					if (!jid) continue
+
+					let messageType: MessageType = "other"
+					const contentData: Record<string, unknown> = {}
+
+					if (msg.message.conversation) {
+						messageType = "text"
+						contentData.text = msg.message.conversation
+					} else if (msg.message.extendedTextMessage?.text) {
+						messageType = "text"
+						contentData.text = msg.message.extendedTextMessage.text
+					} else if (msg.message.imageMessage) {
+						messageType = "image"
+						contentData.caption = msg.message.imageMessage.caption
+						contentData.mimetype = msg.message.imageMessage.mimetype
+					} else if (msg.message.videoMessage) {
+						messageType = "video"
+						contentData.caption = msg.message.videoMessage.caption
+						contentData.mimetype = msg.message.videoMessage.mimetype
+					} else if (msg.message.audioMessage) {
+						messageType = "audio"
+						contentData.mimetype = msg.message.audioMessage.mimetype
+					} else if (msg.message.documentMessage) {
+						messageType = "document"
+						contentData.fileName = msg.message.documentMessage.fileName
+						contentData.mimetype = msg.message.documentMessage.mimetype
+					} else if (msg.message.locationMessage) {
+						messageType = "location"
+						contentData.degreesLatitude =
+							msg.message.locationMessage.degreesLatitude
+						contentData.degreesLongitude =
+							msg.message.locationMessage.degreesLongitude
+						contentData.name = msg.message.locationMessage.name
+						contentData.address = msg.message.locationMessage.address
+					} else if (msg.message.contactMessage) {
+						messageType = "contact"
+						contentData.displayName = msg.message.contactMessage.displayName
+						contentData.vcard = msg.message.contactMessage.vcard
+					} else if (msg.message.reactionMessage) {
+						messageType = "reaction"
+						contentData.text = msg.message.reactionMessage.text
 					}
+
+					let displayName = msg.pushName
+					if (jid.endsWith("@g.us")) {
+						let gMeta = groupCache.get(jid) as GroupMetadata | undefined
+						if (!gMeta) {
+							try {
+								gMeta = await sock.groupMetadata(jid)
+								if (gMeta) groupCache.set(jid, gMeta)
+							} catch {
+								/* ignore group metadata error */
+							}
+						}
+						if (gMeta?.subject) {
+							displayName = gMeta.subject
+						}
+					}
+
+					const record: MessageRecord = {
+						id: msg.key.id,
+						agentId: safeAgentId,
+						jid,
+						fromMe: !!msg.key.fromMe,
+						sender: msg.key.participant || msg.key.remoteJid,
+						pushName: displayName || msg.pushName || jid,
+						messageType,
+						content: contentData,
+						status: msg.key.fromMe ? "sent" : "received",
+						timestamp: new Date(
+							(msg.messageTimestamp as number) * 1000 || Date.now(),
+						),
+					}
+
+					await messageRepository.saveMessage(record)
+					wsManager.broadcast({
+						type: "message_new",
+						agentId: safeAgentId,
+						payload: record,
+					})
 				}
 			}
 
@@ -310,6 +430,97 @@ export class SocketManager {
 		})
 
 		return { sock, session: sessionInfo }
+	}
+
+	/**
+	 * Sends a message (text, media, location, contact, reply) via active socket instance.
+	 */
+	async sendMessage(
+		agentName: string,
+		recipientJid: string,
+		content: AnyMessageContent,
+		options?: MiscMessageGenerationOptions,
+	): Promise<WAMessage> {
+		const safeAgentId = this.sanitizeAgentId(agentName)
+		const sock = this.getSock(safeAgentId)
+
+		if (!sock) {
+			throw new Error(`Agent '${agentName}' is not connected`)
+		}
+
+		let cleanJid = recipientJid.trim()
+		if (!cleanJid.includes("@")) {
+			const digits = cleanJid.replace(/[^0-9]/g, "")
+			cleanJid = `${digits}@s.whatsapp.net`
+		}
+
+		const sentMsg = await sock.sendMessage(cleanJid, content, options)
+		if (!sentMsg) {
+			throw new Error("Failed to send message via Baileys")
+		}
+
+		let messageType: MessageType = "text"
+		const contentData: Record<string, unknown> = {}
+
+		if ("text" in content && typeof content.text === "string") {
+			messageType = "text"
+			contentData.text = content.text
+		} else if ("image" in content) {
+			messageType = "image"
+			if ("caption" in content && typeof content.caption === "string") {
+				contentData.caption = content.caption
+			}
+		} else if ("document" in content) {
+			messageType = "document"
+			if ("fileName" in content && typeof content.fileName === "string") {
+				contentData.fileName = content.fileName
+			}
+		} else if ("location" in content && content.location) {
+			messageType = "location"
+			contentData.degreesLatitude = content.location.degreesLatitude
+			contentData.degreesLongitude = content.location.degreesLongitude
+		} else if ("contacts" in content && content.contacts) {
+			messageType = "contact"
+			contentData.displayName = content.contacts.displayName
+		}
+
+		let groupSubject: string | undefined
+		if (cleanJid.endsWith("@g.us")) {
+			let gMeta = groupCache.get(cleanJid) as GroupMetadata | undefined
+			if (!gMeta) {
+				try {
+					gMeta = await sock.groupMetadata(cleanJid)
+					if (gMeta) groupCache.set(cleanJid, gMeta)
+				} catch {
+					/* ignore */
+				}
+			}
+			if (gMeta?.subject) {
+				groupSubject = gMeta.subject
+			}
+		}
+
+		const record: MessageRecord = {
+			id: sentMsg.key.id || `sent_${Date.now()}`,
+			agentId: safeAgentId,
+			jid: cleanJid,
+			fromMe: true,
+			sender: sock.user?.id,
+			pushName: groupSubject || sock.user?.name || cleanJid,
+			messageType,
+			content: contentData,
+			status: "sent",
+			timestamp: new Date(),
+		}
+
+		await messageRepository.saveMessage(record)
+		wsManager.broadcast({
+			type: "message_new",
+			agentId: safeAgentId,
+			payload: record,
+		})
+
+		return sentMsg
 	}
 
 	/**
@@ -367,6 +578,11 @@ export class SocketManager {
 			"disconnected",
 			sessionInfo?.phoneNumber,
 		)
+		wsManager.broadcast({
+			type: "status_change",
+			agentId: safeAgentId,
+			payload: { status: "disconnected" },
+		})
 		logger.system(
 			"/modules/baileys/socket.ts",
 			`Agent [${agentName}] socket stopped.`,
