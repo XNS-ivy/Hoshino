@@ -1,4 +1,8 @@
-import type { CommandContext, ParsedQuotedMessage } from "@customTypes/command"
+import type {
+	CommandContext,
+	MessageKind,
+	ParsedQuotedMessage,
+} from "@customTypes/command"
 import { commandRepository } from "@repositories/command.repository"
 import type {
 	AnyMessageContent,
@@ -11,6 +15,18 @@ import NodeCache from "node-cache"
 
 // Cache group metadata in-memory for 5 minutes to prevent network spam
 const groupMetadataCache = new NodeCache({ stdTTL: 300, checkperiod: 60 })
+
+export function detectMessageType(m: unknown): MessageKind {
+	if (!m || typeof m !== "object") return "other"
+	const msg = m as Record<string, unknown>
+	if (msg.conversation || msg.extendedTextMessage) return "text"
+	if (msg.imageMessage) return "image"
+	if (msg.videoMessage) return "video"
+	if (msg.audioMessage) return "audio"
+	if (msg.documentMessage) return "document"
+	if (msg.stickerMessage) return "sticker"
+	return "other"
+}
 
 export function buildCommandContext(
 	agentId: string,
@@ -26,16 +42,39 @@ export function buildCommandContext(
 	const senderJid = commandRepository.normalizeJid(key.participant || jid)
 	const pushName = rawMsg.pushName || undefined
 
-	// Extract raw message body text
+	// Extract raw message body text & detect message type
 	const m = rawMsg.message
+	const rawContent =
+		m?.ephemeralMessage?.message ||
+		m?.viewOnceMessage?.message ||
+		m?.viewOnceMessageV2?.message ||
+		m
+
+	const messageType = detectMessageType(rawContent)
 	let body = ""
-	if (m) {
-		body =
-			m.conversation ||
-			m.extendedTextMessage?.text ||
-			m.imageMessage?.caption ||
-			m.videoMessage?.caption ||
-			""
+	if (rawContent) {
+		const contentObj = rawContent as Record<
+			string,
+			{ text?: string; caption?: string } | string
+		>
+		const extText =
+			typeof contentObj.extendedTextMessage === "object"
+				? contentObj.extendedTextMessage?.text
+				: undefined
+		const imgCap =
+			typeof contentObj.imageMessage === "object"
+				? contentObj.imageMessage?.caption
+				: undefined
+		const vidCap =
+			typeof contentObj.videoMessage === "object"
+				? contentObj.videoMessage?.caption
+				: undefined
+		const convText =
+			typeof contentObj.conversation === "string"
+				? contentObj.conversation
+				: undefined
+
+		body = (convText || extText || imgCap || vidCap || "").trim()
 	}
 
 	// Internal single-flight caches for lazy getters
@@ -101,18 +140,42 @@ export function buildCommandContext(
 		}
 
 		const senderIdentity = commandRepository.normalizeJid(senderJid)
-		const participant = meta.participants.find(
-			(p) => commandRepository.normalizeJid(p.id) === senderIdentity,
-		)
+		const senderDigits =
+			(senderIdentity || "").split("@")[0]?.replace(/[^0-9]/g, "") || ""
+
+		const participants = meta?.participants || []
+
+		const participant = participants.find((p) => {
+			if (!p?.id) return false
+			const pNorm = commandRepository.normalizeJid(p.id)
+			if (pNorm === senderIdentity) return true
+			if (senderDigits && senderDigits.length > 5) {
+				const pDigits =
+					(pNorm || "").split("@")[0]?.replace(/[^0-9]/g, "") || ""
+				if (pDigits === senderDigits) return true
+			}
+			return false
+		})
+
 		const isAdmin =
 			participant?.admin === "admin" || participant?.admin === "superadmin"
 
-		const botJid = commandRepository.normalizeJid(
-			sock.user?.id || sock.user?.lid || "",
-		)
-		const botParticipant = meta.participants.find(
-			(p) => commandRepository.normalizeJid(p.id) === botJid,
-		)
+		const rawBotId = sock.user?.id || sock.user?.lid || ""
+		const botJid = commandRepository.normalizeJid(rawBotId)
+		const botDigits = (botJid || "").split("@")[0]?.replace(/[^0-9]/g, "") || ""
+
+		const botParticipant = participants.find((p) => {
+			if (!p?.id) return false
+			const pNorm = commandRepository.normalizeJid(p.id)
+			if (pNorm === botJid) return true
+			if (botDigits && botDigits.length > 5) {
+				const pDigits =
+					(pNorm || "").split("@")[0]?.replace(/[^0-9]/g, "") || ""
+				if (pDigits === botDigits) return true
+			}
+			return false
+		})
+
 		const isBotAdmin =
 			botParticipant?.admin === "admin" ||
 			botParticipant?.admin === "superadmin"
@@ -251,6 +314,7 @@ export function buildCommandContext(
 		prefix,
 		commandName,
 		args,
+		messageType,
 		reply,
 		getOwnerRole,
 		getGroupMetadata,

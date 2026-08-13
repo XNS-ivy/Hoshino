@@ -3,6 +3,7 @@ import { sql } from "@utils/db"
 export interface GroupSettings {
 	agentId: string
 	jid: string
+	subject?: string | null
 	botEnabled: boolean
 	welcomeEnabled: boolean
 	goodbyeEnabled: boolean
@@ -237,13 +238,34 @@ export class CommandRepository {
 			return {
 				agentId,
 				jid: groupJid,
-				botEnabled: true,
+				botEnabled: false,
 				welcomeEnabled: false,
 				goodbyeEnabled: false,
 				customPrefix: null,
 			}
 		}
 		return rows[0] as unknown as GroupSettings
+	}
+
+	/**
+	 * Fetches all group settings and known group chats for an agent.
+	 */
+	public async getAllGroupSettings(agentId: string): Promise<GroupSettings[]> {
+		const rows = await sql`
+			SELECT DISTINCT ON (c.jid)
+				${agentId} as "agentId",
+				c.jid as "jid",
+				c.name as "subject",
+				COALESCE(s.bot_enabled, false) as "botEnabled",
+				COALESCE(s.welcome_enabled, false) as "welcomeEnabled",
+				COALESCE(s.goodbye_enabled, false) as "goodbyeEnabled",
+				s.custom_prefix as "customPrefix"
+			FROM public.chats c
+			LEFT JOIN public.agent_group_settings s ON s.agent_id = ${agentId} AND s.jid = c.jid
+			WHERE c.agent_id = ${agentId} AND c.jid LIKE '%@g.us'
+			ORDER BY c.jid ASC, c.updated_at DESC
+		`
+		return rows as unknown as GroupSettings[]
 	}
 
 	/**

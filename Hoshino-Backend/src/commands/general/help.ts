@@ -1,11 +1,17 @@
 import type { CommandContext, ICommand } from "@customTypes/command"
 import { commandLoader } from "@services/commandLoader"
+import { logger } from "@utils/logger"
 
 const command: ICommand = {
 	name: ["help", "menu"],
 	category: "general",
 	description: "Menampilkan daftar seluruh perintah bot yang tersedia",
+	textOnly: true,
 	execute: async (_args: string[], ctx: CommandContext) => {
+		logger.info(
+			"/commands/general/help.ts",
+			`[CMD-EXEC] Executing help command for ${ctx.senderJid} in ${ctx.jid}`,
+		)
 		const allCommands = commandLoader.getAllCommands()
 		const categories = new Map<string, ICommand[]>()
 

@@ -12,14 +12,15 @@ const app = new Elysia()
 	.use(messageRoutes)
 	.listen(3000)
 
-// Initialize database schema on startup
+// Initialize database schema and boot active agents on startup
 socketManager
 	.initDatabase()
-	.then(() => {
+	.then(async () => {
 		logger.system(
 			"/index.ts",
 			`Hoshino Backend running at http://${app.server?.hostname}:${app.server?.port}`,
 		)
+		await socketManager.bootAllAgents()
 	})
 	.catch((err) => {
 		logger.error("/index.ts", `Failed to initialize database: ${err}`)

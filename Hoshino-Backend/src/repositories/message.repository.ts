@@ -147,6 +147,33 @@ export class MessageRepository {
 			WHERE agent_id = ${agentId} AND jid = ${jid}
 		`
 	}
+
+	/**
+	 * Fetches all unique user contacts (@s.whatsapp.net) for an agent.
+	 */
+	public async findContactsByAgent(
+		agentId: string,
+	): Promise<{ jid: string; pushName: string | null; phoneNumber: string }[]> {
+		const rows = await sql`
+			SELECT DISTINCT ON (c.jid)
+				c.jid,
+				c.name as "pushName"
+			FROM public.chats c
+			WHERE c.agent_id = ${agentId} AND c.jid NOT LIKE '%@g.us' AND c.jid != 'status@broadcast'
+			ORDER BY c.jid ASC, c.updated_at DESC
+		`
+
+		return (rows as unknown as { jid: string; pushName: string | null }[]).map(
+			(row) => {
+				const digits = (row.jid.split("@")[0] || "").replace(/[^0-9]/g, "")
+				return {
+					jid: row.jid,
+					pushName: row.pushName || null,
+					phoneNumber: digits ? `+${digits}` : row.jid,
+				}
+			},
+		)
+	}
 }
 
 export const messageRepository = MessageRepository.getInstance()

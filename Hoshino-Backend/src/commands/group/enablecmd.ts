@@ -1,6 +1,7 @@
 import type { CommandContext, ICommand } from "@customTypes/command"
 import { commandRepository } from "@repositories/command.repository"
 import { commandLoader } from "@services/commandLoader"
+import { logger } from "@utils/logger"
 
 const command: ICommand = {
 	name: ["enablecmd", "disablecmd"],
@@ -9,7 +10,12 @@ const command: ICommand = {
 		"Mengaktifkan atau mematikan registrasi fitur perintah tertentu di dalam grup",
 	inGroup: true,
 	inGroupAccess: "admin",
+	textOnly: true,
 	execute: async (args: string[], ctx: CommandContext) => {
+		logger.info(
+			"/commands/group/enablecmd.ts",
+			`[CMD-EXEC] Executing enablecmd command for ${ctx.senderJid} in ${ctx.jid}`,
+		)
 		const targetCmd = (args[0] || "").toLowerCase()
 		if (!targetCmd) {
 			await ctx.reply(

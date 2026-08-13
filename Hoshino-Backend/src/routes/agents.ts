@@ -1,6 +1,7 @@
 import { socketManager } from "@modules/baileys/socket"
 import { agentRepository } from "@repositories/agent.repository"
 import { commandRepository } from "@repositories/command.repository"
+import { messageRepository } from "@repositories/message.repository"
 import { commandLoader } from "@services/commandLoader"
 import { Elysia, t } from "elysia"
 
@@ -391,6 +392,58 @@ export const agentRoutes = new Elysia({ prefix: "/api/agents" })
 			}),
 		},
 	)
+
+	// GET /api/agents/:id/contacts - List saved contacts for auto-complete
+	.get("/:id/contacts", async ({ params: { id }, set }) => {
+		try {
+			const safeAgentId = socketManager.sanitizeAgentId(id)
+			const contacts = await messageRepository.findContactsByAgent(safeAgentId)
+			return { success: true, data: contacts }
+		} catch (error) {
+			set.status = 500
+			return {
+				success: false,
+				message: `Failed to fetch contacts: ${error}`,
+			}
+		}
+	})
+
+	// GET /api/agents/:id/groups - List all groups & listening settings for agent
+	.get("/:id/groups", async ({ params: { id }, set }) => {
+		try {
+			const safeAgentId = socketManager.sanitizeAgentId(id)
+			const groups = await commandRepository.getAllGroupSettings(safeAgentId)
+			const sock = socketManager.getSock(safeAgentId)
+
+			const enrichedGroups = await Promise.all(
+				groups.map(async (g) => {
+					let subject = g.subject || undefined
+					if (sock && (!subject || subject === g.jid)) {
+						try {
+							const meta = await sock.groupMetadata(g.jid)
+							if (meta?.subject) {
+								subject = meta.subject
+							}
+						} catch {
+							/* ignore metadata fetch error */
+						}
+					}
+					return {
+						...g,
+						subject: subject || g.jid,
+					}
+				}),
+			)
+
+			return { success: true, data: enrichedGroups }
+		} catch (error) {
+			set.status = 500
+			return {
+				success: false,
+				message: `Failed to fetch groups: ${error}`,
+			}
+		}
+	})
 
 	// GET /api/agents/:id/groups/:jid - Get group settings
 	.get("/:id/groups/:jid", async ({ params: { id, jid }, set }) => {

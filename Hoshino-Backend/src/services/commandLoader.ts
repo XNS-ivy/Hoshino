@@ -5,13 +5,20 @@ import type { ICommand } from "@customTypes/command"
 import { commandRepository } from "@repositories/command.repository"
 import { logger } from "@utils/logger"
 import type { WAMessage, WASocket } from "baileys"
-import { buildCommandContext } from "./contextBuilder"
+import NodeCache from "node-cache"
+import { buildCommandContext, detectMessageType } from "./contextBuilder"
 
 export class CommandLoader {
 	private static instance: CommandLoader
 	private commands = new Map<string, ICommand>()
 	private commandsDir = path.resolve(__dirname, "../commands")
 	private loaded = false
+
+	// Security Shield 1: Message Deduplication Cache (TTL: 60s)
+	private processedMsgCache = new NodeCache({ stdTTL: 60, checkperiod: 30 })
+
+	// Security Shield 2: Per-User Command Cooldown Cache (key: agentId:senderJid:commandName, value: expiryTimestampMs)
+	private cooldownCache = new Map<string, number>()
 
 	private constructor() {}
 
@@ -93,7 +100,7 @@ export class CommandLoader {
 	}
 
 	/**
-	 * Main 3-layer Command Processing Pipeline.
+	 * Main 3-layer Command Processing Pipeline with Security & Robustness Shields.
 	 */
 	public async executeMessage(
 		agentId: string,
@@ -105,18 +112,51 @@ export class CommandLoader {
 		const key = rawMsg.key
 		if (!key.remoteJid || key.remoteJid === "status@broadcast") return
 
+		// Security Shield 1: Deduplication (Ignore processed message IDs)
+		if (key.id) {
+			const msgDedupeKey = `${agentId}:${key.id}`
+			if (this.processedMsgCache.has(msgDedupeKey)) {
+				return
+			}
+			this.processedMsgCache.set(msgDedupeKey, true)
+		}
+
 		const jid = key.remoteJid
 		const isGroup = jid.endsWith("@g.us")
-		const senderJid = commandRepository.normalizeJid(key.participant || jid)
+		const rawSender = key.fromMe
+			? sock.user?.id || sock.user?.lid || jid
+			: key.participant || jid
+		const senderJid = commandRepository.normalizeJid(rawSender)
 
-		// Layer 1: Check Group Settings & Bot Status
+		// Extract Body Text (unwrapping ephemeral & viewonce containers)
+		const m = rawMsg.message
+		if (!m) return
+
+		const rawContent =
+			m.ephemeralMessage?.message ||
+			m.viewOnceMessage?.message ||
+			m.viewOnceMessageV2?.message ||
+			m
+
+		let body = (
+			rawContent.conversation ||
+			rawContent.extendedTextMessage?.text ||
+			rawContent.imageMessage?.caption ||
+			rawContent.videoMessage?.caption ||
+			""
+		).trim()
+
+		if (!body) return
+
+		// Security Shield 4: Input Length Guard (Limit to max 4000 characters to prevent ReDoS / Buffer Overflow)
+		if (body.length > 4000) {
+			body = body.slice(0, 4000)
+		}
+
+		// Layer 1: Check Group Settings & Bot Listening Status
 		const groupSettings = isGroup
 			? await commandRepository.getGroupSettings(agentId, jid)
 			: null
-
-		if (isGroup && groupSettings && !groupSettings.botEnabled) {
-			return // Bot disabled in this group
-		}
 
 		// Layer 1: Check User Blacklist
 		const isBlacklisted = await commandRepository.isBlacklisted(
@@ -139,19 +179,6 @@ export class CommandLoader {
 			return
 		}
 
-		// Extract Body Text
-		const m = rawMsg.message
-		if (!m) return
-		const body = (
-			m.conversation ||
-			m.extendedTextMessage?.text ||
-			m.imageMessage?.caption ||
-			m.videoMessage?.caption ||
-			""
-		).trim()
-
-		if (!body) return
-
 		// Layer 1: Check Custom Agent / Group Prefix
 		const activePrefix = groupSettings?.customPrefix || "."
 		const defaultPrefixes = [activePrefix, ".", "!", "/", "#"]
@@ -162,13 +189,59 @@ export class CommandLoader {
 		const textAfterPrefix = body.slice(matchedPrefix.length).trim()
 		const parts = textAfterPrefix.split(/\s+/)
 		const commandName = (parts.shift() || "").toLowerCase()
-		const args = parts
+		let args = parts
 
 		if (!commandName) return
+
+		// Security Shield 4: Limit arguments length (max 50 args)
+		if (args.length > 50) {
+			args = args.slice(0, 50)
+		}
+
+		// Allow enablebot / bot / listen commands even if botEnabled is false in group so admins can turn bot ON
+		const isGroupToggleCommand = [
+			"enablebot",
+			"disablebot",
+			"bot",
+			"listen",
+		].includes(commandName)
+
+		if (
+			isGroup &&
+			groupSettings &&
+			!groupSettings.botEnabled &&
+			!isGroupToggleCommand
+		) {
+			// Bot is disabled/not listening in this group
+			return
+		}
 
 		// Layer 2: Check Registered Command
 		const command = this.commands.get(commandName)
 		if (!command) return
+
+		// Layer 2: Check Media Type & Text-Only Rule (Prevent Mismatching on Heavy Media Messages)
+		const messageType = detectMessageType(rawContent)
+
+		if (command.textOnly && messageType !== "text") {
+			logger.warn(
+				"/services/commandLoader.ts",
+				`[${agentId}] Ignored command "${commandName}" because message type is "${messageType}" but command is textOnly.`,
+			)
+			return
+		}
+
+		if (
+			command.allowedMediaTypes &&
+			command.allowedMediaTypes.length > 0 &&
+			!command.allowedMediaTypes.includes(messageType)
+		) {
+			logger.warn(
+				"/services/commandLoader.ts",
+				`[${agentId}] Ignored command "${commandName}" because message type "${messageType}" is not in allowedMediaTypes [${command.allowedMediaTypes.join(", ")}].`,
+			)
+			return
+		}
 
 		// Layer 2: Check Global Agent Command Toggle
 		const isGloballyEnabled = await commandRepository.isCommandEnabledGlobally(
@@ -203,15 +276,15 @@ export class CommandLoader {
 			return
 		}
 
+		const isOwnerOrMaster = await ctx.getOwnerRole()
+
 		if (command.access === "owner" || command.access === "master") {
-			const ownerRole = await ctx.getOwnerRole()
-			if (!ownerRole) return
+			if (!isOwnerOrMaster) return
 		}
 
 		if (isGroup && command.inGroupAccess === "admin") {
 			const { isAdmin } = await ctx.getSenderAdminStatus()
-			const ownerRole = await ctx.getOwnerRole()
-			if (!isAdmin && !ownerRole) {
+			if (!isAdmin && !isOwnerOrMaster) {
 				await ctx.reply("❌ Perintah ini membutuhkan perizinan Admin Grup.")
 				return
 			}
@@ -227,19 +300,61 @@ export class CommandLoader {
 			}
 		}
 
-		// Execute Command
+		// Security Shield 3: Anti-Spam Rate Limiter / Cooldown Guard
+		// Owners and Masters bypass cooldown checks
+		if (!isOwnerOrMaster) {
+			const cooldownSec = command.cooldown ?? 2 // Default 2 seconds cooldown
+			const cooldownKey = `${agentId}:${senderJid}:${commandName}`
+			const now = Date.now()
+			const expiresAt = this.cooldownCache.get(cooldownKey) || 0
+
+			if (now < expiresAt) {
+				const remainingSec = Math.ceil((expiresAt - now) / 1000)
+				await ctx.reply(
+					`⏱️ *Mohon tunggu ${remainingSec} detik lagi sebelum menggunakan perintah ini kembali.*`,
+				)
+				return
+			}
+			this.cooldownCache.set(cooldownKey, now + cooldownSec * 1000)
+		}
+
+		// Security Shield 5: Execution Timeout Guard (Max 30s timeout per command)
+		const timeoutMs = 30000
+		let timeoutTimer: ReturnType<typeof setTimeout> | undefined
+		const timeoutPromise = new Promise<never>((_, reject) => {
+			timeoutTimer = setTimeout(() => {
+				reject(new Error("EXECUTION_TIMEOUT"))
+			}, timeoutMs)
+		})
+
 		try {
-			await command.execute(args, ctx)
+			await Promise.race([
+				Promise.resolve(command.execute(args, ctx)),
+				timeoutPromise,
+			])
 			logger.info(
 				"/services/commandLoader.ts",
-				`[${agentId}] Command "${commandName}" executed for ${senderJid}`,
+				`[${agentId}] Command "${commandName}" executed for ${senderJid} in ${jid}`,
 			)
-		} catch (error) {
-			logger.error(
-				"/services/commandLoader.ts",
-				`[${agentId}] Error executing command "${commandName}": ${error}`,
-			)
-			await ctx.reply("⚠️ Terjadi kesalahan saat memproses perintah.")
+		} catch (error: unknown) {
+			const err = error as Error
+			if (err?.message === "EXECUTION_TIMEOUT") {
+				logger.error(
+					"/services/commandLoader.ts",
+					`[${agentId}] Command "${commandName}" timed out after 30s for ${senderJid} in ${jid}`,
+				)
+				await ctx.reply(
+					"⏱️ *Perintah memakan waktu terlalu lama dan dihentikan (Timeout).*",
+				)
+			} else {
+				logger.error(
+					"/services/commandLoader.ts",
+					`[${agentId}] Error executing command "${commandName}": ${error}`,
+				)
+				await ctx.reply("⚠️ Terjadi kesalahan saat memproses perintah.")
+			}
+		} finally {
+			if (timeoutTimer) clearTimeout(timeoutTimer)
 		}
 	}
 }

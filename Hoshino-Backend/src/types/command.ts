@@ -5,6 +5,15 @@ import type {
 	WASocket,
 } from "baileys"
 
+export type MessageKind =
+	| "text"
+	| "image"
+	| "video"
+	| "audio"
+	| "document"
+	| "sticker"
+	| "other"
+
 export interface ParsedQuotedMessage {
 	key: WAMessage["key"]
 	message: WAMessage["message"]
@@ -26,6 +35,7 @@ export interface CommandContext {
 	prefix: string
 	commandName: string
 	args: string[]
+	messageType: MessageKind
 
 	// 2. Fast Shortcut Helpers
 	reply: (content: string | AnyMessageContent) => Promise<WAMessage>
@@ -53,5 +63,8 @@ export interface ICommand {
 	inGroupAccess?: "admin" | "member"
 	botAdminRequired?: boolean
 	needAdminRegisterThisCommand?: boolean
+	textOnly?: boolean
+	allowedMediaTypes?: MessageKind[]
+	cooldown?: number
 	execute: (args: string[], ctx: CommandContext) => Promise<void> | void
 }

@@ -411,10 +411,8 @@ export class SocketManager {
 						payload: record,
 					})
 
-					// Execute command processing pipeline asynchronously for non-self messages
-					if (!msg.key.fromMe) {
-						void commandLoader.executeMessage(safeAgentId, sock, msg)
-					}
+					// Execute command processing pipeline asynchronously
+					void commandLoader.executeMessage(safeAgentId, sock, msg)
 				}
 			}
 
@@ -449,11 +447,10 @@ export class SocketManager {
 							)
 							if (groupSettings.botEnabled) {
 								if (action === "add" && groupSettings.welcomeEnabled) {
-									const mentions = participants.map((p) =>
-										commandRepository.normalizeJid(
-											typeof p === "string" ? p : p.id,
-										),
-									)
+									const mentions = participants.map((p) => {
+										const pJid = typeof p === "string" ? p : p.id
+										return commandRepository.normalizeJid(pJid)
+									})
 									const welcomeText = `👋 Selamat datang @${mentions.map((m) => m.split("@")[0]).join(", @")} di grup *${(groupCache.get(id) as GroupMetadata | undefined)?.subject || "kami"}*!`
 									await sock.sendMessage(id, {
 										text: welcomeText,
@@ -463,11 +460,10 @@ export class SocketManager {
 									action === "remove" &&
 									groupSettings.goodbyeEnabled
 								) {
-									const mentions = participants.map((p) =>
-										commandRepository.normalizeJid(
-											typeof p === "string" ? p : p.id,
-										),
-									)
+									const mentions = participants.map((p) => {
+										const pJid = typeof p === "string" ? p : p.id
+										return commandRepository.normalizeJid(pJid)
+									})
 									const goodbyeText = `👋 Selamat tinggal @${mentions.map((m) => m.split("@")[0]).join(", @")}!`
 									await sock.sendMessage(id, {
 										text: goodbyeText,
@@ -660,6 +656,41 @@ export class SocketManager {
 		this.isStopping.delete(safeAgentId)
 
 		return await this.startSock(agentName, phoneNumber)
+	}
+
+	/**
+	 * Boots and reconnects all active agent sessions found in database upon server startup.
+	 */
+	async bootAllAgents(): Promise<void> {
+		try {
+			const agents = await agentRepository.findAllAgents()
+			logger.system(
+				"/modules/baileys/socket.ts",
+				`Found ${agents.length} agent(s) in database. Booting active sessions...`,
+			)
+
+			for (const agent of agents) {
+				if (agent.status === "connected" || agent.status === "connecting") {
+					logger.info(
+						"/modules/baileys/socket.ts",
+						`Booting agent [${agent.name}] (status: ${agent.status})...`,
+					)
+					try {
+						await this.startSock(agent.name, agent.phoneNumber || undefined)
+					} catch (err) {
+						logger.error(
+							"/modules/baileys/socket.ts",
+							`Failed to boot agent [${agent.name}]: ${err}`,
+						)
+					}
+				}
+			}
+		} catch (error) {
+			logger.error(
+				"/modules/baileys/socket.ts",
+				`Error booting agents: ${error}`,
+			)
+		}
 	}
 
 	/**
