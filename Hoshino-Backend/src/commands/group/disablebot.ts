@@ -5,6 +5,7 @@ const command: ICommand = {
 	name: ["disablebot"],
 	category: "group",
 	description: "Disable Bot Listening and command execution in this group",
+	usage: ["disablebot"],
 	inGroup: true,
 	inGroupAccess: "admin",
 	textOnly: true,

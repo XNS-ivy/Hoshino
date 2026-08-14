@@ -7,6 +7,7 @@ const command: ICommand = {
 	name: ["disablecmd", "discCmd"],
 	category: "group",
 	description: "Disable a specific command feature in this group",
+	usage: ["disablecmd nsfw", "discCmd sticker"],
 	inGroup: true,
 	inGroupAccess: "admin",
 	textOnly: true,

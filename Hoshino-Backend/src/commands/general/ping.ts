@@ -5,6 +5,7 @@ const command: ICommand = {
 	name: ["ping", "p"],
 	category: "general",
 	description: "Check bot response speed and status",
+	usage: ["ping", "p"],
 	textOnly: true,
 	execute: async (_args: string[], ctx: CommandContext) => {
 		logger.info(

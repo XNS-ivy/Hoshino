@@ -17,9 +17,11 @@ export type MessageKind =
 export interface ParsedQuotedMessage {
 	key: WAMessage["key"]
 	message: WAMessage["message"]
+	rawQuoted?: WAMessage["message"] | WAMessage
 	senderJid: string
 	text?: string | null
 	caption?: string | null
+	getMediaBuffer?: () => Promise<Buffer | null>
 }
 
 export interface CommandContext {
@@ -65,6 +67,7 @@ export interface ICommand {
 	needAdminRegisterThisCommand?: boolean
 	textOnly?: boolean
 	allowedMediaTypes?: MessageKind[]
+	usage?: string[]
 	cooldown?: number
 	execute: (args: string[], ctx: CommandContext) => Promise<void> | void
 }

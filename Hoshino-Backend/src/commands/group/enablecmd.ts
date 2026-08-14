@@ -7,6 +7,7 @@ const command: ICommand = {
 	name: ["enablecmd", "gencmd"],
 	category: "group",
 	description: "Enable a specific command feature in this group",
+	usage: ["enablecmd nsfw", "gencmd sticker"],
 	inGroup: true,
 	inGroupAccess: "admin",
 	textOnly: true,

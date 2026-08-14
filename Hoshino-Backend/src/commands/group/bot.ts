@@ -6,6 +6,7 @@ const command: ICommand = {
 	category: "group",
 	description:
 		"Query or toggle Bot Listening status in this group (bot on / bot off)",
+	usage: ["bot on", "bot off", "bot"],
 	inGroup: true,
 	inGroupAccess: "admin",
 	textOnly: true,

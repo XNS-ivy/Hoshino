@@ -240,10 +240,23 @@ export class CommandLoader {
 
 		if (command.allowedMediaTypes && command.allowedMediaTypes.length > 0) {
 			const messageType = detectMessageType(rawContent)
-			if (!command.allowedMediaTypes.includes(messageType)) {
+			const contextInfo =
+				rawContent.extendedTextMessage?.contextInfo ||
+				rawContent.imageMessage?.contextInfo ||
+				rawContent.videoMessage?.contextInfo ||
+				rawContent.documentMessage?.contextInfo
+			const quotedMsg = contextInfo?.quotedMessage
+			const quotedMessageType = quotedMsg ? detectMessageType(quotedMsg) : null
+
+			const matchesAllowed =
+				command.allowedMediaTypes.includes(messageType) ||
+				(quotedMessageType &&
+					command.allowedMediaTypes.includes(quotedMessageType))
+
+			if (!matchesAllowed) {
 				logger.warn(
 					"/services/commandLoader.ts",
-					`[${agentId}] Ignored command "${commandName}" because message type "${messageType}" is not in allowedMediaTypes [${command.allowedMediaTypes.join(", ")}].`,
+					`[${agentId}] Ignored command "${commandName}" because message type "${messageType}" (quoted: "${quotedMessageType}") is not in allowedMediaTypes [${command.allowedMediaTypes.join(", ")}].`,
 				)
 				return
 			}

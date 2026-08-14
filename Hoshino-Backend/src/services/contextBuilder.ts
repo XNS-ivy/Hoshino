@@ -215,11 +215,34 @@ export function buildCommandContext(
 		quotedCache = {
 			key: quotedKey,
 			message: quotedMsg,
+			rawQuoted: quotedMsg,
 			senderJid: commandRepository.normalizeJid(
 				contextInfo?.participant || jid,
 			),
 			text,
 			caption: text,
+			getMediaBuffer: async () => {
+				try {
+					const fakeMsg = {
+						key: quotedKey,
+						message: quotedMsg,
+					} as WAMessage
+					const buffer = (await downloadMediaMessage(
+						fakeMsg,
+						"buffer",
+						{},
+						{
+							logger: { level: "silent" } as unknown as NonNullable<
+								Parameters<typeof downloadMediaMessage>[3]
+							>["logger"],
+							reuploadRequest: sock.updateMediaMessage,
+						},
+					)) as Buffer
+					return buffer && buffer.length > 0 ? buffer : null
+				} catch {
+					return null
+				}
+			},
 		}
 		return quotedCache
 	}
@@ -231,9 +254,19 @@ export function buildCommandContext(
 				rawMsg,
 				"buffer",
 				{},
+				{
+					logger: { level: "silent" } as unknown as NonNullable<
+						Parameters<typeof downloadMediaMessage>[3]
+					>["logger"],
+					reuploadRequest: sock.updateMediaMessage,
+				},
 			)) as Buffer
-			mediaBufferCache = buffer
-			return buffer
+			if (buffer && buffer.length > 0) {
+				mediaBufferCache = buffer
+				return buffer
+			}
+			mediaBufferCache = null
+			return null
 		} catch {
 			mediaBufferCache = null
 			return null
