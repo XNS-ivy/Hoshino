@@ -165,16 +165,24 @@ export class CommandLoader {
 		)
 		if (isBlacklisted) return
 
-		// Layer 1: Check User Auto-Delete
+		// Layer 1: Check User Auto-Delete (Check both normalized sender JID and raw LID/participant)
 		const isAutoDelete = isGroup
-			? await commandRepository.isAutoDelete(agentId, senderJid)
+			? (await commandRepository.isAutoDelete(agentId, senderJid)) ||
+				(await commandRepository.isAutoDelete(agentId, rawSender))
 			: false
 
 		if (isAutoDelete) {
 			try {
 				await sock.sendMessage(jid, { delete: key })
-			} catch {
-				// Failed auto-delete (bot might not be admin)
+				logger.info(
+					"/services/commandLoader.ts",
+					`[${agentId}] Auto-deleted message for target user ${senderJid} in ${jid}`,
+				)
+			} catch (err) {
+				logger.warn(
+					"/services/commandLoader.ts",
+					`[${agentId}] Failed auto-deleting message for ${senderJid} in ${jid}: ${err}`,
+				)
 			}
 			return
 		}
@@ -220,27 +228,25 @@ export class CommandLoader {
 		const command = this.commands.get(commandName)
 		if (!command) return
 
-		// Layer 2: Check Media Type & Text-Only Rule (Prevent Mismatching on Heavy Media Messages)
-		const messageType = detectMessageType(rawContent)
-
-		if (command.textOnly && messageType !== "text") {
+		// Layer 2: Check Media Type & Text-Only Rule
+		// textOnly: true means the command requires text body (works for conversation, extendedTextMessage, ephemeral, or captions)
+		if (command.textOnly && !body) {
 			logger.warn(
 				"/services/commandLoader.ts",
-				`[${agentId}] Ignored command "${commandName}" because message type is "${messageType}" but command is textOnly.`,
+				`[${agentId}] Ignored command "${commandName}" because command requires text body but message had none.`,
 			)
 			return
 		}
 
-		if (
-			command.allowedMediaTypes &&
-			command.allowedMediaTypes.length > 0 &&
-			!command.allowedMediaTypes.includes(messageType)
-		) {
-			logger.warn(
-				"/services/commandLoader.ts",
-				`[${agentId}] Ignored command "${commandName}" because message type "${messageType}" is not in allowedMediaTypes [${command.allowedMediaTypes.join(", ")}].`,
-			)
-			return
+		if (command.allowedMediaTypes && command.allowedMediaTypes.length > 0) {
+			const messageType = detectMessageType(rawContent)
+			if (!command.allowedMediaTypes.includes(messageType)) {
+				logger.warn(
+					"/services/commandLoader.ts",
+					`[${agentId}] Ignored command "${commandName}" because message type "${messageType}" is not in allowedMediaTypes [${command.allowedMediaTypes.join(", ")}].`,
+				)
+				return
+			}
 		}
 
 		// Layer 2: Check Global Agent Command Toggle

@@ -2,19 +2,19 @@ import type { CommandContext, ICommand } from "@customTypes/command"
 import { commandRepository } from "@repositories/command.repository"
 
 const command: ICommand = {
-	name: ["enablebot"],
+	name: ["disablebot"],
 	category: "group",
-	description: "Enable Bot Listening and command execution in this group",
+	description: "Disable Bot Listening and command execution in this group",
 	inGroup: true,
 	inGroupAccess: "admin",
 	textOnly: true,
 	execute: async (_args: string[], ctx: CommandContext) => {
 		await commandRepository.updateGroupSettings(ctx.agentId, ctx.jid, {
-			botEnabled: true,
+			botEnabled: false,
 		})
 
 		await ctx.reply(
-			"🤖 *Bot Listening Mode: ENABLED (ON)*\n✅ Bot is now listening and responding to commands in this group.",
+			"🔕 *Bot Listening Mode: DISABLED (OFF)*\n🚫 Bot stopped responding to commands in this group. (Use *!enablebot* to re-enable)",
 		)
 	},
 }

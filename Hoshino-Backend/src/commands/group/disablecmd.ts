@@ -4,21 +4,21 @@ import { commandLoader } from "@services/commandLoader"
 import { logger } from "@utils/logger"
 
 const command: ICommand = {
-	name: ["enablecmd", "gencmd"],
+	name: ["disablecmd", "discCmd"],
 	category: "group",
-	description: "Enable a specific command feature in this group",
+	description: "Disable a specific command feature in this group",
 	inGroup: true,
 	inGroupAccess: "admin",
 	textOnly: true,
 	execute: async (args: string[], ctx: CommandContext) => {
 		logger.info(
-			"/commands/group/enablecmd.ts",
-			`[CMD-EXEC] Executing enablecmd command for ${ctx.senderJid} in ${ctx.jid}`,
+			"/commands/group/disablecmd.ts",
+			`[CMD-EXEC] Executing disablecmd command for ${ctx.senderJid} in ${ctx.jid}`,
 		)
 		const targetCmd = (args[0] || "").toLowerCase()
 		if (!targetCmd) {
 			await ctx.reply(
-				`❌ Usage format: *${ctx.prefix}${ctx.commandName} <command_name>*\nExample: *${ctx.prefix}enablecmd nsfw*`,
+				`❌ Usage format: *${ctx.prefix}${ctx.commandName} <command_name>*\nExample: *${ctx.prefix}disablecmd nsfw*`,
 			)
 			return
 		}
@@ -43,11 +43,11 @@ const command: ICommand = {
 			ctx.agentId,
 			ctx.jid,
 			primaryName,
-			"enabled",
+			"disabled",
 		)
 
 		await ctx.reply(
-			`✅ Command *"${primaryName}"* has been registered & *enabled* for this group.`,
+			`🚫 Command *"${primaryName}"* has been *disabled* for this group.`,
 		)
 	},
 }
