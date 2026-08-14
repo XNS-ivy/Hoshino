@@ -4,7 +4,7 @@ import { logger } from "@utils/logger"
 const command: ICommand = {
 	name: ["ping", "p"],
 	category: "general",
-	description: "Cek status respon dan kecepatan bot",
+	description: "Check bot response speed and status",
 	textOnly: true,
 	execute: async (_args: string[], ctx: CommandContext) => {
 		logger.info(
@@ -16,7 +16,7 @@ const command: ICommand = {
 		const latency = Date.now() - start
 		if (msg.key) {
 			await ctx.sock.sendMessage(ctx.jid, {
-				text: `🏓 Pong!\n⚡ Respon: *${latency} ms*`,
+				text: `🏓 Pong!\n⚡ Response Time: *${latency} ms*`,
 				edit: msg.key,
 			})
 		}

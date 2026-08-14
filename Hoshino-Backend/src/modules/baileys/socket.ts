@@ -14,6 +14,7 @@ import makeWASocket, {
 	type AnyMessageContent,
 	Browsers,
 	DisconnectReason,
+	downloadMediaMessage,
 	fetchLatestBaileysVersion,
 	type GroupMetadata,
 	isJidBroadcast,
@@ -31,6 +32,8 @@ import type { AgentSession } from "./types"
 const baileysLogger = P({ level: "silent" })
 const msgRetryCounterCache = new NodeCache() as CacheStore
 const groupCache = new NodeCache({ stdTTL: 5 * 60, useClones: false })
+
+export const messageStore = new Map<string, WAMessage>()
 
 export class SocketManager {
 	private static instance: SocketManager
@@ -364,6 +367,10 @@ export class SocketManager {
 							msg.message.locationMessage.degreesLongitude
 						contentData.name = msg.message.locationMessage.name
 						contentData.address = msg.message.locationMessage.address
+					} else if (msg.message.stickerMessage) {
+						messageType = "sticker"
+						contentData.mimetype =
+							msg.message.stickerMessage.mimetype || "image/webp"
 					} else if (msg.message.contactMessage) {
 						messageType = "contact"
 						contentData.displayName = msg.message.contactMessage.displayName
@@ -373,7 +380,60 @@ export class SocketManager {
 						contentData.text = msg.message.reactionMessage.text
 					}
 
-					let displayName = msg.pushName
+					// Extract Quoted Message Context (if replying to a specific message)
+					const contextInfo =
+						msg.message.extendedTextMessage?.contextInfo ||
+						msg.message.imageMessage?.contextInfo ||
+						msg.message.videoMessage?.contextInfo ||
+						msg.message.audioMessage?.contextInfo ||
+						msg.message.documentMessage?.contextInfo ||
+						msg.message.stickerMessage?.contextInfo
+
+					if (contextInfo?.quotedMessage) {
+						const qM = contextInfo.quotedMessage
+						const quotedText =
+							qM.conversation ||
+							qM.extendedTextMessage?.text ||
+							qM.imageMessage?.caption ||
+							qM.videoMessage?.caption ||
+							(qM.stickerMessage ? "🧩 Sticker" : "") ||
+							(qM.audioMessage ? "🎵 Audio" : "") ||
+							(qM.documentMessage ? "📄 Document" : "") ||
+							(qM.locationMessage ? "📍 Location" : "") ||
+							"Quoted Message"
+
+						contentData.quoted = {
+							id: contextInfo.stanzaId,
+							participant: contextInfo.participant,
+							text: quotedText,
+						}
+					}
+
+					// Auto-download media for sticker & image messages to store base64 in DB for instant offline rendering
+					if (msg.message.stickerMessage || msg.message.imageMessage) {
+						try {
+							const buffer = await downloadMediaMessage(
+								msg,
+								"buffer",
+								{},
+								{
+									logger: baileysLogger,
+									reuploadRequest: sock.updateMediaMessage,
+								},
+							)
+							if (buffer) {
+								const mime =
+									msg.message.stickerMessage?.mimetype ||
+									msg.message.imageMessage?.mimetype ||
+									"image/webp"
+								contentData.mediaData = `data:${mime};base64,${buffer.toString("base64")}`
+							}
+						} catch {
+							/* fallback to media endpoint */
+						}
+					}
+
+					let groupSubject: string | undefined
 					if (jid.endsWith("@g.us")) {
 						let gMeta = groupCache.get(jid) as GroupMetadata | undefined
 						if (!gMeta) {
@@ -385,17 +445,22 @@ export class SocketManager {
 							}
 						}
 						if (gMeta?.subject) {
-							displayName = gMeta.subject
+							groupSubject = gMeta.subject
 						}
 					}
+
+					const senderJid = msg.key.participant || jid
+					const senderPhone = senderJid.split("@")[0]
+						? `+${senderJid.split("@")[0]}`
+						: senderJid
 
 					const record: MessageRecord = {
 						id: msg.key.id,
 						agentId: safeAgentId,
 						jid,
 						fromMe: !!msg.key.fromMe,
-						sender: msg.key.participant || msg.key.remoteJid,
-						pushName: displayName || msg.pushName || jid,
+						sender: senderJid,
+						pushName: msg.pushName || senderPhone,
 						messageType,
 						content: contentData,
 						status: msg.key.fromMe ? "sent" : "received",
@@ -404,7 +469,8 @@ export class SocketManager {
 						),
 					}
 
-					await messageRepository.saveMessage(record)
+					// Pass groupSubject to saveMessage so chat name gets group subject while message keeps sender pushName
+					await messageRepository.saveMessage(record, groupSubject)
 					wsManager.broadcast({
 						type: "message_new",
 						agentId: safeAgentId,
@@ -712,6 +778,69 @@ export class SocketManager {
 			"/modules/baileys/socket.ts",
 			`Agent [${agentName}] deleted permanently from database.`,
 		)
+	}
+
+	/**
+	 * Downloads and decrypts media buffer (sticker, photo, video, audio) for a given message ID.
+	 */
+	async downloadMessageMedia(
+		agentName: string,
+		msgId: string,
+	): Promise<{ buffer: Buffer; mimetype: string } | null> {
+		const safeAgentId = this.sanitizeAgentId(agentName)
+		const rawMsg = messageStore.get(msgId)
+		if (!rawMsg) return null
+
+		try {
+			const buffer = await downloadMediaMessage(
+				rawMsg,
+				"buffer",
+				{},
+				{
+					logger: baileysLogger,
+					reuploadRequest: (msg) => {
+						const sock = this.getSock(safeAgentId)
+						return sock
+							? sock.updateMediaMessage(msg)
+							: Promise.reject("No sock")
+					},
+				},
+			)
+			const m = rawMsg.message
+			const mimetype =
+				m?.stickerMessage?.mimetype ||
+				m?.imageMessage?.mimetype ||
+				m?.videoMessage?.mimetype ||
+				m?.audioMessage?.mimetype ||
+				m?.documentMessage?.mimetype ||
+				"image/webp"
+
+			return { buffer, mimetype }
+		} catch (err) {
+			logger.error(
+				"/modules/baileys/socket.ts",
+				`Failed to download media for message ${msgId}: ${err}`,
+			)
+			return null
+		}
+	}
+
+	/**
+	 * Fetches WhatsApp profile picture / avatar URL for a contact or group JID.
+	 */
+	async getProfilePictureUrl(
+		agentName: string,
+		jid: string,
+	): Promise<string | null> {
+		const safeAgentId = this.sanitizeAgentId(agentName)
+		const sock = this.getSock(safeAgentId)
+		if (!sock) return null
+		try {
+			const url = await sock.profilePictureUrl(jid, "preview")
+			return url || null
+		} catch {
+			return null
+		}
 	}
 }
 

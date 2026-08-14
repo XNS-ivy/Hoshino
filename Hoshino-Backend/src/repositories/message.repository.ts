@@ -5,6 +5,7 @@ export type MessageType =
 	| "image"
 	| "video"
 	| "audio"
+	| "sticker"
 	| "document"
 	| "location"
 	| "contact"
@@ -49,7 +50,10 @@ export class MessageRepository {
 	/**
 	 * Saves message record and upserts corresponding chat in PostgreSQL.
 	 */
-	public async saveMessage(msg: MessageRecord): Promise<void> {
+	public async saveMessage(
+		msg: MessageRecord,
+		groupSubject?: string,
+	): Promise<void> {
 		try {
 			// 1. Insert message
 			await sql`
@@ -66,7 +70,7 @@ export class MessageRepository {
 			`
 
 			// 2. Upsert chat record
-			const chatName = msg.pushName || msg.jid
+			const chatName = groupSubject || msg.pushName || msg.jid
 			await sql`
 				INSERT INTO public.chats (agent_id, jid, name, unread_count, last_message_at, updated_at)
 				VALUES (${msg.agentId}, ${msg.jid}, ${chatName}, ${msg.fromMe ? 0 : 1}, ${msg.timestamp}, CURRENT_TIMESTAMP)
@@ -173,6 +177,36 @@ export class MessageRepository {
 				}
 			},
 		)
+	}
+
+	/**
+	 * Fetches single message by ID.
+	 */
+	public async getMessageById(
+		agentId: string,
+		messageId: string,
+	): Promise<MessageRecord | null> {
+		const rows = await sql`
+			SELECT id, agent_id as "agentId", jid, from_me as "fromMe", sender, push_name as "pushName", message_type as "messageType", content, status, timestamp
+			FROM public.messages
+			WHERE agent_id = ${agentId} AND id = ${messageId}
+			LIMIT 1
+		`
+		if (rows.length === 0) return null
+		const row = rows[0] as unknown as Omit<MessageRecord, "content"> & {
+			content: unknown
+		}
+		let contentObj: Record<string, unknown> = {}
+		if (typeof row.content === "string") {
+			try {
+				contentObj = JSON.parse(row.content)
+			} catch {
+				contentObj = { text: row.content }
+			}
+		} else if (row.content && typeof row.content === "object") {
+			contentObj = row.content as Record<string, unknown>
+		}
+		return { ...row, content: contentObj }
 	}
 }
 

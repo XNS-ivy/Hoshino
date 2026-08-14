@@ -37,6 +37,7 @@ export const messageRoutes = new Elysia({ prefix: "/api/agents/:id" })
 					mimetype,
 					location,
 					contact,
+					quotedMsgId,
 				} = body
 
 				let content: AnyMessageContent
@@ -124,7 +125,32 @@ export const messageRoutes = new Elysia({ prefix: "/api/agents/:id" })
 					}
 				}
 
-				const sentMsg = await socketManager.sendMessage(id, recipient, content)
+				const options: Record<string, unknown> = {}
+				if (quotedMsgId) {
+					const quotedDbMsg = await messageRepository.getMessageById(
+						id,
+						quotedMsgId,
+					)
+					if (quotedDbMsg) {
+						options.quoted = {
+							key: {
+								remoteJid: quotedDbMsg.jid,
+								id: quotedDbMsg.id,
+								fromMe: quotedDbMsg.fromMe,
+							},
+							message: {
+								conversation: String(quotedDbMsg.content?.text || ""),
+							},
+						}
+					}
+				}
+
+				const sentMsg = await socketManager.sendMessage(
+					id,
+					recipient,
+					content,
+					options as unknown as import("baileys").MiscMessageGenerationOptions,
+				)
 
 				return {
 					success: true,
@@ -161,6 +187,7 @@ export const messageRoutes = new Elysia({ prefix: "/api/agents/:id" })
 				mediaUrl: t.Optional(t.String()),
 				fileName: t.Optional(t.String()),
 				mimetype: t.Optional(t.String()),
+				quotedMsgId: t.Optional(t.String()),
 				location: t.Optional(
 					t.Object({
 						degreesLatitude: t.Number(),
@@ -257,6 +284,66 @@ export const messageRoutes = new Elysia({ prefix: "/api/agents/:id" })
 			params: t.Object({
 				id: t.String(),
 				jid: t.String(),
+			}),
+		},
+	)
+
+	// GET /api/agents/:id/messages/:msgId/media - Serve decrypted sticker/image/video media
+	.get(
+		"/messages/:msgId/media",
+		async ({ params: { id, msgId }, set }) => {
+			try {
+				const media = await socketManager.downloadMessageMedia(id, msgId)
+				if (!media) {
+					set.status = 404
+					return { success: false, message: "Media not available or expired" }
+				}
+				return new Response(media.buffer, {
+					headers: {
+						"Content-Type": media.mimetype,
+						"Cache-Control": "public, max-age=86400",
+					},
+				})
+			} catch (error) {
+				set.status = 500
+				return {
+					success: false,
+					message: `Failed to download media: ${error}`,
+				}
+			}
+		},
+		{
+			params: t.Object({
+				id: t.String(),
+				msgId: t.String(),
+			}),
+		},
+	)
+
+	// GET /api/agents/:id/avatar - Fetch profile picture URL for a user/group JID
+	.get(
+		"/avatar",
+		async ({ params: { id }, query, set }) => {
+			try {
+				const jid = query?.jid ? String(query.jid) : undefined
+				if (!jid) {
+					set.status = 400
+					return { success: false, message: "jid query parameter is required" }
+				}
+				const url = await socketManager.getProfilePictureUrl(id, jid)
+				if (!url) {
+					set.status = 404
+					return { success: false, message: "Avatar not found" }
+				}
+				return { success: true, data: { url } }
+			} catch (error) {
+				set.status = 500
+				return { success: false, message: `Failed to fetch avatar: ${error}` }
+			}
+		},
+		{
+			params: t.Object({
+				id: t.String(),
 			}),
 		},
 	)

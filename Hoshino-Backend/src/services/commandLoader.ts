@@ -272,7 +272,7 @@ export class CommandLoader {
 
 		// Layer 3: Check ICommand Access & Environment Rules
 		if (command.inGroup && !isGroup) {
-			await ctx.reply("❌ Perintah ini hanya dapat digunakan di dalam grup.")
+			await ctx.reply("❌ This command can only be used inside groups.")
 			return
 		}
 
@@ -285,7 +285,7 @@ export class CommandLoader {
 		if (isGroup && command.inGroupAccess === "admin") {
 			const { isAdmin } = await ctx.getSenderAdminStatus()
 			if (!isAdmin && !isOwnerOrMaster) {
-				await ctx.reply("❌ Perintah ini membutuhkan perizinan Admin Grup.")
+				await ctx.reply("❌ This command requires Group Admin permissions.")
 				return
 			}
 		}
@@ -293,9 +293,7 @@ export class CommandLoader {
 		if (isGroup && command.botAdminRequired) {
 			const { isBotAdmin } = await ctx.getSenderAdminStatus()
 			if (!isBotAdmin) {
-				await ctx.reply(
-					"❌ Bot harus menjadi Admin Grup untuk menjalankan perintah ini.",
-				)
+				await ctx.reply("❌ Bot must be a Group Admin to execute this command.")
 				return
 			}
 		}
@@ -311,7 +309,7 @@ export class CommandLoader {
 			if (now < expiresAt) {
 				const remainingSec = Math.ceil((expiresAt - now) / 1000)
 				await ctx.reply(
-					`⏱️ *Mohon tunggu ${remainingSec} detik lagi sebelum menggunakan perintah ini kembali.*`,
+					`⏱️ *Please wait ${remainingSec} second(s) before using this command again.*`,
 				)
 				return
 			}
@@ -344,14 +342,14 @@ export class CommandLoader {
 					`[${agentId}] Command "${commandName}" timed out after 30s for ${senderJid} in ${jid}`,
 				)
 				await ctx.reply(
-					"⏱️ *Perintah memakan waktu terlalu lama dan dihentikan (Timeout).*",
+					"⏱️ *Command execution timed out after 30 seconds (Timeout).*",
 				)
 			} else {
 				logger.error(
 					"/services/commandLoader.ts",
 					`[${agentId}] Error executing command "${commandName}": ${error}`,
 				)
-				await ctx.reply("⚠️ Terjadi kesalahan saat memproses perintah.")
+				await ctx.reply("⚠️ An error occurred while processing the command.")
 			}
 		} finally {
 			if (timeoutTimer) clearTimeout(timeoutTimer)

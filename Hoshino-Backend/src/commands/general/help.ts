@@ -5,7 +5,7 @@ import { logger } from "@utils/logger"
 const command: ICommand = {
 	name: ["help", "menu"],
 	category: "general",
-	description: "Menampilkan daftar seluruh perintah bot yang tersedia",
+	description: "Display a list of all available bot commands",
 	textOnly: true,
 	execute: async (_args: string[], ctx: CommandContext) => {
 		logger.info(
@@ -34,7 +34,7 @@ const command: ICommand = {
 			menuText += "\n"
 		}
 
-		menuText += "💡 _Ketik nama perintah dengan prefix untuk menjalankannya._"
+		menuText += "💡 _Type a command name with its prefix to execute it._"
 		await ctx.reply(menuText)
 	},
 }

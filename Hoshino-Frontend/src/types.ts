@@ -27,6 +27,7 @@ export type MessageType =
 	| "image"
 	| "video"
 	| "audio"
+	| "sticker"
 	| "document"
 	| "location"
 	| "contact"

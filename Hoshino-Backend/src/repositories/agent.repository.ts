@@ -68,12 +68,30 @@ export class AgentRepository {
 	}
 
 	/**
-	 * Deletes agent metadata record from PostgreSQL.
+	 * Deletes agent record and purges all associated multi-tenant tables from PostgreSQL.
 	 */
 	public async deleteAgentRecord(agentIdOrName: string): Promise<void> {
 		try {
 			await this.initDatabase()
-			await sql`DELETE FROM public.agents WHERE id = ${agentIdOrName} OR name = ${agentIdOrName}`
+			const agent = await this.findAgentById(agentIdOrName)
+			const targetId = agent ? agent.id : agentIdOrName
+
+			await sql`DELETE FROM public.chats WHERE agent_id = ${targetId}`
+			await sql`DELETE FROM public.messages WHERE agent_id = ${targetId}`
+			await sql`DELETE FROM public.agent_owners WHERE agent_id = ${targetId}`
+			await sql`DELETE FROM public.agent_blacklists WHERE agent_id = ${targetId}`
+			await sql`DELETE FROM public.agent_autodeletes WHERE agent_id = ${targetId}`
+			await sql`DELETE FROM public.agent_group_settings WHERE agent_id = ${targetId}`
+			await sql`DELETE FROM public.agent_command_toggles WHERE agent_id = ${targetId}`
+			await sql`DELETE FROM public.agent_group_commands WHERE agent_id = ${targetId}`
+			await sql`DELETE FROM auth.credentials WHERE agent_id = ${targetId}`
+			await sql`DELETE FROM auth.keys WHERE agent_id = ${targetId}`
+			await sql`DELETE FROM public.agents WHERE id = ${targetId} OR name = ${agentIdOrName}`
+
+			logger.system(
+				"/repositories/agent.repository.ts",
+				`Purged all associated database records for agent ${targetId}`,
+			)
 		} catch (error) {
 			logger.error(
 				"/repositories/agent.repository.ts",

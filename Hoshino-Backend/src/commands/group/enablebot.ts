@@ -4,8 +4,7 @@ import { commandRepository } from "@repositories/command.repository"
 const command: ICommand = {
 	name: ["enablebot", "disablebot", "bot", "listen"],
 	category: "group",
-	description:
-		"Mengaktifkan atau mematikan fitur Bot Listening/Respon Perintah di dalam grup",
+	description: "Enable or disable Bot Listening / Command Execution in group",
 	inGroup: true,
 	inGroupAccess: "admin",
 	textOnly: true,
@@ -26,7 +25,7 @@ const command: ICommand = {
 					ctx.jid,
 				)
 				await ctx.reply(
-					`📌 Mode Bot Listening saat ini di grup ini: *${current.botEnabled ? "AKTIF (ON)" : "NONAKTIF (OFF)"}*\n\n💡 Gunakan: *${ctx.prefix}${ctx.commandName} on* atau *${ctx.prefix}${ctx.commandName} off*`,
+					`📌 Bot Listening mode in this group is currently: *${current.botEnabled ? "ENABLED (ON)" : "DISABLED (OFF)"}*\n\n💡 Usage: *${ctx.prefix}${ctx.commandName} on* or *${ctx.prefix}${ctx.commandName} off*`,
 				)
 				return
 			}
@@ -38,11 +37,11 @@ const command: ICommand = {
 
 		if (shouldEnable) {
 			await ctx.reply(
-				"🤖 *Bot Listening Mode: AKTIF (ON)*\n✅ Bot sekarang mendengarkan & merespon perintah di grup ini.",
+				"🤖 *Bot Listening Mode: ENABLED (ON)*\n✅ Bot is now listening and responding to commands in this group.",
 			)
 		} else {
 			await ctx.reply(
-				"🔕 *Bot Listening Mode: NONAKTIF (OFF)*\n🚫 Bot telah dihentikan dari merespon perintah di grup ini. (Gunakan *!bot on* untuk mengaktifkan kembali)",
+				"🔕 *Bot Listening Mode: DISABLED (OFF)*\n🚫 Bot stopped responding to commands in this group. (Use *!bot on* to re-enable)",
 			)
 		}
 	},

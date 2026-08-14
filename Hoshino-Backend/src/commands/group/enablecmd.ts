@@ -7,7 +7,7 @@ const command: ICommand = {
 	name: ["enablecmd", "disablecmd"],
 	category: "group",
 	description:
-		"Mengaktifkan atau mematikan registrasi fitur perintah tertentu di dalam grup",
+		"Enable or disable specific command feature registrations in this group",
 	inGroup: true,
 	inGroupAccess: "admin",
 	textOnly: true,
@@ -19,7 +19,7 @@ const command: ICommand = {
 		const targetCmd = (args[0] || "").toLowerCase()
 		if (!targetCmd) {
 			await ctx.reply(
-				`❌ Gunakan format: *${ctx.prefix}${ctx.commandName} <nama_command>*\nContoh: *${ctx.prefix}enablecmd nsfw*`,
+				`❌ Usage format: *${ctx.prefix}${ctx.commandName} <command_name>*\nExample: *${ctx.prefix}enablecmd nsfw*`,
 			)
 			return
 		}
@@ -32,7 +32,7 @@ const command: ICommand = {
 
 		if (!found) {
 			await ctx.reply(
-				`❌ Perintah *"${targetCmd}"* tidak ditemukan dalam sistem.`,
+				`❌ Command *"${targetCmd}"* was not found in the system.`,
 			)
 			return
 		}
@@ -52,11 +52,11 @@ const command: ICommand = {
 
 		if (isEnable) {
 			await ctx.reply(
-				`✅ Perintah *"${primaryName}"* berhasil didaftarkan & *diaktifkan* untuk grup ini.`,
+				`✅ Command *"${primaryName}"* has been registered & *enabled* for this group.`,
 			)
 		} else {
 			await ctx.reply(
-				`🚫 Perintah *"${primaryName}"* berhasil *dinonaktifkan* untuk grup ini.`,
+				`🚫 Command *"${primaryName}"* has been *disabled* for this group.`,
 			)
 		}
 	},
