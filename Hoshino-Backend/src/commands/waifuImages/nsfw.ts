@@ -5,6 +5,7 @@ import {
 	buildWaifuCaption,
 	downloadAndConvertImage,
 	getImageUrl,
+	getRandomWaifu,
 	NSFW_TAGS,
 	nekos,
 	type Rating,
@@ -22,13 +23,16 @@ const command: ICommand = {
 	usage: [
 		"nsfw",
 		"nsfw anal",
-		"nsfw loli",
+		"nsfw maid",
 		"nsfw explicit",
 		"nsfw suggestive",
+		"nsfw borderline",
+		"nsfw maid suggestive",
 		"nsfw tags",
 		"nsfw id 8001",
 	],
 	textOnly: true,
+	needAdminRegisterThisCommand: true,
 	execute: async (args: string[], ctx: CommandContext) => {
 		const sub = args[0]?.toLowerCase()
 
@@ -40,7 +44,16 @@ const command: ICommand = {
 				.join("\n")
 
 			await ctx.reply(
-				`🔞 *Available NSFW Waifu Tags*\n\n*Top NSFW Tags:*\n${nsfwList}\n\n*Other Tags (Can be filtered with NSFW rating):*\n${otherList}\n\n⚙️ *Available Ratings:* \`explicit\`, \`suggestive\`, \`borderline\`\n\n💡 *Example:* *${ctx.prefix}${ctx.commandName} anal*\n💡 *With Rating:* *${ctx.prefix}${ctx.commandName} loli explicit*\n💡 *By ID:* *${ctx.prefix}${ctx.commandName} id 8001*`,
+				`🔞 *Available NSFW Waifu Options*\n\n` +
+					`⚙️ *Ratings:* \`explicit\` (default), \`suggestive\`, \`borderline\`\n\n` +
+					`*NSFW Tags:*\n${nsfwList}\n\n` +
+					`*General Tags (Can be combined with NSFW ratings):*\n${otherList}\n\n` +
+					`💡 *Usage Examples:*\n` +
+					`• *${ctx.prefix}${ctx.commandName}* (Random explicit image)\n` +
+					`• *${ctx.prefix}${ctx.commandName} suggestive* (Rating only)\n` +
+					`• *${ctx.prefix}${ctx.commandName} anal* (Tag only)\n` +
+					`• *${ctx.prefix}${ctx.commandName} maid suggestive* (Tag + rating)\n` +
+					`• *${ctx.prefix}${ctx.commandName} id 8001* (Search by ID)`,
 			)
 			return
 		}
@@ -83,13 +96,20 @@ const command: ICommand = {
 		}
 
 		// 3. Rating and Tag Extraction
-		let selectedRatings: Rating[] = ["explicit", "borderline", "suggestive"]
+		let selectedRating: Rating = "explicit"
 		const remainingArgs: string[] = []
 
 		for (const arg of args) {
 			const lower = arg.toLowerCase()
+			if (lower === "safe") {
+				await ctx.reply(
+					`🌸 Rating *SAFE* merupakan konten SFW.\nSilakan gunakan command:\n*${ctx.prefix}sfw*`,
+				)
+				return
+			}
+
 			if (VALID_RATINGS.includes(lower as Rating)) {
-				selectedRatings = [lower as Rating]
+				selectedRating = lower as Rating
 			} else {
 				remainingArgs.push(arg)
 			}
@@ -110,17 +130,23 @@ const command: ICommand = {
 		}
 
 		try {
-			const rawImg = await nekos.getRandomImage(
-				targetTag ? [targetTag] : undefined,
-				{ rating: selectedRatings },
-			)
-			const img = rawImg as unknown as WaifuImage
-			const imgUrl = getImageUrl(img)
+			// If targetTag is present -> routes via API URL (with rating for safety)
+			// If targetTag is absent -> routes via nekosAPI package
+			const img = await getRandomWaifu({
+				tag: targetTag,
+				ratings: [selectedRating],
+			})
 
-			if (!imgUrl) {
+			if (!img) {
 				await ctx.reply(
-					`❌ No NSFW image found${targetTag ? ` for tag *${targetTag}*` : ""}${selectedRatings.length === 1 ? ` with rating *${selectedRatings[0]}*` : ""}.`,
+					`❌ No NSFW image found${targetTag ? ` for tag *${targetTag}*` : ""}${selectedRating ? ` with rating *${selectedRating}*` : ""}.`,
 				)
+				return
+			}
+
+			const imgUrl = getImageUrl(img)
+			if (!imgUrl) {
+				await ctx.reply("❌ Failed to retrieve image URL.")
 				return
 			}
 

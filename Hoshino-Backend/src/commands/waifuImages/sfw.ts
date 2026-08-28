@@ -4,6 +4,8 @@ import {
 	buildWaifuCaption,
 	downloadAndConvertImage,
 	getImageUrl,
+	getRandomWaifu,
+	NSFW_TAGS,
 	nekos,
 	resolveTag,
 	SFW_TAGS,
@@ -15,14 +17,7 @@ const command: ICommand = {
 	name: ["sfw", "waifuimages", "waifusfw", "waifu", "waifupict"],
 	category: "waifuImages",
 	description: "Get random SFW anime waifu images from NekosAPI",
-	usage: [
-		"sfw",
-		"sfw catgirl",
-		"sfw maid",
-		"sfw tags",
-		"sfw id 8001",
-		"waifuimages",
-	],
+	usage: ["sfw", "sfw catgirl", "sfw maid", "sfw tags", "sfw id 8001", "waifu"],
 	textOnly: true,
 	execute: async (args: string[], ctx: CommandContext) => {
 		const sub = args[0]?.toLowerCase()
@@ -36,48 +31,24 @@ const command: ICommand = {
 			return
 		}
 
-		// 2. NSFW Forwarding (e.g. .waifuimages nsfw [tag])
+		// 2. Redirect NSFW requests to nsfw command
 		if (sub === "nsfw") {
-			const nsfwTagInput = args.slice(1).join(" ").trim()
-			const nsfwTag = nsfwTagInput ? resolveTag(nsfwTagInput) : undefined
-
-			if (nsfwTagInput && !nsfwTag) {
-				await ctx.reply(
-					`❌ Unknown tag: *${nsfwTagInput}*\n\nType *${ctx.prefix}nsfw tags* to see available tags.`,
-				)
-				return
-			}
-
-			try {
-				const rawImg = await nekos.getRandomImage(
-					nsfwTag ? [nsfwTag] : undefined,
-					{
-						rating: ["explicit", "borderline", "suggestive"],
-					},
-				)
-				const img = rawImg as unknown as WaifuImage
-				const imgUrl = getImageUrl(img)
-
-				if (!imgUrl) {
-					await ctx.reply("❌ No NSFW image found for the specified criteria.")
-					return
-				}
-
-				const jpegBuffer = await downloadAndConvertImage(imgUrl)
-				const caption = buildWaifuCaption(img, "Waifu NSFW")
-
-				await ctx.reply({
-					image: jpegBuffer,
-					caption,
-				})
-			} catch (error) {
-				logger.error("/commands/waifuImages/sfw.ts", `Error: ${error}`)
-				await ctx.reply("❌ Failed to fetch NSFW anime image. Try again later.")
-			}
+			const nsfwTarget = args.slice(1).join(" ").trim()
+			await ctx.reply(
+				`🔞 *Command ini khusus untuk gambar SFW (Safe For Work).*\nUntuk melihat konten NSFW, silakan gunakan command:\n*${ctx.prefix}nsfw${nsfwTarget ? ` ${nsfwTarget}` : ""}*`,
+			)
 			return
 		}
 
-		// 3. Search by ID
+		// 3. Redirect NSFW rating inputs
+		if (sub === "borderline" || sub === "suggestive" || sub === "explicit") {
+			await ctx.reply(
+				`🔞 Rating *${sub.toUpperCase()}* merupakan konten NSFW/Ecchi.\nSilakan gunakan command:\n*${ctx.prefix}nsfw ${sub}*`,
+			)
+			return
+		}
+
+		// 4. Search by ID
 		if (sub === "id" && args[1]) {
 			const id = Number.parseInt(args[1], 10)
 			if (Number.isNaN(id)) {
@@ -121,7 +92,7 @@ const command: ICommand = {
 			return
 		}
 
-		// 4. Random Image (Optional tag filter)
+		// 5. Random Image (Optional SFW tag filter)
 		const tagInput = args.join(" ").trim()
 		let targetTag: TagNames | undefined
 
@@ -129,25 +100,39 @@ const command: ICommand = {
 			const resolved = resolveTag(tagInput)
 			if (!resolved) {
 				await ctx.reply(
-					`❌ Unknown tag: *${tagInput}*\n\nType *${ctx.prefix}${ctx.commandName} tags* to see all available tags.`,
+					`❌ Unknown tag: *${tagInput}*\n\nType *${ctx.prefix}${ctx.commandName} tags* to see all available SFW tags.`,
 				)
 				return
 			}
+
+			if (NSFW_TAGS.includes(resolved)) {
+				await ctx.reply(
+					`🔞 Tag *${resolved}* termasuk dalam kategori NSFW.\nSilakan gunakan command:\n*${ctx.prefix}nsfw ${resolved.toLowerCase()}*`,
+				)
+				return
+			}
+
 			targetTag = resolved
 		}
 
 		try {
-			const rawImg = await nekos.getRandomImage(
-				targetTag ? [targetTag] : undefined,
-				{ rating: ["safe"] },
-			)
-			const img = rawImg as unknown as WaifuImage
-			const imgUrl = getImageUrl(img)
+			// If targetTag is present -> routes via API URL
+			// If targetTag is absent -> routes via nekosAPI package
+			const img = await getRandomWaifu({
+				tag: targetTag,
+				ratings: ["safe"],
+			})
 
-			if (!imgUrl) {
+			if (!img) {
 				await ctx.reply(
 					`❌ No SFW image found${targetTag ? ` for tag *${targetTag}*` : ""}.`,
 				)
+				return
+			}
+
+			const imgUrl = getImageUrl(img)
+			if (!imgUrl) {
+				await ctx.reply("❌ Failed to retrieve image URL.")
 				return
 			}
 

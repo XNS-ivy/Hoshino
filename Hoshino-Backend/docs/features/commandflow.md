@@ -84,7 +84,9 @@ flowchart TD
 ## Database Storage Specification
 
 ### 1. `public.agent_owners`
+
 Stores owner JIDs/LIDs per agent instance.
+
 ```sql
 CREATE TABLE IF NOT EXISTS public.agent_owners (
     agent_id VARCHAR(255) NOT NULL,
@@ -96,7 +98,9 @@ CREATE TABLE IF NOT EXISTS public.agent_owners (
 ```
 
 ### 2. `public.agent_blacklists`
+
 Stores blacklisted user JIDs/LIDs per agent instance.
+
 ```sql
 CREATE TABLE IF NOT EXISTS public.agent_blacklists (
     agent_id VARCHAR(255) NOT NULL,
@@ -108,7 +112,9 @@ CREATE TABLE IF NOT EXISTS public.agent_blacklists (
 ```
 
 ### 3. `public.agent_autodeletes`
+
 Stores target user JIDs/LIDs whose messages in groups are auto-deleted per agent instance.
+
 ```sql
 CREATE TABLE IF NOT EXISTS public.agent_autodeletes (
     agent_id VARCHAR(255) NOT NULL,
@@ -119,7 +125,9 @@ CREATE TABLE IF NOT EXISTS public.agent_autodeletes (
 ```
 
 ### 4. `public.agent_group_settings`
+
 Stores group-level settings per agent instance.
+
 ```sql
 CREATE TABLE IF NOT EXISTS public.agent_group_settings (
     agent_id VARCHAR(255) NOT NULL,
@@ -134,7 +142,9 @@ CREATE TABLE IF NOT EXISTS public.agent_group_settings (
 ```
 
 ### 5. `public.agent_command_toggles`
+
 Stores global command enable/disable matrix per agent instance.
+
 ```sql
 CREATE TABLE IF NOT EXISTS public.agent_command_toggles (
     agent_id VARCHAR(255) NOT NULL,
@@ -146,7 +156,9 @@ CREATE TABLE IF NOT EXISTS public.agent_command_toggles (
 ```
 
 ### 6. `public.agent_group_commands`
+
 Stores group-level command registration matrix per agent instance.
+
 ```sql
 CREATE TABLE IF NOT EXISTS public.agent_group_commands (
     agent_id VARCHAR(255) NOT NULL,

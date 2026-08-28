@@ -1,4 +1,5 @@
-## Connecting Flow
+# Connecting Flow
+
 ```mermaid
 flowchart TD
     subgraph Client [Frontend]
@@ -32,6 +33,7 @@ flowchart TD
     A2 <-->|WebSocket| WA
     AN <-->|WebSocket| WA
 ```
+
 ```mermaid
 flowchart TD
     subgraph Backend [Hoshino Backend Server]
@@ -71,8 +73,8 @@ flowchart TD
     CONNECTED --> SAVE["Save Creds to PostgreSQL (auth.credentials)"]
 ```
 
-
 ## Agent CRUD Flow
+
 ```mermaid
 flowchart TD
     subgraph Operations [Client Request]

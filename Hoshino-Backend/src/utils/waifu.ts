@@ -70,13 +70,69 @@ export async function downloadAndConvertImage(url: string): Promise<Buffer> {
 	return sharp(rawBuf).jpeg({ quality: 90 }).toBuffer()
 }
 
+export const NEKOS_API_BASE_URL = "https://api.nekosapi.com/v4"
+
+export function tagToSlug(tag: TagNames | string): string {
+	return tag.toLowerCase().replace(/[\s-]+/g, "_")
+}
+
+export async function fetchRandomImageFromApi(options: {
+	tag?: TagNames | string
+	ratings?: Rating[]
+}): Promise<WaifuImage | null> {
+	const url = new URL(`${NEKOS_API_BASE_URL}/images/random`)
+	if (options.tag) {
+		url.searchParams.append("tags", tagToSlug(options.tag))
+	}
+	if (options.ratings && options.ratings.length > 0) {
+		for (const rating of options.ratings) {
+			url.searchParams.append("rating", rating)
+		}
+	}
+
+	const res = await fetch(url.toString(), {
+		signal: AbortSignal.timeout(10000),
+	})
+	if (!res.ok) {
+		throw new Error(`NekosAPI responded with HTTP ${res.status}`)
+	}
+
+	const data = (await res.json()) as WaifuImage[]
+	if (!Array.isArray(data) || data.length === 0) {
+		return null
+	}
+
+	const randomIndex = Math.floor(Math.random() * data.length)
+	return data[randomIndex] ?? null
+}
+
+export async function getRandomWaifu(options: {
+	tag?: TagNames
+	ratings?: Rating[]
+}): Promise<WaifuImage | null> {
+	// If tag is present (with or without ratings), fetch from API URL
+	if (options.tag) {
+		return fetchRandomImageFromApi({
+			tag: options.tag,
+			ratings: options.ratings,
+		})
+	}
+
+	// If no tag is present (only ratings or default), use nekosAPI package
+	const rawImg = await nekos.getRandomImage(undefined, {
+		rating: options.ratings,
+	})
+	return (rawImg as unknown as WaifuImage) || null
+}
+
 export function buildWaifuCaption(
 	img: WaifuImage,
 	title = "Waifu Image",
 ): string {
 	const rating = (img.rating || "safe").toUpperCase()
+	const icon = rating === "SAFE" ? "🌸" : "🔞"
 	const lines: string[] = [
-		`🌸 *${title}* (${rating})`,
+		`${icon} *${title}* (${rating})`,
 		`🆔 *ID:* \`${img.id}\``,
 	]
 
