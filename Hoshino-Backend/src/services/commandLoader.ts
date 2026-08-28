@@ -125,13 +125,47 @@ export class CommandLoader {
 		const isGroup = jid.endsWith("@g.us")
 		const rawSender = key.fromMe
 			? sock.user?.id || sock.user?.lid || jid
-			: key.participant || jid
+			: key.participant || rawMsg.participant || jid
 		const senderJid = commandRepository.normalizeJid(rawSender)
 
-		// Extract Body Text (unwrapping ephemeral & viewonce containers)
 		const m = rawMsg.message
 		if (!m) return
 
+		// Layer 0: Check User Blacklist
+		const isBlacklisted = await commandRepository.isBlacklisted(
+			agentId,
+			senderJid,
+		)
+		if (isBlacklisted) return
+
+		// Layer 0: Check User Auto-Delete (Deletes ALL message types: text, media, stickers, audio, docs, etc.)
+		const isAutoDelete = isGroup
+			? (await commandRepository.isAutoDelete(agentId, senderJid)) ||
+				(await commandRepository.isAutoDelete(agentId, rawSender))
+			: false
+
+		if (isAutoDelete) {
+			try {
+				await sock.sendMessage(jid, { delete: key })
+				logger.info(
+					"/services/commandLoader.ts",
+					`[${agentId}] Auto-deleted message (type: ${detectMessageType(m)}) for target user ${senderJid} in ${jid}`,
+				)
+			} catch (err) {
+				logger.warn(
+					"/services/commandLoader.ts",
+					`[${agentId}] Failed auto-deleting message for ${senderJid} in ${jid}: ${err}`,
+				)
+			}
+			return
+		}
+
+		// Layer 1: Check Group Settings & Bot Listening Status
+		const groupSettings = isGroup
+			? await commandRepository.getGroupSettings(agentId, jid)
+			: null
+
+		// Extract Body Text (unwrapping ephemeral & viewonce containers)
 		const rawContent =
 			m.ephemeralMessage?.message ||
 			m.viewOnceMessage?.message ||
@@ -151,40 +185,6 @@ export class CommandLoader {
 		// Security Shield 4: Input Length Guard (Limit to max 4000 characters to prevent ReDoS / Buffer Overflow)
 		if (body.length > 4000) {
 			body = body.slice(0, 4000)
-		}
-
-		// Layer 1: Check Group Settings & Bot Listening Status
-		const groupSettings = isGroup
-			? await commandRepository.getGroupSettings(agentId, jid)
-			: null
-
-		// Layer 1: Check User Blacklist
-		const isBlacklisted = await commandRepository.isBlacklisted(
-			agentId,
-			senderJid,
-		)
-		if (isBlacklisted) return
-
-		// Layer 1: Check User Auto-Delete (Check both normalized sender JID and raw LID/participant)
-		const isAutoDelete = isGroup
-			? (await commandRepository.isAutoDelete(agentId, senderJid)) ||
-				(await commandRepository.isAutoDelete(agentId, rawSender))
-			: false
-
-		if (isAutoDelete) {
-			try {
-				await sock.sendMessage(jid, { delete: key })
-				logger.info(
-					"/services/commandLoader.ts",
-					`[${agentId}] Auto-deleted message for target user ${senderJid} in ${jid}`,
-				)
-			} catch (err) {
-				logger.warn(
-					"/services/commandLoader.ts",
-					`[${agentId}] Failed auto-deleting message for ${senderJid} in ${jid}: ${err}`,
-				)
-			}
-			return
 		}
 
 		// Layer 1: Check Custom Agent / Group Prefix

@@ -158,9 +158,38 @@ export async function initAuthDatabase(): Promise<void> {
 			);
 		`
 
+		// 15. Create public.sensei_profiles table (Gacha Economy)
+		await sql`
+			CREATE TABLE IF NOT EXISTS public.sensei_profiles (
+				agent_id VARCHAR(255) NOT NULL,
+				user_jid VARCHAR(255) NOT NULL,
+				pyroxenes INT DEFAULT 1200,
+				spark_points INT DEFAULT 0,
+				total_pulls INT DEFAULT 0,
+				last_daily TIMESTAMPTZ,
+				created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+				updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+				PRIMARY KEY (agent_id, user_jid)
+			);
+		`
+
+		// 16. Create public.sensei_students table (Sensei Student Collection)
+		await sql`
+			CREATE TABLE IF NOT EXISTS public.sensei_students (
+				agent_id VARCHAR(255) NOT NULL,
+				user_jid VARCHAR(255) NOT NULL,
+				student_id INT NOT NULL,
+				student_name VARCHAR(255) NOT NULL,
+				star_grade INT NOT NULL,
+				count INT DEFAULT 1,
+				first_obtained_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+				PRIMARY KEY (agent_id, user_jid, student_id)
+			);
+		`
+
 		logger.system(
 			"/utils/db.ts",
-			"PostgreSQL auth schema, agents, chats, messages, and command tables initialized successfully",
+			"PostgreSQL auth schema, agents, chats, messages, and gacha tables initialized successfully",
 		)
 	} catch (error) {
 		logger.error("/utils/db.ts", `Failed to initialize auth schema: ${error}`)
