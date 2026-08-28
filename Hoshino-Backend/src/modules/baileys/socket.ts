@@ -1,10 +1,7 @@
 import NodeCache from "@cacheable/node-cache"
-import type { Boom } from "@hapi/boom"
 import { agentRepository } from "@repositories/agent.repository"
-import { commandRepository } from "@repositories/command.repository"
 import {
 	type MessageRecord,
-	type MessageType,
 	messageRepository,
 } from "@repositories/message.repository"
 import { commandLoader } from "@services/commandLoader"
@@ -13,7 +10,6 @@ import { logger } from "@utils/logger"
 import makeWASocket, {
 	type AnyMessageContent,
 	Browsers,
-	DisconnectReason,
 	downloadMediaMessage,
 	fetchLatestBaileysVersion,
 	type GroupMetadata,
@@ -27,11 +23,22 @@ import makeWASocket, {
 import type { CacheStore } from "baileys/lib/Types"
 import P from "pino"
 import { usePostgresAuthState } from "./auth"
+import {
+	handleConnectionUpdate,
+	requestPairingCode,
+} from "./handlers/connection.handler"
+import {
+	handleGroupParticipantsUpdate,
+	handleGroupsUpdate,
+} from "./handlers/group.handler"
+import { handleMessagesUpsert } from "./handlers/message.handler"
 import type { AgentSession } from "./types"
+import { resolveGroupSubject } from "./utils/groupHelper"
+import { parseOutgoingContent } from "./utils/messageParser"
 
 const baileysLogger = P({ level: "silent" })
 const msgRetryCounterCache = new NodeCache() as CacheStore
-const groupCache = new NodeCache({ stdTTL: 5 * 60, useClones: false })
+export const groupCache = new NodeCache({ stdTTL: 5 * 60, useClones: false })
 
 export const messageStore = new Map<string, WAMessage>()
 
@@ -91,15 +98,16 @@ export class SocketManager {
 		this.isStopping.delete(safeAgentId)
 
 		if (this.sessions.has(safeAgentId)) {
-			const existingSock = this.sessions.get(safeAgentId)!
-			const existingSession = this.sessionStates.get(safeAgentId)!
-			return { sock: existingSock, session: existingSession }
+			const existingSock = this.sessions.get(safeAgentId)
+			const existingSession = this.sessionStates.get(safeAgentId)
+			if (existingSock && existingSession) {
+				return { sock: existingSock, session: existingSession }
+			}
 		}
 
 		const { state, saveCreds, clearSession } =
 			await usePostgresAuthState(safeAgentId)
 		const version = await this.getBaileysVersion()
-		const messageStore = new Map<string, proto.IMessage>()
 
 		const sessionInfo: AgentSession = {
 			agentId: safeAgentId,
@@ -140,7 +148,8 @@ export class SocketManager {
 			shouldIgnoreJid: (jid) => isJidBroadcast(jid),
 			getMessage: async (key) => {
 				const id = `${key.remoteJid}:${key.id}`
-				return messageStore.get(id)
+				const raw = messageStore.get(id)
+				return (raw?.message || raw) as proto.IMessage | undefined
 			},
 			cachedGroupMetadata: async (jid) =>
 				groupCache.get(jid) as GroupMetadata | undefined,
@@ -149,402 +158,66 @@ export class SocketManager {
 		sessionInfo.socket = sock
 		this.sessions.set(safeAgentId, sock)
 
-		// Handle QR Code vs Pairing Code Flow for unregistered creds
-		if (!sock.authState.creds.registered) {
-			if (agentPhoneNumber) {
-				const cleanPhone = agentPhoneNumber.replace(/[^0-9]/g, "")
-				setTimeout(async () => {
-					try {
-						if (this.isStopping.has(safeAgentId)) return
-						const pairingCode = await sock.requestPairingCode(cleanPhone)
-						sessionInfo.pairingCode = pairingCode
-						sessionInfo.status = "pairing_code"
-						sessionInfo.updatedAt = new Date()
-						await agentRepository.upsertAgentStatus(
-							safeAgentId,
-							agentName,
-							"pairing_code",
-							agentPhoneNumber,
-						)
-						wsManager.broadcast({
-							type: "pairing_code",
-							agentId: safeAgentId,
-							payload: { pairingCode },
-						})
-						logger.system(
-							"/modules/baileys/socket.ts",
-							`Pairing code generated for Agent [${agentName}]: ${pairingCode}`,
-						)
-					} catch (error) {
-						const errMsg =
-							error instanceof Error ? error.message : String(error)
-						if (
-							errMsg.includes("Cancelled") ||
-							errMsg.includes("Connection Closed")
-						) {
-							logger.warn(
-								"/modules/baileys/socket.ts",
-								`Pairing code request cancelled for Agent [${agentName}]`,
-							)
-						} else {
-							logger.error(
-								"/modules/baileys/socket.ts",
-								`Failed to request pairing code for Agent [${agentName}]: ${error}`,
-							)
-						}
-					}
-				}, 2000)
-			}
+		// Handle pairing code flow if phone number provided for unregistered creds
+		if (!sock.authState.creds.registered && agentPhoneNumber) {
+			setTimeout(async () => {
+				await requestPairingCode(
+					sock,
+					safeAgentId,
+					agentName,
+					agentPhoneNumber,
+					sessionInfo,
+					this.isStopping,
+				)
+			}, 2000)
 		}
 
-		// Production event handling using ev.process
+		// Event dispatching via ev.process
 		sock.ev.process(async (events) => {
 			if (events["creds.update"]) {
 				await saveCreds()
 			}
 
 			if (events["connection.update"]) {
-				const update = events["connection.update"]
-				const { connection, lastDisconnect, qr } = update
-
-				if (qr && !agentPhoneNumber && !sock.authState.creds.registered) {
-					sessionInfo.qrCode = qr
-					sessionInfo.status = "qr_code"
-					sessionInfo.updatedAt = new Date()
-					await agentRepository.upsertAgentStatus(
-						safeAgentId,
-						agentName,
-						"qr_code",
-						agentPhoneNumber,
-					)
-					wsManager.broadcast({
-						type: "qr_code",
-						agentId: safeAgentId,
-						payload: { qrCode: qr },
-					})
-					logger.system(
-						"/modules/baileys/socket.ts",
-						`QR code generated for Agent [${agentName}]`,
-					)
-				}
-
-				if (connection === "close") {
-					this.sessions.delete(safeAgentId)
-
-					if (this.isStopping.has(safeAgentId)) {
-						this.isStopping.delete(safeAgentId)
-						this.reconnectAttempts.delete(safeAgentId)
-						logger.system(
-							"/modules/baileys/socket.ts",
-							`Agent [${agentName}] connection closed manually. Reconnect skipped.`,
-						)
-						return
-					}
-
-					const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode
-					const shouldReconnect = statusCode !== DisconnectReason.loggedOut
-
-					if (shouldReconnect) {
-						const attempts = (this.reconnectAttempts.get(safeAgentId) ?? 0) + 1
-						this.reconnectAttempts.set(safeAgentId, attempts)
-						const delay = Math.min(1000 * 2 ** (attempts - 1), 30000)
-
-						sessionInfo.status = "connecting"
-						sessionInfo.updatedAt = new Date()
-						await agentRepository.upsertAgentStatus(
-							safeAgentId,
-							agentName,
-							"connecting",
-							agentPhoneNumber,
-						)
-						wsManager.broadcast({
-							type: "status_change",
-							agentId: safeAgentId,
-							payload: { status: "connecting" },
-						})
-						logger.warn(
-							"/modules/baileys/socket.ts",
-							`Agent [${agentName}] connection closed. Reconnecting in ${delay / 1000}s (attempt ${attempts})...`,
-						)
-
-						setTimeout(async () => {
-							if (!this.isStopping.has(safeAgentId)) {
-								await this.startSock(agentName, agentPhoneNumber)
-							}
-						}, delay)
-					} else {
-						this.reconnectAttempts.delete(safeAgentId)
-						sessionInfo.status = "disconnected"
-						sessionInfo.socket = undefined
-						sessionInfo.qrCode = undefined
-						sessionInfo.pairingCode = undefined
-						sessionInfo.updatedAt = new Date()
-						await agentRepository.upsertAgentStatus(
-							safeAgentId,
-							agentName,
-							"disconnected",
-							agentPhoneNumber,
-						)
-						wsManager.broadcast({
-							type: "status_change",
-							agentId: safeAgentId,
-							payload: { status: "disconnected" },
-						})
-						await clearSession()
-						logger.system(
-							"/modules/baileys/socket.ts",
-							`Agent [${agentName}] logged out. Cleared DB session.`,
-						)
-					}
-				} else if (connection === "open") {
-					this.reconnectAttempts.delete(safeAgentId)
-					sessionInfo.status = "connected"
-					sessionInfo.qrCode = undefined
-					sessionInfo.pairingCode = undefined
-					sessionInfo.updatedAt = new Date()
-					await agentRepository.upsertAgentStatus(
-						safeAgentId,
-						agentName,
-						"connected",
-						agentPhoneNumber,
-					)
-					wsManager.broadcast({
-						type: "status_change",
-						agentId: safeAgentId,
-						payload: { status: "connected" },
-					})
-					logger.system(
-						"/modules/baileys/socket.ts",
-						`Agent [${agentName}] connection opened successfully`,
-					)
-
-					const rawOwnerJid = sock.user?.id || sock.user?.lid
-					if (rawOwnerJid) {
-						const ownerJid = commandRepository.normalizeJid(rawOwnerJid)
-						await commandRepository.addOwner(safeAgentId, ownerJid, "master")
-					}
-				}
+				await handleConnectionUpdate(events["connection.update"], {
+					sock,
+					safeAgentId,
+					agentName,
+					agentPhoneNumber,
+					sessionInfo,
+					sessions: this.sessions,
+					isStopping: this.isStopping,
+					reconnectAttempts: this.reconnectAttempts,
+					clearSession,
+					onReconnect: async () => {
+						await this.startSock(agentName, agentPhoneNumber)
+					},
+				})
 			}
 
 			if (events["messages.upsert"]) {
-				const { messages } = events["messages.upsert"]
-				for (const msg of messages) {
-					if (!msg.key.id || !msg.message) continue
-					messageStore.set(`${msg.key.remoteJid}:${msg.key.id}`, msg.message)
-
-					const jid = msg.key.remoteJid
-					if (!jid) continue
-
-					let messageType: MessageType = "other"
-					const contentData: Record<string, unknown> = {}
-
-					if (msg.message.conversation) {
-						messageType = "text"
-						contentData.text = msg.message.conversation
-					} else if (msg.message.extendedTextMessage?.text) {
-						messageType = "text"
-						contentData.text = msg.message.extendedTextMessage.text
-					} else if (msg.message.imageMessage) {
-						messageType = "image"
-						contentData.caption = msg.message.imageMessage.caption
-						contentData.mimetype = msg.message.imageMessage.mimetype
-					} else if (msg.message.videoMessage) {
-						messageType = "video"
-						contentData.caption = msg.message.videoMessage.caption
-						contentData.mimetype = msg.message.videoMessage.mimetype
-					} else if (msg.message.audioMessage) {
-						messageType = "audio"
-						contentData.mimetype = msg.message.audioMessage.mimetype
-					} else if (msg.message.documentMessage) {
-						messageType = "document"
-						contentData.fileName = msg.message.documentMessage.fileName
-						contentData.mimetype = msg.message.documentMessage.mimetype
-					} else if (msg.message.locationMessage) {
-						messageType = "location"
-						contentData.degreesLatitude =
-							msg.message.locationMessage.degreesLatitude
-						contentData.degreesLongitude =
-							msg.message.locationMessage.degreesLongitude
-						contentData.name = msg.message.locationMessage.name
-						contentData.address = msg.message.locationMessage.address
-					} else if (msg.message.stickerMessage) {
-						messageType = "sticker"
-						contentData.mimetype =
-							msg.message.stickerMessage.mimetype || "image/webp"
-					} else if (msg.message.contactMessage) {
-						messageType = "contact"
-						contentData.displayName = msg.message.contactMessage.displayName
-						contentData.vcard = msg.message.contactMessage.vcard
-					} else if (msg.message.reactionMessage) {
-						messageType = "reaction"
-						contentData.text = msg.message.reactionMessage.text
-					}
-
-					// Extract Quoted Message Context (if replying to a specific message)
-					const contextInfo =
-						msg.message.extendedTextMessage?.contextInfo ||
-						msg.message.imageMessage?.contextInfo ||
-						msg.message.videoMessage?.contextInfo ||
-						msg.message.audioMessage?.contextInfo ||
-						msg.message.documentMessage?.contextInfo ||
-						msg.message.stickerMessage?.contextInfo
-
-					if (contextInfo?.quotedMessage) {
-						const qM = contextInfo.quotedMessage
-						const quotedText =
-							qM.conversation ||
-							qM.extendedTextMessage?.text ||
-							qM.imageMessage?.caption ||
-							qM.videoMessage?.caption ||
-							(qM.stickerMessage ? "🧩 Sticker" : "") ||
-							(qM.audioMessage ? "🎵 Audio" : "") ||
-							(qM.documentMessage ? "📄 Document" : "") ||
-							(qM.locationMessage ? "📍 Location" : "") ||
-							"Quoted Message"
-
-						contentData.quoted = {
-							id: contextInfo.stanzaId,
-							participant: contextInfo.participant,
-							text: quotedText,
-						}
-					}
-
-					// Auto-download media for sticker & image messages to store base64 in DB for instant offline rendering
-					if (msg.message.stickerMessage || msg.message.imageMessage) {
-						try {
-							const buffer = await downloadMediaMessage(
-								msg,
-								"buffer",
-								{},
-								{
-									logger: baileysLogger,
-									reuploadRequest: sock.updateMediaMessage,
-								},
-							)
-							if (buffer) {
-								const mime =
-									msg.message.stickerMessage?.mimetype ||
-									msg.message.imageMessage?.mimetype ||
-									"image/webp"
-								contentData.mediaData = `data:${mime};base64,${buffer.toString("base64")}`
-							}
-						} catch {
-							/* fallback to media endpoint */
-						}
-					}
-
-					let groupSubject: string | undefined
-					if (jid.endsWith("@g.us")) {
-						let gMeta = groupCache.get(jid) as GroupMetadata | undefined
-						if (!gMeta) {
-							try {
-								gMeta = await sock.groupMetadata(jid)
-								if (gMeta) groupCache.set(jid, gMeta)
-							} catch {
-								/* ignore group metadata error */
-							}
-						}
-						if (gMeta?.subject) {
-							groupSubject = gMeta.subject
-						}
-					}
-
-					const senderJid = msg.key.participant || jid
-					const senderPhone = senderJid.split("@")[0]
-						? `+${senderJid.split("@")[0]}`
-						: senderJid
-
-					const record: MessageRecord = {
-						id: msg.key.id,
-						agentId: safeAgentId,
-						jid,
-						fromMe: !!msg.key.fromMe,
-						sender: senderJid,
-						pushName: msg.pushName || senderPhone,
-						messageType,
-						content: contentData,
-						status: msg.key.fromMe ? "sent" : "received",
-						timestamp: new Date(
-							(msg.messageTimestamp as number) * 1000 || Date.now(),
-						),
-					}
-
-					// Pass groupSubject to saveMessage so chat name gets group subject while message keeps sender pushName
-					await messageRepository.saveMessage(record, groupSubject)
-					wsManager.broadcast({
-						type: "message_new",
-						agentId: safeAgentId,
-						payload: record,
-					})
-
-					// Execute command processing pipeline asynchronously
-					void commandLoader.executeMessage(safeAgentId, sock, msg)
-				}
+				await handleMessagesUpsert(events["messages.upsert"], {
+					sock,
+					safeAgentId,
+					groupCache,
+					messageStore,
+					baileysLogger,
+				})
 			}
 
 			if (events["groups.update"]) {
-				for (const group of events["groups.update"]) {
-					if (group.id) {
-						try {
-							const meta = await sock.groupMetadata(group.id)
-							groupCache.set(group.id, meta)
-						} catch {
-							/* ignore cache refresh error */
-						}
-					}
-				}
+				await handleGroupsUpdate(events["groups.update"], sock, groupCache)
 			}
 
 			if (events["group-participants.update"]) {
-				const { id, participants, action } = events["group-participants.update"]
-				if (id) {
-					try {
-						const meta = await sock.groupMetadata(id)
-						groupCache.set(id, meta)
-					} catch {
-						/* ignore cache refresh error */
-					}
-
-					if (action === "add" || action === "remove") {
-						try {
-							const groupSettings = await commandRepository.getGroupSettings(
-								safeAgentId,
-								id,
-							)
-							if (groupSettings.botEnabled) {
-								if (action === "add" && groupSettings.welcomeEnabled) {
-									const mentions = participants.map((p) => {
-										const pJid = typeof p === "string" ? p : p.id
-										return commandRepository.normalizeJid(pJid)
-									})
-									const welcomeText = `👋 Selamat datang @${mentions.map((m) => m.split("@")[0]).join(", @")} di grup *${(groupCache.get(id) as GroupMetadata | undefined)?.subject || "kami"}*!`
-									await sock.sendMessage(id, {
-										text: welcomeText,
-										mentions,
-									})
-								} else if (
-									action === "remove" &&
-									groupSettings.goodbyeEnabled
-								) {
-									const mentions = participants.map((p) => {
-										const pJid = typeof p === "string" ? p : p.id
-										return commandRepository.normalizeJid(pJid)
-									})
-									const goodbyeText = `👋 Selamat tinggal @${mentions.map((m) => m.split("@")[0]).join(", @")}!`
-									await sock.sendMessage(id, {
-										text: goodbyeText,
-										mentions,
-									})
-								}
-							}
-						} catch (err) {
-							logger.error(
-								"/modules/baileys/socket.ts",
-								`Welcome/Goodbye event processing error: ${err}`,
-							)
-						}
-					}
-				}
+				await handleGroupParticipantsUpdate(
+					events["group-participants.update"],
+					{
+						sock,
+						safeAgentId,
+						groupCache,
+					},
+				)
 			}
 		})
 
@@ -578,46 +251,8 @@ export class SocketManager {
 			throw new Error("Failed to send message via Baileys")
 		}
 
-		let messageType: MessageType = "text"
-		const contentData: Record<string, unknown> = {}
-
-		if ("text" in content && typeof content.text === "string") {
-			messageType = "text"
-			contentData.text = content.text
-		} else if ("image" in content) {
-			messageType = "image"
-			if ("caption" in content && typeof content.caption === "string") {
-				contentData.caption = content.caption
-			}
-		} else if ("document" in content) {
-			messageType = "document"
-			if ("fileName" in content && typeof content.fileName === "string") {
-				contentData.fileName = content.fileName
-			}
-		} else if ("location" in content && content.location) {
-			messageType = "location"
-			contentData.degreesLatitude = content.location.degreesLatitude
-			contentData.degreesLongitude = content.location.degreesLongitude
-		} else if ("contacts" in content && content.contacts) {
-			messageType = "contact"
-			contentData.displayName = content.contacts.displayName
-		}
-
-		let groupSubject: string | undefined
-		if (cleanJid.endsWith("@g.us")) {
-			let gMeta = groupCache.get(cleanJid) as GroupMetadata | undefined
-			if (!gMeta) {
-				try {
-					gMeta = await sock.groupMetadata(cleanJid)
-					if (gMeta) groupCache.set(cleanJid, gMeta)
-				} catch {
-					/* ignore */
-				}
-			}
-			if (gMeta?.subject) {
-				groupSubject = gMeta.subject
-			}
-		}
+		const { messageType, contentData } = parseOutgoingContent(content)
+		const groupSubject = await resolveGroupSubject(cleanJid, sock, groupCache)
 
 		const record: MessageRecord = {
 			id: sentMsg.key.id || `sent_${Date.now()}`,
