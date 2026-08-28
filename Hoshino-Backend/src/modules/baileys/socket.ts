@@ -1,3 +1,4 @@
+import dns from "node:dns/promises"
 import NodeCache from "@cacheable/node-cache"
 import { agentRepository } from "@repositories/agent.repository"
 import {
@@ -140,6 +141,17 @@ export class SocketManager {
 			markOnlineOnConnect: false,
 			syncFullHistory: false,
 			generateHighQualityLinkPreview: true,
+			options: {
+				resolveDNSHost: async (url: string) => {
+					try {
+						const { hostname } = new URL(url)
+						const { address } = await dns.lookup(hostname)
+						return address
+					} catch {
+						return url
+					}
+				},
+			} as unknown as undefined,
 			msgRetryCounterCache,
 			maxMsgRetryCount: 5,
 			connectTimeoutMs: 20_000,

@@ -7,7 +7,7 @@ import {
 import { downloadMediaMessage, type proto, type WAMessage } from "baileys"
 
 const command: ICommand = {
-	name: ["sticker", "s", "stiker"],
+	name: ["sticker", "s", "stiker", "stc"],
 	category: "utility",
 	description: "Convert photo/image/video/GIF into a WhatsApp sticker",
 	usage: [

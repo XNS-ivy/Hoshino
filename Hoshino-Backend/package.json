@@ -24,9 +24,10 @@
   "dependencies": {
     "@elysiajs/cors": "^1.4.2",
     "@hapi/boom": "^10.0.1",
-    "audio-decode": "^3.11.5",
+    "audio-decode": "^3.12.0",
     "baileys": "^7.0.0-rc14",
-    "elysia": "^1.4.29",
+    "btch-downloader": "^6.3.6",
+    "elysia": "^1.4.30",
     "ffmpeg": "^0.0.4",
     "jimp": "^1.6.1",
     "link-preview-js": "^5.0.0",
@@ -37,6 +38,10 @@
     "pino": "^10.3.1",
     "qrcode": "^1.5.4",
     "qrcode-terminal": "^0.12.0",
-    "sharp": "^0.35.3"
-  }
+    "sharp": "^0.35.4",
+    "youtube-dl-exec": "^3.1.13"
+  },
+  "trustedDependencies": [
+    "youtube-dl-exec"
+  ]
 }

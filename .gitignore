@@ -143,3 +143,6 @@ vite.config.ts.timestamp-*
 .vite/
 Hoshino-Backend/bun.lock
 Hoshino-Backend/cookies.txt
+
+# sratch test folder
+Hoshino-Backend/scratch/*
