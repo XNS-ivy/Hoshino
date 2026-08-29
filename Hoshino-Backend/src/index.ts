@@ -5,7 +5,7 @@ import { messageRoutes } from "@routes/messages"
 import { Elysia } from "elysia"
 import "./utils/logger"
 
-const PORT = Number(process.env.PORT) || 3030
+const PORT = Number(process.env.PORT) || 3040
 
 const app = new Elysia()
 	.use(cors())

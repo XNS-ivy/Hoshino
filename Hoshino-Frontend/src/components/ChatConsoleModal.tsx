@@ -83,7 +83,7 @@ export const ChatConsoleModal: React.FC<ChatConsoleModalProps> = ({
 	useEffect(() => {
 		const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:"
 		const wsHost = window.location.hostname || "localhost"
-		const wsUrl = `${wsProtocol}//${wsHost}:3030/api/agents/${agent.agentId}/ws`
+		const wsUrl = `${wsProtocol}//${wsHost}:3040/api/agents/${agent.agentId}/ws`
 		const ws = new WebSocket(wsUrl)
 
 		ws.onmessage = (event) => {

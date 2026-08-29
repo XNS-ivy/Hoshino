@@ -3,7 +3,7 @@ module.exports = {
     {
       name: "hoshino-frontend",
       script: "bun",
-      args: "run dev -- --host 0.0.0.0 --port 3031",
+      args: "run dev -- --host 0.0.0.0 --port 3041",
       cwd: __dirname,
       exec_mode: "fork",
       autorestart: true,

@@ -2,8 +2,8 @@ import type { Agent, ApiResponse } from "../types"
 
 export const API_BASE_URL =
 	typeof window !== "undefined"
-		? `${window.location.protocol}//${window.location.hostname}:3030`
-		: "http://localhost:3030"
+		? `${window.location.protocol}//${window.location.hostname}:3040`
+		: "http://localhost:3040"
 
 export async function fetchAgents(): Promise<Agent[]> {
 	const res = await fetch(`${API_BASE_URL}/api/agents`)
