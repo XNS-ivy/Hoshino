@@ -48,7 +48,7 @@ const MATH_OPERATIONS: Record<string, string> = {
 
 const command: ICommand = {
 	name: ["math", "calc", "mathjs"],
-	category: "math",
+	category: "utility",
 	description: "Evaluate a mathematical expression using mathjs",
 	usage: ["math <expression>", "math help", "calc 12 * 12"],
 	textOnly: true,

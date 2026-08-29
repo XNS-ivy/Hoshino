@@ -13,7 +13,7 @@ const command: ICommand = {
 		"mystudent",
 		"students",
 	],
-	category: "general",
+	category: "bluearchive",
 	description:
 		"Blue Archive Gacha Simulator with official 3★ rates, daily Pyroxenes, spark pity system, and personal student collection",
 	usage: [

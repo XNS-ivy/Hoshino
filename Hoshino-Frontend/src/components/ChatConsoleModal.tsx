@@ -81,7 +81,7 @@ export const ChatConsoleModal: React.FC<ChatConsoleModalProps> = ({
 
 	// WebSocket Realtime Handler
 	useEffect(() => {
-		const wsUrl = `ws://localhost:3000/api/agents/${agent.agentId}/ws`
+		const wsUrl = `ws://localhost:3030/api/agents/${agent.agentId}/ws`
 		const ws = new WebSocket(wsUrl)
 
 		ws.onmessage = (event) => {

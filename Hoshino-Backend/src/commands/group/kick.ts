@@ -3,7 +3,7 @@ import { commandRepository } from "@repositories/command.repository"
 
 const command: ICommand = {
 	name: ["kick"],
-	category: "admin",
+	category: "group",
 	description: "Kick target user from group chat",
 	usage: ["kick @user", "kick (replying to message)"],
 	inGroup: true,

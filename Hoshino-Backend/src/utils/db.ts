@@ -187,9 +187,26 @@ export async function initAuthDatabase(): Promise<void> {
 			);
 		`
 
+		// 17. Create public.sensei_bonds table (MomoTalk & Affection System)
+		await sql`
+			CREATE TABLE IF NOT EXISTS public.sensei_bonds (
+				agent_id VARCHAR(255) NOT NULL,
+				user_jid VARCHAR(255) NOT NULL,
+				student_id INT NOT NULL,
+				student_name VARCHAR(255) NOT NULL,
+				bond_level INT DEFAULT 1,
+				bond_exp INT DEFAULT 0,
+				total_talks INT DEFAULT 0,
+				last_talk TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+				created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+				updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+				PRIMARY KEY (agent_id, user_jid, student_id)
+			);
+		`
+
 		logger.system(
 			"/utils/db.ts",
-			"PostgreSQL auth schema, agents, chats, messages, and gacha tables initialized successfully",
+			"PostgreSQL auth schema, agents, chats, messages, gacha, and momotalk tables initialized successfully",
 		)
 	} catch (error) {
 		logger.error("/utils/db.ts", `Failed to initialize auth schema: ${error}`)

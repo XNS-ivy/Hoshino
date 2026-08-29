@@ -1,6 +1,6 @@
 import type { Agent, ApiResponse } from "../types"
 
-export const API_BASE_URL = "http://localhost:3000"
+export const API_BASE_URL = "http://localhost:3030"
 
 export async function fetchAgents(): Promise<Agent[]> {
 	const res = await fetch(`${API_BASE_URL}/api/agents`)

@@ -108,7 +108,7 @@ export async function searchSchaleStudent(
  */
 export function getStudentImageUrl(
 	id: number,
-	type: "collection" | "portrait" | "icon" | "weapon" = "collection",
+	type: "collection" | "portrait" | "icon" | "weapon" | "lobby" = "collection",
 ): string {
 	return `https://schaledb.com/images/student/${type}/${id}.webp`
 }

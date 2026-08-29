@@ -1,9 +1,9 @@
 import type { CommandContext, ICommand } from "@customTypes/command"
 
 const command: ICommand = {
-	name: ["delete", "del"],
-	category: "admin",
-	description: "Delete a message by replying to it",
+	name: ["delete", "del", "d"],
+	category: "group",
+	description: "Delete a message sent by user or bot",
 	usage: ["del (replying to target message)"],
 	inGroup: true,
 	inGroupAccess: "admin",

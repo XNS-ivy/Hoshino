@@ -3,7 +3,7 @@ import { logger } from "@utils/logger"
 
 const command: ICommand = {
 	name: ["ping", "p"],
-	category: "general",
+	category: "utility",
 	description: "Check bot response speed and status",
 	usage: ["ping", "p"],
 	textOnly: true,

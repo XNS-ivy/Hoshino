@@ -10,7 +10,7 @@ import {
 
 const command: ICommand = {
 	name: ["student", "ba", "murid", "schale"],
-	category: "general",
+	category: "bluearchive",
 	description:
 		"Search and view complete Blue Archive student profile and artwork from SchaleDB",
 	usage: [

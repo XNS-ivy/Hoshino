@@ -3,7 +3,7 @@ import { commandRepository } from "@repositories/command.repository"
 
 const command: ICommand = {
 	name: ["autodelete"],
-	category: "admin",
+	category: "group",
 	description:
 		"Add user to auto-delete list (bot auto-deletes their messages in groups)",
 	usage: ["autodelete @user", "autodelete (replying to message)"],

@@ -3,7 +3,7 @@ import { commandRepository } from "@repositories/command.repository"
 
 const command: ICommand = {
 	name: ["blacklist", "blockuser"],
-	category: "moderator",
+	category: "owner",
 	description:
 		"Add user to bot blacklist (prevents user from using bot commands)",
 	usage: ["blacklist @user Spammer", "blockuser @user"],
