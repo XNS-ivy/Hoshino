@@ -8,7 +8,13 @@
     "typecheck": "bun tsc --noEmit",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "format": "biome format --write ."
+    "format": "biome format --write .",
+    "pm2:start": "pm2 start ecosystem.config.cjs",
+    "pm2:stop": "pm2 stop ecosystem.config.cjs",
+    "pm2:restart": "pm2 restart ecosystem.config.cjs",
+    "pm2:delete": "pm2 delete ecosystem.config.cjs",
+    "pm2:logs": "pm2 logs",
+    "pm2:status": "pm2 status"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.5",
