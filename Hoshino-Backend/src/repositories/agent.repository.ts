@@ -1,11 +1,17 @@
 import type { AgentStatus } from "@modules/baileys/types"
 import { initAuthDatabase, sql } from "@utils/db"
+import { logger } from "@utils/logger"
 
 export interface AgentDbRecord {
 	id: string
 	name: string
 	phoneNumber: string | null
 	status: AgentStatus
+	prefix?: string
+	welcomeMessage?: string | null
+	goodbyeMessage?: string | null
+	autoRead?: boolean
+	typingIndicator?: boolean
 	createdAt: Date
 	updatedAt: Date
 }
@@ -68,6 +74,66 @@ export class AgentRepository {
 	}
 
 	/**
+	 * Updates agent configuration and behavior settings.
+	 */
+	public async updateAgent(
+		agentId: string,
+		data: {
+			prefix?: string
+			welcomeMessage?: string | null
+			goodbyeMessage?: string | null
+			autoRead?: boolean
+			typingIndicator?: boolean
+		},
+	): Promise<AgentDbRecord | null> {
+		await this.initDatabase()
+		const current = await this.findAgentById(agentId)
+		if (!current) return null
+
+		const prefix =
+			data.prefix !== undefined ? data.prefix : current.prefix || "."
+		const welcome =
+			data.welcomeMessage !== undefined
+				? data.welcomeMessage
+				: current.welcomeMessage
+		const goodbye =
+			data.goodbyeMessage !== undefined
+				? data.goodbyeMessage
+				: current.goodbyeMessage
+		const autoRead =
+			data.autoRead !== undefined ? data.autoRead : (current.autoRead ?? false)
+		const typing =
+			data.typingIndicator !== undefined
+				? data.typingIndicator
+				: (current.typingIndicator ?? true)
+
+		const rows = await sql`
+			UPDATE public.agents
+			SET
+				prefix = ${prefix},
+				welcome_message = ${welcome ?? null},
+				goodbye_message = ${goodbye ?? null},
+				auto_read = ${autoRead},
+				typing_indicator = ${typing},
+				updated_at = CURRENT_TIMESTAMP
+			WHERE id = ${agentId}
+			RETURNING
+				id,
+				name,
+				phone_number as "phoneNumber",
+				status,
+				prefix,
+				welcome_message as "welcomeMessage",
+				goodbye_message as "goodbyeMessage",
+				auto_read as "autoRead",
+				typing_indicator as "typingIndicator",
+				created_at as "createdAt",
+				updated_at as "updatedAt"
+		`
+		return (rows[0] as unknown as AgentDbRecord) || null
+	}
+
+	/**
 	 * Deletes agent record and purges all associated multi-tenant tables from PostgreSQL.
 	 */
 	public async deleteAgentRecord(agentIdOrName: string): Promise<void> {
@@ -84,6 +150,9 @@ export class AgentRepository {
 			await sql`DELETE FROM public.agent_group_settings WHERE agent_id = ${targetId}`
 			await sql`DELETE FROM public.agent_command_toggles WHERE agent_id = ${targetId}`
 			await sql`DELETE FROM public.agent_group_commands WHERE agent_id = ${targetId}`
+			await sql`DELETE FROM public.sensei_profiles WHERE agent_id = ${targetId}`
+			await sql`DELETE FROM public.sensei_students WHERE agent_id = ${targetId}`
+			await sql`DELETE FROM public.sensei_bonds WHERE agent_id = ${targetId}`
 			await sql`DELETE FROM auth.credentials WHERE agent_id = ${targetId}`
 			await sql`DELETE FROM auth.keys WHERE agent_id = ${targetId}`
 			await sql`DELETE FROM public.agents WHERE id = ${targetId} OR name = ${agentIdOrName}`
@@ -106,7 +175,18 @@ export class AgentRepository {
 	public async findAllAgents(): Promise<AgentDbRecord[]> {
 		await this.initDatabase()
 		const rows = await sql`
-			SELECT id, name, phone_number as "phoneNumber", status, created_at as "createdAt", updated_at as "updatedAt"
+			SELECT 
+				id, 
+				name, 
+				phone_number as "phoneNumber", 
+				status, 
+				prefix,
+				welcome_message as "welcomeMessage",
+				goodbye_message as "goodbyeMessage",
+				auto_read as "autoRead",
+				typing_indicator as "typingIndicator",
+				created_at as "createdAt", 
+				updated_at as "updatedAt"
 			FROM public.agents
 			ORDER BY created_at DESC
 		`
@@ -119,7 +199,18 @@ export class AgentRepository {
 	public async findAgentById(agentId: string): Promise<AgentDbRecord | null> {
 		await this.initDatabase()
 		const rows = await sql`
-			SELECT id, name, phone_number as "phoneNumber", status, created_at as "createdAt", updated_at as "updatedAt"
+			SELECT 
+				id, 
+				name, 
+				phone_number as "phoneNumber", 
+				status, 
+				prefix,
+				welcome_message as "welcomeMessage",
+				goodbye_message as "goodbyeMessage",
+				auto_read as "autoRead",
+				typing_indicator as "typingIndicator",
+				created_at as "createdAt", 
+				updated_at as "updatedAt"
 			FROM public.agents
 			WHERE id = ${agentId}
 		`

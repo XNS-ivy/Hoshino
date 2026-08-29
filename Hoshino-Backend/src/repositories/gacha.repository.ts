@@ -220,6 +220,77 @@ export class GachaRepository {
 		`
 		return rows as unknown as SenseiStudentItem[]
 	}
+
+	/**
+	 * Fetches all Sensei profiles for an agent.
+	 */
+	public async getAllProfiles(agentId: string): Promise<SenseiProfile[]> {
+		const rows = await sql`
+			SELECT 
+				agent_id as "agentId",
+				user_jid as "userJid",
+				pyroxenes,
+				spark_points as "sparkPoints",
+				total_pulls as "totalPulls",
+				last_daily as "lastDaily",
+				created_at as "createdAt",
+				updated_at as "updatedAt"
+			FROM public.sensei_profiles
+			WHERE agent_id = ${agentId}
+			ORDER BY pyroxenes DESC, total_pulls DESC
+		`
+		return rows as unknown as SenseiProfile[]
+	}
+
+	/**
+	 * Sets exact pyroxenes amount for a Sensei.
+	 */
+	public async setPyroxenes(
+		agentId: string,
+		userJid: string,
+		pyroxenes: number,
+	): Promise<SenseiProfile> {
+		const rows = await sql`
+			INSERT INTO public.sensei_profiles (agent_id, user_jid, pyroxenes, spark_points, total_pulls)
+			VALUES (${agentId}, ${userJid}, ${pyroxenes}, 0, 0)
+			ON CONFLICT (agent_id, user_jid)
+			DO UPDATE SET 
+				pyroxenes = ${pyroxenes},
+				updated_at = CURRENT_TIMESTAMP
+			RETURNING 
+				agent_id as "agentId",
+				user_jid as "userJid",
+				pyroxenes,
+				spark_points as "sparkPoints",
+				total_pulls as "totalPulls",
+				last_daily as "lastDaily",
+				created_at as "createdAt",
+				updated_at as "updatedAt"
+		`
+		return rows[0] as unknown as SenseiProfile
+	}
+
+	/**
+	 * Adds/adjusts pyroxenes amount for a Sensei.
+	 */
+	public async addPyroxenes(
+		agentId: string,
+		userJid: string,
+		amount: number,
+	): Promise<SenseiProfile> {
+		const profile = await this.getOrCreateProfile(agentId, userJid)
+		const newAmount = Math.max(0, profile.pyroxenes + amount)
+		return this.setPyroxenes(agentId, userJid, newAmount)
+	}
+
+	/**
+	 * Deletes a Sensei profile, roster, and bonds from database.
+	 */
+	public async deleteProfile(agentId: string, userJid: string): Promise<void> {
+		await sql`DELETE FROM public.sensei_profiles WHERE agent_id = ${agentId} AND user_jid = ${userJid}`
+		await sql`DELETE FROM public.sensei_students WHERE agent_id = ${agentId} AND user_jid = ${userJid}`
+		await sql`DELETE FROM public.sensei_bonds WHERE agent_id = ${agentId} AND user_jid = ${userJid}`
+	}
 }
 
 export const gachaRepository = GachaRepository.getInstance()

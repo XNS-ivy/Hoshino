@@ -90,6 +90,34 @@ export class MessageRepository {
 	}
 
 	/**
+	 * Looks up the latest pushName/nickname for a specific user JID.
+	 */
+	public async getPushName(
+		agentId: string,
+		senderJid: string,
+	): Promise<string | null> {
+		try {
+			const phone = senderJid.split("@")[0]
+			const normalized = senderJid.includes("@")
+				? senderJid
+				: `${senderJid}@s.whatsapp.net`
+			const rows = await sql`
+				SELECT push_name as "pushName"
+				FROM public.messages
+				WHERE agent_id = ${agentId} 
+				  AND (sender = ${normalized} OR sender LIKE ${`%${phone}%`})
+				  AND push_name IS NOT NULL
+				  AND push_name != ''
+				ORDER BY timestamp DESC
+				LIMIT 1
+			`
+			return (rows[0]?.pushName as string) || null
+		} catch {
+			return null
+		}
+	}
+
+	/**
 	 * Fetches all active chats for a given agent.
 	 */
 	public async getChatsByAgent(agentId: string): Promise<ChatRecord[]> {

@@ -1,7 +1,9 @@
 import { socketManager } from "@modules/baileys/socket"
 import { agentRepository } from "@repositories/agent.repository"
 import { commandRepository } from "@repositories/command.repository"
+import { gachaRepository } from "@repositories/gacha.repository"
 import { messageRepository } from "@repositories/message.repository"
+import { momoRepository } from "@repositories/momo.repository"
 import { commandLoader } from "@services/commandLoader"
 import { Elysia, t } from "elysia"
 
@@ -489,6 +491,195 @@ export const agentRoutes = new Elysia({ prefix: "/api/agents" })
 				welcomeEnabled: t.Optional(t.Boolean()),
 				goodbyeEnabled: t.Optional(t.Boolean()),
 				customPrefix: t.Optional(t.Nullable(t.String())),
+			}),
+		},
+	)
+
+	// GET /api/agents/:id/sensei - List all Sensei profiles for this agent
+	.get("/:id/sensei", async ({ params: { id }, set }) => {
+		try {
+			const safeAgentId = socketManager.sanitizeAgentId(id)
+			const profiles = await gachaRepository.getAllProfiles(safeAgentId)
+
+			const enriched = await Promise.all(
+				profiles.map(async (p) => {
+					const pushName = await messageRepository.getPushName(
+						safeAgentId,
+						p.userJid,
+					)
+					const students = await gachaRepository.getCollection(
+						safeAgentId,
+						p.userJid,
+					)
+					const bonds = await momoRepository.getAllBonds(safeAgentId, p.userJid)
+
+					return {
+						...p,
+						pushName: pushName || p.userJid.split("@")[0],
+						totalStudents: students.length,
+						totalBonds: bonds.length,
+						highestBondLevel: bonds[0]?.bondLevel || 1,
+					}
+				}),
+			)
+
+			return { success: true, data: enriched }
+		} catch (error) {
+			set.status = 500
+			return {
+				success: false,
+				message: `Failed to fetch Sensei profiles: ${error}`,
+			}
+		}
+	})
+
+	// GET /api/agents/:id/sensei/:userJid - Detail Sensei profile with students & bonds
+	.get("/:id/sensei/:userJid", async ({ params: { id, userJid }, set }) => {
+		try {
+			const safeAgentId = socketManager.sanitizeAgentId(id)
+			const profile = await gachaRepository.getOrCreateProfile(
+				safeAgentId,
+				userJid,
+			)
+			const pushName = await messageRepository.getPushName(safeAgentId, userJid)
+			const students = await gachaRepository.getCollection(safeAgentId, userJid)
+			const bonds = await momoRepository.getAllBonds(safeAgentId, userJid)
+
+			return {
+				success: true,
+				data: {
+					...profile,
+					pushName: pushName || userJid.split("@")[0],
+					students,
+					bonds,
+				},
+			}
+		} catch (error) {
+			set.status = 500
+			return {
+				success: false,
+				message: `Failed to fetch Sensei detail: ${error}`,
+			}
+		}
+	})
+
+	// PATCH /api/agents/:id/sensei/:userJid/pyroxenes - Grant or set Pyroxenes
+	.patch(
+		"/:id/sensei/:userJid/pyroxenes",
+		async ({ params: { id, userJid }, body, set }) => {
+			try {
+				const safeAgentId = socketManager.sanitizeAgentId(id)
+				let updated: unknown
+
+				if (body.setAmount !== undefined) {
+					updated = await gachaRepository.setPyroxenes(
+						safeAgentId,
+						userJid,
+						body.setAmount,
+					)
+				} else if (body.amount !== undefined) {
+					updated = await gachaRepository.addPyroxenes(
+						safeAgentId,
+						userJid,
+						body.amount,
+					)
+				}
+
+				return {
+					success: true,
+					data: updated,
+					message: "Pyroxenes updated successfully",
+				}
+			} catch (error) {
+				set.status = 500
+				return {
+					success: false,
+					message: `Failed to update Pyroxenes: ${error}`,
+				}
+			}
+		},
+		{
+			body: t.Object({
+				amount: t.Optional(t.Number()),
+				setAmount: t.Optional(t.Number()),
+			}),
+		},
+	)
+
+	// DELETE /api/agents/:id/sensei/:userJid - Reset Sensei profile & roster
+	.delete("/:id/sensei/:userJid", async ({ params: { id, userJid }, set }) => {
+		try {
+			const safeAgentId = socketManager.sanitizeAgentId(id)
+			await gachaRepository.deleteProfile(safeAgentId, userJid)
+			return {
+				success: true,
+				message: "Sensei profile and collection reset successfully",
+			}
+		} catch (error) {
+			set.status = 500
+			return {
+				success: false,
+				message: `Failed to reset Sensei profile: ${error}`,
+			}
+		}
+	})
+
+	// GET /api/agents/:id/settings - Get agent general settings
+	.get("/:id/settings", async ({ params: { id }, set }) => {
+		try {
+			const safeAgentId = socketManager.sanitizeAgentId(id)
+			const agent = await agentRepository.findAgentById(safeAgentId)
+			if (!agent) {
+				set.status = 404
+				return { success: false, message: "Agent not found" }
+			}
+
+			return {
+				success: true,
+				data: {
+					prefix: agent.prefix || ".",
+					welcomeMessage: agent.welcomeMessage,
+					goodbyeMessage: agent.goodbyeMessage,
+					autoRead: agent.autoRead ?? false,
+					typingIndicator: agent.typingIndicator ?? true,
+				},
+			}
+		} catch (error) {
+			set.status = 500
+			return {
+				success: false,
+				message: `Failed to fetch agent settings: ${error}`,
+			}
+		}
+	})
+
+	// PATCH /api/agents/:id/settings - Update agent general settings
+	.patch(
+		"/:id/settings",
+		async ({ params: { id }, body, set }) => {
+			try {
+				const safeAgentId = socketManager.sanitizeAgentId(id)
+				const updated = await agentRepository.updateAgent(safeAgentId, body)
+				return {
+					success: true,
+					data: updated,
+					message: "Agent settings updated successfully",
+				}
+			} catch (error) {
+				set.status = 500
+				return {
+					success: false,
+					message: `Failed to update agent settings: ${error}`,
+				}
+			}
+		},
+		{
+			body: t.Object({
+				prefix: t.Optional(t.String()),
+				welcomeMessage: t.Optional(t.Nullable(t.String())),
+				goodbyeMessage: t.Optional(t.Nullable(t.String())),
+				autoRead: t.Optional(t.Boolean()),
+				typingIndicator: t.Optional(t.Boolean()),
 			}),
 		},
 	)

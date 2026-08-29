@@ -50,10 +50,20 @@ export async function initAuthDatabase(): Promise<void> {
 				name VARCHAR(255) NOT NULL,
 				phone_number VARCHAR(50),
 				status VARCHAR(50) DEFAULT 'disconnected',
+				prefix VARCHAR(10) DEFAULT '.',
+				welcome_message TEXT,
+				goodbye_message TEXT,
+				auto_read BOOLEAN DEFAULT false,
+				typing_indicator BOOLEAN DEFAULT true,
 				created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
 				updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 			);
 		`
+		await sql`ALTER TABLE public.agents ADD COLUMN IF NOT EXISTS prefix VARCHAR(10) DEFAULT '.';`
+		await sql`ALTER TABLE public.agents ADD COLUMN IF NOT EXISTS welcome_message TEXT;`
+		await sql`ALTER TABLE public.agents ADD COLUMN IF NOT EXISTS goodbye_message TEXT;`
+		await sql`ALTER TABLE public.agents ADD COLUMN IF NOT EXISTS auto_read BOOLEAN DEFAULT false;`
+		await sql`ALTER TABLE public.agents ADD COLUMN IF NOT EXISTS typing_indicator BOOLEAN DEFAULT true;`
 
 		// 6. Create public.chats table
 		await sql`

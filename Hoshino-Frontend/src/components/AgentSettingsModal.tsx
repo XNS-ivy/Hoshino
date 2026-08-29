@@ -5,31 +5,48 @@ import {
 	Crown,
 	Settings,
 	ShieldAlert,
+	Sliders,
+	Sparkles,
 	Trash2,
 	Users,
 	X,
 } from "lucide-react"
 import { API_BASE_URL } from "../services/api"
-import type { Agent } from "../types"
+import type { Agent, SenseiProfileItem } from "../types"
 import { AutoDeleteTab, type AutoDeleteItem } from "./settings/AutoDeleteTab"
 import { BlacklistTab, type BlacklistItem } from "./settings/BlacklistTab"
-import { CommandTogglesTab, type CommandToggleItem } from "./settings/CommandTogglesTab"
+import {
+	CommandTogglesTab,
+	type CommandToggleItem,
+} from "./settings/CommandTogglesTab"
 import type { ContactItem } from "./settings/ContactSelector"
-import { GroupSettingsTab, type GroupSettingsItem } from "./settings/GroupSettingsTab"
+import { GeneralSettingsTab } from "./settings/GeneralSettingsTab"
+import {
+	GroupSettingsTab,
+	type GroupSettingsItem,
+} from "./settings/GroupSettingsTab"
 import { OwnersTab, type OwnerItem } from "./settings/OwnersTab"
+import { SenseiTab } from "./settings/SenseiTab"
 
 interface AgentSettingsModalProps {
 	agent: Agent
 	onClose: () => void
 }
 
-type TabType = "owners" | "blacklist" | "autodelete" | "commands" | "groups"
+type TabType =
+	| "general"
+	| "sensei"
+	| "owners"
+	| "blacklist"
+	| "autodelete"
+	| "commands"
+	| "groups"
 
 export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 	agent,
 	onClose,
 }) => {
-	const [activeTab, setActiveTab] = useState<TabType>("owners")
+	const [activeTab, setActiveTab] = useState<TabType>("general")
 	const [loading, setLoading] = useState<boolean>(false)
 	const [toast, setToast] = useState<{
 		type: "success" | "error"
@@ -37,6 +54,7 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 	} | null>(null)
 
 	// Tab States
+	const [senseiProfiles, setSenseiProfiles] = useState<SenseiProfileItem[]>([])
 	const [owners, setOwners] = useState<OwnerItem[]>([])
 	const [blacklist, setBlacklist] = useState<BlacklistItem[]>([])
 	const [autoDeleteList, setAutoDeleteList] = useState<AutoDeleteItem[]>([])
@@ -44,14 +62,19 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 	const [groups, setGroups] = useState<GroupSettingsItem[]>([])
 	const [contacts, setContacts] = useState<ContactItem[]>([])
 
-	const showToast = useCallback((type: "success" | "error", message: string) => {
-		setToast({ type, message })
-		setTimeout(() => setToast(null), 3000)
-	}, [])
+	const showToast = useCallback(
+		(type: "success" | "error", message: string) => {
+			setToast({ type, message })
+			setTimeout(() => setToast(null), 3000)
+		},
+		[],
+	)
 
 	const fetchContacts = useCallback(async () => {
 		try {
-			const res = await fetch(`${API_BASE_URL}/api/agents/${agent.agentId}/contacts`)
+			const res = await fetch(
+				`${API_BASE_URL}/api/agents/${agent.agentId}/contacts`,
+			)
 			const json = await res.json()
 			if (json.success) setContacts(json.data)
 		} catch {
@@ -59,24 +82,31 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 		}
 	}, [agent.agentId])
 
-	const fetchTabData = useCallback(async (tab: TabType) => {
-		setLoading(true)
-		try {
-			const res = await fetch(`${API_BASE_URL}/api/agents/${agent.agentId}/${tab}`)
-			const json = await res.json()
-			if (json.success) {
-				if (tab === "owners") setOwners(json.data)
-				if (tab === "blacklist") setBlacklist(json.data)
-				if (tab === "autodelete") setAutoDeleteList(json.data)
-				if (tab === "commands") setCommands(json.data)
-				if (tab === "groups") setGroups(json.data)
+	const fetchTabData = useCallback(
+		async (tab: TabType) => {
+			if (tab === "general") return // handled inside GeneralSettingsTab
+			setLoading(true)
+			try {
+				const res = await fetch(
+					`${API_BASE_URL}/api/agents/${agent.agentId}/${tab}`,
+				)
+				const json = await res.json()
+				if (json.success) {
+					if (tab === "sensei") setSenseiProfiles(json.data)
+					if (tab === "owners") setOwners(json.data)
+					if (tab === "blacklist") setBlacklist(json.data)
+					if (tab === "autodelete") setAutoDeleteList(json.data)
+					if (tab === "commands") setCommands(json.data)
+					if (tab === "groups") setGroups(json.data)
+				}
+			} catch (err) {
+				showToast("error", `Failed to load ${tab}: ${err}`)
+			} finally {
+				setLoading(false)
 			}
-		} catch (err) {
-			showToast("error", `Failed to load ${tab}: ${err}`)
-		} finally {
-			setLoading(false)
-		}
-	}, [agent.agentId, showToast])
+		},
+		[agent.agentId, showToast],
+	)
 
 	useEffect(() => {
 		fetchContacts()
@@ -89,11 +119,14 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 	// Owner Handlers
 	const handleAddOwner = async (userJid: string, role: string) => {
 		try {
-			const res = await fetch(`${API_BASE_URL}/api/agents/${agent.agentId}/owners`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ userJid, role }),
-			})
+			const res = await fetch(
+				`${API_BASE_URL}/api/agents/${agent.agentId}/owners`,
+				{
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ userJid, role }),
+				},
+			)
 			const json = await res.json()
 			if (json.success) {
 				showToast("success", "Owner added successfully")
@@ -127,11 +160,14 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 	// Blacklist Handlers
 	const handleAddBlacklist = async (userJid: string, reason?: string) => {
 		try {
-			const res = await fetch(`${API_BASE_URL}/api/agents/${agent.agentId}/blacklist`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ userJid, reason }),
-			})
+			const res = await fetch(
+				`${API_BASE_URL}/api/agents/${agent.agentId}/blacklist`,
+				{
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ userJid, reason }),
+				},
+			)
 			const json = await res.json()
 			if (json.success) {
 				showToast("success", "User blacklisted successfully")
@@ -158,18 +194,21 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 				showToast("error", json.message)
 			}
 		} catch (err) {
-			showToast("error", `Failed to remove user: ${err}`)
+			showToast("error", `Failed to remove from blacklist: ${err}`)
 		}
 	}
 
 	// AutoDelete Handlers
 	const handleAddAutoDelete = async (userJid: string) => {
 		try {
-			const res = await fetch(`${API_BASE_URL}/api/agents/${agent.agentId}/autodelete`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ userJid }),
-			})
+			const res = await fetch(
+				`${API_BASE_URL}/api/agents/${agent.agentId}/autodelete`,
+				{
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ userJid }),
+				},
+			)
 			const json = await res.json()
 			if (json.success) {
 				showToast("success", "User added to auto-delete list")
@@ -178,7 +217,7 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 				showToast("error", json.message)
 			}
 		} catch (err) {
-			showToast("error", `Failed to add user: ${err}`)
+			showToast("error", `Failed to add auto-delete: ${err}`)
 		}
 	}
 
@@ -196,31 +235,35 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 				showToast("error", json.message)
 			}
 		} catch (err) {
-			showToast("error", `Failed to remove user: ${err}`)
+			showToast("error", `Failed to remove auto-delete: ${err}`)
 		}
 	}
 
-	// Command Toggle Handler
+	// Command Toggle Handlers
 	const handleToggleCommand = async (
 		commandName: string,
-		currentStatus: "enabled" | "disabled",
+		status: "enabled" | "disabled",
 	) => {
-		const newStatus = currentStatus === "enabled" ? "disabled" : "enabled"
-		setCommands((prev) =>
-			prev.map((c) => (c.name === commandName ? { ...c, status: newStatus } : c)),
-		)
-
 		try {
+			setCommands((prev) =>
+				prev.map((c) => (c.name === commandName ? { ...c, status } : c)),
+			)
+
 			const res = await fetch(
-				`${API_BASE_URL}/api/agents/${agent.agentId}/commands/${commandName}`,
+				`${API_BASE_URL}/api/agents/${agent.agentId}/commands/${encodeURIComponent(commandName)}`,
 				{
 					method: "PATCH",
 					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ status: newStatus }),
+					body: JSON.stringify({ status }),
 				},
 			)
 			const json = await res.json()
-			if (!json.success) {
+			if (json.success) {
+				showToast(
+					"success",
+					`Command ${commandName} ${status === "enabled" ? "enabled" : "disabled"}`,
+				)
+			} else {
 				showToast("error", json.message)
 				fetchTabData("commands")
 			}
@@ -230,22 +273,27 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 		}
 	}
 
-	// Group Settings Handler
+	// Group Settings Handlers
 	const handleUpdateGroupSettings = async (
-		groupJid: string,
-		partialSettings: Partial<GroupSettingsItem>,
+		jid: string,
+		data: {
+			botEnabled?: boolean
+			welcomeEnabled?: boolean
+			goodbyeEnabled?: boolean
+			customPrefix?: string | null
+		},
 	) => {
-		setGroups((prev) =>
-			prev.map((g) => (g.jid === groupJid ? { ...g, ...partialSettings } : g)),
-		)
-
 		try {
+			setGroups((prev) =>
+				prev.map((g) => (g.jid === jid ? { ...g, ...data } : g)),
+			)
+
 			const res = await fetch(
-				`${API_BASE_URL}/api/agents/${agent.agentId}/groups/${encodeURIComponent(groupJid)}`,
+				`${API_BASE_URL}/api/agents/${agent.agentId}/groups/${encodeURIComponent(jid)}`,
 				{
 					method: "PATCH",
 					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify(partialSettings),
+					body: JSON.stringify(data),
 				},
 			)
 			const json = await res.json()
@@ -282,7 +330,7 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 				className="glass-panel"
 				style={{
 					width: "100%",
-					maxWidth: "860px",
+					maxWidth: "920px",
 					height: "85vh",
 					display: "flex",
 					flexDirection: "column",
@@ -310,7 +358,8 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 								width: "40px",
 								height: "40px",
 								borderRadius: "12px",
-								background: "linear-gradient(135deg, #a855f7 0%, #6366f1 100%)",
+								background:
+									"linear-gradient(135deg, #a855f7 0%, #6366f1 100%)",
 								display: "flex",
 								alignItems: "center",
 								justifyContent: "center",
@@ -319,10 +368,22 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 							<Settings size={22} color="#ffffff" />
 						</div>
 						<div>
-							<h3 style={{ fontSize: "1.15rem", fontWeight: 600, color: "var(--text-main)" }}>
+							<h3
+								style={{
+									fontSize: "1.15rem",
+									fontWeight: 600,
+									color: "var(--text-main)",
+								}}
+							>
 								Agent Settings: {agent.name}
 							</h3>
-							<p style={{ fontSize: "0.78rem", color: "var(--text-muted)", fontFamily: "monospace" }}>
+							<p
+								style={{
+									fontSize: "0.78rem",
+									color: "var(--text-muted)",
+									fontFamily: "monospace",
+								}}
+							>
 								ID: {agent.agentId}
 							</p>
 						</div>
@@ -369,7 +430,9 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 							}`,
 						}}
 					>
-						<div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+						<div
+							style={{ display: "flex", alignItems: "center", gap: "8px" }}
+						>
 							{toast.type === "success" ? (
 								<CheckCircle2 size={16} />
 							) : (
@@ -380,7 +443,12 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 						<button
 							type="button"
 							onClick={() => setToast(null)}
-							style={{ background: "none", border: "none", color: "inherit", cursor: "pointer" }}
+							style={{
+								background: "none",
+								border: "none",
+								color: "inherit",
+								cursor: "pointer",
+							}}
 						>
 							<X size={14} />
 						</button>
@@ -394,48 +462,123 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 						borderBottom: "1px solid var(--border-color)",
 						background: "rgba(10, 15, 26, 0.4)",
 						padding: "6px 16px 0 16px",
-						gap: "8px",
+						gap: "6px",
 						overflowX: "auto",
 					}}
 				>
 					<button
 						type="button"
-						onClick={() => setActiveTab("owners")}
+						onClick={() => setActiveTab("general")}
 						style={{
-							padding: "10px 16px",
+							padding: "10px 14px",
 							fontSize: "0.85rem",
 							fontWeight: 600,
 							borderRadius: "10px 10px 0 0",
 							border: "none",
-							borderBottom: activeTab === "owners" ? "2px solid #a855f7" : "2px solid transparent",
-							background: activeTab === "owners" ? "rgba(168, 85, 247, 0.12)" : "transparent",
+							borderBottom:
+								activeTab === "general"
+									? "2px solid var(--primary-cyan)"
+									: "2px solid transparent",
+							background:
+								activeTab === "general"
+									? "rgba(0, 242, 254, 0.12)"
+									: "transparent",
+							color:
+								activeTab === "general"
+									? "var(--primary-cyan)"
+									: "var(--text-muted)",
+							cursor: "pointer",
+							display: "flex",
+							alignItems: "center",
+							gap: "6px",
+							whiteSpace: "nowrap",
+						}}
+					>
+						<Sliders size={15} />
+						General
+					</button>
+
+					<button
+						type="button"
+						onClick={() => setActiveTab("sensei")}
+						style={{
+							padding: "10px 14px",
+							fontSize: "0.85rem",
+							fontWeight: 600,
+							borderRadius: "10px 10px 0 0",
+							border: "none",
+							borderBottom:
+								activeTab === "sensei"
+									? "2px solid #ec4899"
+									: "2px solid transparent",
+							background:
+								activeTab === "sensei"
+									? "rgba(236, 72, 153, 0.12)"
+									: "transparent",
+							color: activeTab === "sensei" ? "#f472b6" : "var(--text-muted)",
+							cursor: "pointer",
+							display: "flex",
+							alignItems: "center",
+							gap: "6px",
+							whiteSpace: "nowrap",
+						}}
+					>
+						<Sparkles size={15} />
+						Sensei & Gacha
+					</button>
+
+					<button
+						type="button"
+						onClick={() => setActiveTab("owners")}
+						style={{
+							padding: "10px 14px",
+							fontSize: "0.85rem",
+							fontWeight: 600,
+							borderRadius: "10px 10px 0 0",
+							border: "none",
+							borderBottom:
+								activeTab === "owners"
+									? "2px solid #a855f7"
+									: "2px solid transparent",
+							background:
+								activeTab === "owners"
+									? "rgba(168, 85, 247, 0.12)"
+									: "transparent",
 							color: activeTab === "owners" ? "#c084fc" : "var(--text-muted)",
 							cursor: "pointer",
 							display: "flex",
 							alignItems: "center",
 							gap: "6px",
+							whiteSpace: "nowrap",
 						}}
 					>
 						<Crown size={15} />
-						Owners & Admins
+						Owners
 					</button>
 
 					<button
 						type="button"
 						onClick={() => setActiveTab("blacklist")}
 						style={{
-							padding: "10px 16px",
+							padding: "10px 14px",
 							fontSize: "0.85rem",
 							fontWeight: 600,
 							borderRadius: "10px 10px 0 0",
 							border: "none",
-							borderBottom: activeTab === "blacklist" ? "2px solid #f43f5e" : "2px solid transparent",
-							background: activeTab === "blacklist" ? "rgba(244, 63, 94, 0.12)" : "transparent",
+							borderBottom:
+								activeTab === "blacklist"
+									? "2px solid #f43f5e"
+									: "2px solid transparent",
+							background:
+								activeTab === "blacklist"
+									? "rgba(244, 63, 94, 0.12)"
+									: "transparent",
 							color: activeTab === "blacklist" ? "#fb7185" : "var(--text-muted)",
 							cursor: "pointer",
 							display: "flex",
 							alignItems: "center",
 							gap: "6px",
+							whiteSpace: "nowrap",
 						}}
 					>
 						<ShieldAlert size={15} />
@@ -446,18 +589,26 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 						type="button"
 						onClick={() => setActiveTab("autodelete")}
 						style={{
-							padding: "10px 16px",
+							padding: "10px 14px",
 							fontSize: "0.85rem",
 							fontWeight: 600,
 							borderRadius: "10px 10px 0 0",
 							border: "none",
-							borderBottom: activeTab === "autodelete" ? "2px solid #f59e0b" : "2px solid transparent",
-							background: activeTab === "autodelete" ? "rgba(245, 158, 11, 0.12)" : "transparent",
-							color: activeTab === "autodelete" ? "#fbbf24" : "var(--text-muted)",
+							borderBottom:
+								activeTab === "autodelete"
+									? "2px solid #f59e0b"
+									: "2px solid transparent",
+							background:
+								activeTab === "autodelete"
+									? "rgba(245, 158, 11, 0.12)"
+									: "transparent",
+							color:
+								activeTab === "autodelete" ? "#fbbf24" : "var(--text-muted)",
 							cursor: "pointer",
 							display: "flex",
 							alignItems: "center",
 							gap: "6px",
+							whiteSpace: "nowrap",
 						}}
 					>
 						<Trash2 size={15} />
@@ -468,53 +619,91 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 						type="button"
 						onClick={() => setActiveTab("commands")}
 						style={{
-							padding: "10px 16px",
+							padding: "10px 14px",
 							fontSize: "0.85rem",
 							fontWeight: 600,
 							borderRadius: "10px 10px 0 0",
 							border: "none",
-							borderBottom: activeTab === "commands" ? "2px solid #06b6d4" : "2px solid transparent",
-							background: activeTab === "commands" ? "rgba(6, 182, 212, 0.12)" : "transparent",
+							borderBottom:
+								activeTab === "commands"
+									? "2px solid #06b6d4"
+									: "2px solid transparent",
+							background:
+								activeTab === "commands"
+									? "rgba(6, 182, 212, 0.12)"
+									: "transparent",
 							color: activeTab === "commands" ? "#22d3ee" : "var(--text-muted)",
 							cursor: "pointer",
 							display: "flex",
 							alignItems: "center",
 							gap: "6px",
+							whiteSpace: "nowrap",
 						}}
 					>
 						<Settings size={15} />
-						Command Toggles
+						Commands
 					</button>
 
 					<button
 						type="button"
 						onClick={() => setActiveTab("groups")}
 						style={{
-							padding: "10px 16px",
+							padding: "10px 14px",
 							fontSize: "0.85rem",
 							fontWeight: 600,
 							borderRadius: "10px 10px 0 0",
 							border: "none",
-							borderBottom: activeTab === "groups" ? "2px solid #10b981" : "2px solid transparent",
-							background: activeTab === "groups" ? "rgba(16, 185, 129, 0.12)" : "transparent",
+							borderBottom:
+								activeTab === "groups"
+									? "2px solid #10b981"
+									: "2px solid transparent",
+							background:
+								activeTab === "groups"
+									? "rgba(16, 185, 129, 0.12)"
+									: "transparent",
 							color: activeTab === "groups" ? "#34d399" : "var(--text-muted)",
 							cursor: "pointer",
 							display: "flex",
 							alignItems: "center",
 							gap: "6px",
+							whiteSpace: "nowrap",
 						}}
 					>
 						<Users size={15} />
-						Group Settings
+						Groups
 					</button>
 				</div>
 
 				{/* Tab Content */}
 				<div style={{ flex: 1, overflowY: "auto", padding: "20px" }}>
 					{loading && (
-						<div style={{ padding: "30px", textAlign: "center", color: "var(--text-muted)", fontSize: "0.85rem" }}>
+						<div
+							style={{
+								padding: "30px",
+								textAlign: "center",
+								color: "var(--text-muted)",
+								fontSize: "0.85rem",
+							}}
+						>
 							Loading settings data...
 						</div>
+					)}
+
+					{!loading && activeTab === "general" && (
+						<GeneralSettingsTab
+							agentId={agent.agentId}
+							onShowToast={showToast}
+						/>
+					)}
+
+					{!loading && activeTab === "sensei" && (
+						<SenseiTab
+							agentId={agent.agentId}
+							profiles={senseiProfiles}
+							loading={loading}
+							onRefresh={() => fetchTabData("sensei")}
+							onShowToast={showToast}
+						/>
 					)}
 
 					{!loading && activeTab === "owners" && (

@@ -1,3 +1,7 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { join } from "node:path"
+import { logger } from "@utils/logger"
+
 export interface SchaleStudent {
 	Id: number
 	Name: string
@@ -28,12 +32,21 @@ export interface GachaPullItem {
 	isRateUp?: boolean
 }
 
+const CACHE_DIR = join(process.cwd(), "data", "schaledb")
+const STUDENTS_FILE = join(CACHE_DIR, "students.json")
+
 let cachedStudents: SchaleStudent[] | null = null
 let lastFetchedAt = 0
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000 // 24 Hours
+const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000 // 7 Days local disk cache
+
+function ensureCacheDir() {
+	if (!existsSync(CACHE_DIR)) {
+		mkdirSync(CACHE_DIR, { recursive: true })
+	}
+}
 
 /**
- * Fetches and caches all Blue Archive students from SchaleDB.
+ * Fetches and caches all Blue Archive students with persistent local disk storage.
  */
 export async function getSchaleStudents(): Promise<SchaleStudent[]> {
 	const now = Date.now()
@@ -41,7 +54,32 @@ export async function getSchaleStudents(): Promise<SchaleStudent[]> {
 		return cachedStudents
 	}
 
+	ensureCacheDir()
+
+	// 1. Try reading from local disk cache first
+	if (existsSync(STUDENTS_FILE)) {
+		try {
+			const localData = readFileSync(STUDENTS_FILE, "utf-8")
+			const parsed = JSON.parse(localData) as SchaleStudent[]
+			if (Array.isArray(parsed) && parsed.length > 0) {
+				cachedStudents = parsed
+				lastFetchedAt = now
+				return cachedStudents
+			}
+		} catch (readErr) {
+			logger.warn(
+				"/utils/schaledb.ts",
+				`Failed to read local students cache: ${readErr}`,
+			)
+		}
+	}
+
+	// 2. Fetch from SchaleDB API if local file missing or invalid
 	try {
+		logger.info(
+			"/utils/schaledb.ts",
+			"Fetching fresh students database from SchaleDB...",
+		)
 		const res = await fetch("https://schaledb.com/data/en/students.json", {
 			headers: {
 				"User-Agent": "HoshinoBot/1.0 (Blue Archive WhatsApp Assistant)",
@@ -59,6 +97,21 @@ export async function getSchaleStudents(): Promise<SchaleStudent[]> {
 
 		cachedStudents = students
 		lastFetchedAt = now
+
+		// Save to local disk asynchronously
+		try {
+			writeFileSync(STUDENTS_FILE, JSON.stringify(students, null, 2), "utf-8")
+			logger.system(
+				"/utils/schaledb.ts",
+				`Saved ${students.length} students to local cache: ${STUDENTS_FILE}`,
+			)
+		} catch (writeErr) {
+			logger.warn(
+				"/utils/schaledb.ts",
+				`Failed to write students to disk cache: ${writeErr}`,
+			)
+		}
+
 		return students
 	} catch (error) {
 		if (cachedStudents) return cachedStudents
@@ -113,26 +166,115 @@ export function getStudentImageUrl(
 	return `https://schaledb.com/images/student/${type}/${id}.webp`
 }
 
+export interface GachaExecutionResult {
+	results: GachaPullItem[]
+	threeStars: SchaleStudent[]
+	twoStars: SchaleStudent[]
+	oneStars: SchaleStudent[]
+}
+
 /**
- * Formats Attack / Bullet Type with themed emojis and colors.
+ * Official Blue Archive Gacha Rates:
+ * 3-Star: 3.0% (Rate-Up: 0.7%)
+ * 2-Star: 18.5%
+ * 1-Star: 78.5%
+ */
+export async function executeGachaPull(
+	pullCount: 1 | 10 | number = 10,
+	guarantee3Star = false,
+	rateUpStudentId?: number,
+): Promise<GachaExecutionResult> {
+	const allStudents = await getSchaleStudents()
+
+	const star3 = allStudents.filter((s) => s.StarGrade === 3)
+	const star2 = allStudents.filter((s) => s.StarGrade === 2)
+	const star1 = allStudents.filter((s) => s.StarGrade === 1)
+
+	const rateUpStudent = rateUpStudentId
+		? allStudents.find((s) => s.Id === rateUpStudentId && s.StarGrade === 3)
+		: undefined
+
+	const results: GachaPullItem[] = []
+
+	for (let i = 0; i < pullCount; i++) {
+		const isLastOfTen = pullCount === 10 && i === 9
+		const rand = Math.random() * 100
+
+		if (guarantee3Star || rand < 3.0) {
+			// 3★ Pull (3% or Spark Guarantee)
+			let selected: SchaleStudent
+			let isRateUp = false
+
+			if (rateUpStudent && Math.random() < 0.7 / 3.0) {
+				selected = rateUpStudent
+				isRateUp = true
+			} else {
+				selected = star3[Math.floor(Math.random() * star3.length)]!
+			}
+
+			results.push({
+				student: selected,
+				starGrade: 3,
+				isRateUp,
+			})
+		} else if (rand < 21.5 || isLastOfTen) {
+			// 2★ Pull (18.5% or guaranteed on 10th pull)
+			const selected = star2[Math.floor(Math.random() * star2.length)]!
+			results.push({
+				student: selected,
+				starGrade: 2,
+				isGuaranteed2Star: isLastOfTen,
+			})
+		} else {
+			// 1★ Pull (78.5%)
+			const selected = star1[Math.floor(Math.random() * star1.length)]!
+			results.push({
+				student: selected,
+				starGrade: 1,
+			})
+		}
+	}
+
+	const threeStars = results
+		.filter((r) => r.starGrade === 3)
+		.map((r) => r.student)
+	const twoStars = results
+		.filter((r) => r.starGrade === 2)
+		.map((r) => r.student)
+	const oneStars = results
+		.filter((r) => r.starGrade === 1)
+		.map((r) => r.student)
+
+	return {
+		results,
+		threeStars,
+		twoStars,
+		oneStars,
+	}
+}
+
+export const simulateGacha = executeGachaPull
+
+/**
+ * Formats Bullet / Attack type into rich emoji format.
  */
 export function formatBulletType(type: string): string {
 	switch (type) {
 		case "Explosion":
-			return "🔴 Explosive (Red)"
+			return "🔴 Explosive"
 		case "Pierce":
-			return "🟡 Piercing (Yellow)"
+			return "🟡 Piercing"
 		case "Mystic":
-			return "🔵 Mystic (Blue)"
+			return "🔵 Mystic"
 		case "Sonic":
-			return "🟣 Sonic (Purple)"
+			return "🟣 Sonic"
 		default:
-			return type
+			return `⚪ ${type}`
 	}
 }
 
 /**
- * Formats Armor / Defense Type with themed emojis.
+ * Formats Armor / Defense type into rich emoji format.
  */
 export function formatArmorType(type: string): string {
 	switch (type) {
@@ -141,96 +283,17 @@ export function formatArmorType(type: string): string {
 		case "HeavyArmor":
 			return "🟡 Heavy Armor"
 		case "Unarmed":
-			return "🔵 Special Armor"
+			return "🔵 Special / Mystic Armor"
 		case "ElasticArmor":
-			return "🟣 Elastic Armor"
+			return "🟣 Elastic / Sonic Armor"
 		default:
-			return type
+			return `⚪ ${type}`
 	}
 }
 
 /**
- * Formats Squad Type (Striker vs Special).
+ * Formats Squad Type (Main / Striker or Support / Special).
  */
 export function formatSquadType(type: string): string {
-	return type === "Main" ? "Striker (Frontline)" : "Special (Support)"
-}
-
-/**
- * Executes Blue Archive Gacha recruitment simulation with official rates.
- */
-export async function executeGachaPull(
-	pullCount: 1 | 10,
-	isSpark = false,
-): Promise<{
-	results: GachaPullItem[]
-	threeStars: SchaleStudent[]
-	pyroxeneCost: number
-}> {
-	const students = await getSchaleStudents()
-
-	const pool3Star = students.filter((s) => s.StarGrade === 3)
-	const pool2Star = students.filter((s) => s.StarGrade === 2)
-	const pool1Star = students.filter((s) => s.StarGrade === 1)
-
-	const getRandom = (pool: SchaleStudent[]): SchaleStudent =>
-		pool[Math.floor(Math.random() * pool.length)] ?? pool[0]!
-
-	// Spark Redemption (200 Spark Points Guaranteed 3★ Pick)
-	if (isSpark) {
-		const sparkStudent = getRandom(pool3Star)
-		return {
-			results: [{ student: sparkStudent, starGrade: 3, isRateUp: true }],
-			threeStars: [sparkStudent],
-			pyroxeneCost: 0,
-		}
-	}
-
-	const results: GachaPullItem[] = []
-	const threeStars: SchaleStudent[] = []
-
-	for (let i = 0; i < pullCount; i++) {
-		const is10thGuaranteed = pullCount === 10 && i === 9
-		const roll = Math.random() * 100
-
-		if (is10thGuaranteed) {
-			// Guaranteed 2★+ Rule on 10th pull
-			// 3★: 3.0%, 2★: 97.0%
-			if (roll < 3.0) {
-				const picked = getRandom(pool3Star)
-				results.push({
-					student: picked,
-					starGrade: 3,
-					isGuaranteed2Star: true,
-				})
-				threeStars.push(picked)
-			} else {
-				const picked = getRandom(pool2Star)
-				results.push({
-					student: picked,
-					starGrade: 2,
-					isGuaranteed2Star: true,
-				})
-			}
-		} else {
-			// Standard Pull Rates: 3★ (3%), 2★ (18.5%), 1★ (78.5%)
-			if (roll < 3.0) {
-				const picked = getRandom(pool3Star)
-				results.push({ student: picked, starGrade: 3 })
-				threeStars.push(picked)
-			} else if (roll < 3.0 + 18.5) {
-				const picked = getRandom(pool2Star)
-				results.push({ student: picked, starGrade: 2 })
-			} else {
-				const picked = getRandom(pool1Star)
-				results.push({ student: picked, starGrade: 1 })
-			}
-		}
-	}
-
-	return {
-		results,
-		threeStars,
-		pyroxeneCost: pullCount === 10 ? 1200 : 120,
-	}
+	return type === "Main" ? "⚔️ Striker (Main)" : "🛡️ Special (Support)"
 }

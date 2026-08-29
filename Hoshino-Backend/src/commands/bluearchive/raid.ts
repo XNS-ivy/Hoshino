@@ -13,21 +13,50 @@ interface SchaleRaidBoss {
 	Terrain?: string[]
 }
 
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { join } from "node:path"
+
+const CACHE_DIR = join(process.cwd(), "data", "schaledb")
+const RAIDS_FILE = join(CACHE_DIR, "raids.json")
+
 let cachedRaids: SchaleRaidBoss[] | null = null
 let lastRaidFetch = 0
 
 async function getRaidBosses(): Promise<SchaleRaidBoss[]> {
 	const now = Date.now()
-	if (cachedRaids && now - lastRaidFetch < 24 * 60 * 60 * 1000) {
+	if (cachedRaids && now - lastRaidFetch < 7 * 24 * 60 * 60 * 1000) {
 		return cachedRaids
 	}
 
+	if (!existsSync(CACHE_DIR)) {
+		mkdirSync(CACHE_DIR, { recursive: true })
+	}
+
+	// 1. Try local disk cache
+	if (existsSync(RAIDS_FILE)) {
+		try {
+			const localData = readFileSync(RAIDS_FILE, "utf-8")
+			const parsed = JSON.parse(localData) as SchaleRaidBoss[]
+			if (Array.isArray(parsed) && parsed.length > 0) {
+				cachedRaids = parsed
+				lastRaidFetch = now
+				return cachedRaids
+			}
+		} catch {}
+	}
+
+	// 2. Fetch fresh from SchaleDB
 	try {
 		const res = await fetch("https://schaledb.com/data/en/raids.json")
 		if (!res.ok) throw new Error(`HTTP ${res.status}`)
 		const data = (await res.json()) as { Raid?: SchaleRaidBoss[] }
 		cachedRaids = data.Raid || []
 		lastRaidFetch = now
+
+		try {
+			writeFileSync(RAIDS_FILE, JSON.stringify(cachedRaids, null, 2), "utf-8")
+		} catch {}
+
 		return cachedRaids
 	} catch (e) {
 		if (cachedRaids) return cachedRaids

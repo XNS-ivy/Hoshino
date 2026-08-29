@@ -58,7 +58,51 @@ export interface ChatSummary {
 }
 
 export interface WSEvent {
-	type: "message_new" | "status_change" | "qr_code" | "pairing_code"
+	type: "message_new" | "status_change" | "qr_update"
 	agentId: string
 	payload: unknown
+}
+
+export interface SenseiProfileItem {
+	agentId: string
+	userJid: string
+	pushName?: string
+	pyroxenes: number
+	sparkPoints: number
+	totalPulls: number
+	totalStudents?: number
+	totalBonds?: number
+	highestBondLevel?: number
+	lastDaily?: string | null
+	createdAt?: string
+	updatedAt?: string
+}
+
+export interface SenseiStudentItem {
+	agentId: string
+	userJid: string
+	studentId: number
+	studentName: string
+	starGrade: number
+	count: number
+	firstObtainedAt: string
+}
+
+export interface SenseiBondItem {
+	agentId: string
+	userJid: string
+	studentId: number
+	studentName: string
+	bondLevel: number
+	bondExp: number
+	totalTalks: number
+	lastTalk: string
+}
+
+export interface AgentGeneralSettings {
+	prefix: string
+	welcomeMessage?: string | null
+	goodbyeMessage?: string | null
+	autoRead: boolean
+	typingIndicator: boolean
 }
