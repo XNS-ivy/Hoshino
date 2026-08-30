@@ -96,16 +96,31 @@ const command: ICommand = {
 
 			// 5. Send via WhatsApp
 			if (type === "video") {
-				await ctx.sock.sendMessage(
-					ctx.jid,
-					{
-						video: result.buffer,
-						caption,
-						mimetype: "video/mp4",
-						fileName: result.fileName,
-					},
-					{ quoted: ctx.rawMsg },
-				)
+				const isLarge = (result.sizeBytes || 0) > 60 * 1024 * 1024
+
+				if (isLarge) {
+					await ctx.sock.sendMessage(
+						ctx.jid,
+						{
+							document: result.buffer,
+							caption: `${caption}\n\n📁 _Sent as document due to large file size._`,
+							mimetype: "video/mp4",
+							fileName: result.fileName,
+						},
+						{ quoted: ctx.rawMsg },
+					)
+				} else {
+					await ctx.sock.sendMessage(
+						ctx.jid,
+						{
+							video: result.buffer,
+							caption,
+							mimetype: "video/mp4",
+							fileName: result.fileName,
+						},
+						{ quoted: ctx.rawMsg },
+					)
+				}
 			} else {
 				// Send audio file
 				await ctx.sock.sendMessage(

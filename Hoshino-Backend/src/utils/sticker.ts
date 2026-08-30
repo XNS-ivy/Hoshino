@@ -151,14 +151,15 @@ export async function makeAnimatedSticker(
 		const publisher = opt.publisher ?? "XNS-ivy"
 		let duration = opt.duration ?? 6.0
 		let fps = opt.fps ?? 15
-		let quality = opt.quality ?? 75
+		let quality = opt.quality ?? 70
 		const crop = opt.crop ?? false
+		let size = 512
 
-		const buildVf = (f: number, isCrop: boolean) => {
+		const buildVf = (f: number, isCrop: boolean, s: number) => {
 			if (isCrop) {
-				return `crop=min(iw\\,ih):min(iw\\,ih),scale=512:512,fps=${f}`
+				return `crop=min(iw\\,ih):min(iw\\,ih),scale=${s}:${s},fps=${f}`
 			}
-			return `scale=512:512:force_original_aspect_ratio=decrease,fps=${f},pad=512:512:(ow-iw)/2:(oh-ih)/2:color=black@0`
+			return `scale=${s}:${s}:force_original_aspect_ratio=decrease,fps=${f},pad=${s}:${s}:(ow-iw)/2:(oh-ih)/2:color=black@0`
 		}
 
 		const runFfmpeg = async (vf: string, q: number, d: number) => {
@@ -189,29 +190,49 @@ export async function makeAnimatedSticker(
 			await proc.exited
 		}
 
-		// Pass 1: High Quality / Configured parameters
-		await runFfmpeg(buildVf(fps, crop), quality, duration)
+		// Tier 1: Initial high-quality render
+		await runFfmpeg(buildVf(fps, crop, size), quality, duration)
 		let stat = await fs.stat(output).catch(() => ({ size: 0 }))
 
-		// Pass 2: Medium Quality if > 900KB and quality not explicitly set
-		if (stat.size / 1024 > 900 && !opt.quality) {
+		// Tier 2: Lower quality & slight FPS drop (512x512, q50, 12 fps)
+		if (stat.size / 1024 > 850 && !opt.quality) {
 			quality = 50
-			await runFfmpeg(buildVf(fps, crop), quality, duration)
+			if (!opt.fps) fps = 12
+			await runFfmpeg(buildVf(fps, crop, size), quality, duration)
 			stat = await fs.stat(output).catch(() => ({ size: 0 }))
 		}
 
-		// Pass 3: Low Quality & 10 FPS if > 900KB and parameters not set
-		if (stat.size / 1024 > 900 && !opt.quality) {
-			quality = 30
+		// Tier 3: Downscale resolution to 400x400 (saves ~40-50% size while preserving duration)
+		if (stat.size / 1024 > 850) {
+			size = 400
+			quality = 45
+			if (!opt.fps) fps = 12
+			await runFfmpeg(buildVf(fps, crop, size), quality, duration)
+			stat = await fs.stat(output).catch(() => ({ size: 0 }))
+		}
+
+		// Tier 4: Downscale resolution to 320x320 & 10 FPS (saves ~70% size while preserving duration)
+		if (stat.size / 1024 > 850) {
+			size = 320
+			quality = 35
 			if (!opt.fps) fps = 10
-			await runFfmpeg(buildVf(fps, crop), quality, duration)
+			await runFfmpeg(buildVf(fps, crop, size), quality, duration)
 			stat = await fs.stat(output).catch(() => ({ size: 0 }))
 		}
 
-		// Pass 4: Gradual Duration Trimming Loop if still > 900KB and duration not set
-		while (stat.size / 1024 > 900 && duration > 1.5 && !opt.duration) {
-			duration = Math.max(1.5, Number((duration * 0.85).toFixed(2)))
-			await runFfmpeg(buildVf(fps, crop), quality, duration)
+		// Tier 5: Downscale resolution to 256x256 & 8 FPS (saves ~80% size while preserving duration)
+		if (stat.size / 1024 > 850) {
+			size = 256
+			quality = 25
+			if (!opt.fps) fps = 8
+			await runFfmpeg(buildVf(fps, crop, size), quality, duration)
+			stat = await fs.stat(output).catch(() => ({ size: 0 }))
+		}
+
+		// Tier 6 (Last Resort): If even at 256x256 @ 8fps it exceeds 850KB, gently trim duration
+		while (stat.size / 1024 > 850 && duration > 2.0 && !opt.duration) {
+			duration = Math.max(2.0, Number((duration * 0.85).toFixed(2)))
+			await runFfmpeg(buildVf(fps, crop, size), quality, duration)
 			stat = await fs.stat(output).catch(() => ({ size: 0 }))
 		}
 

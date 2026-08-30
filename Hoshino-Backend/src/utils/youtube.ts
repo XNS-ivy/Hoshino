@@ -174,7 +174,7 @@ export async function downloadYoutubeMedia(
 			await youtubedl(meta.url, {
 				output: outputPath,
 				format:
-					"bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]/best",
+					"bestvideo[vcodec^=avc1][height<=720]+bestaudio[acodec^=mp4a]/bestvideo[height<=720]+bestaudio/best[height<=720][ext=mp4]/best[height<=720]/best",
 				mergeOutputFormat: "mp4",
 				noWarnings: true,
 				noCheckCertificates: true,

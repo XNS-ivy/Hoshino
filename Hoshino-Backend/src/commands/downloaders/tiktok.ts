@@ -95,16 +95,31 @@ const command: ICommand = {
 
 			// 5. Send based on type
 			if (result.type === "video" && result.buffer) {
-				await ctx.sock.sendMessage(
-					ctx.jid,
-					{
-						video: result.buffer,
-						caption,
-						mimetype: "video/mp4",
-						fileName: result.fileName,
-					},
-					{ quoted: ctx.rawMsg },
-				)
+				const isLarge = result.buffer.length > 60 * 1024 * 1024
+
+				if (isLarge) {
+					await ctx.sock.sendMessage(
+						ctx.jid,
+						{
+							document: result.buffer,
+							caption: `${caption}\n\n📁 _Sent as document due to large file size._`,
+							mimetype: "video/mp4",
+							fileName: result.fileName,
+						},
+						{ quoted: ctx.rawMsg },
+					)
+				} else {
+					await ctx.sock.sendMessage(
+						ctx.jid,
+						{
+							video: result.buffer,
+							caption,
+							mimetype: "video/mp4",
+							fileName: result.fileName,
+						},
+						{ quoted: ctx.rawMsg },
+					)
+				}
 			} else if (result.type === "audio" && result.buffer) {
 				await ctx.sock.sendMessage(
 					ctx.jid,
