@@ -512,10 +512,12 @@ export const agentRoutes = new Elysia({ prefix: "/api/agents" })
 						p.userJid,
 					)
 					const bonds = await momoRepository.getAllBonds(safeAgentId, p.userJid)
+					const jidUser = p.userJid.split("@")[0] ?? p.userJid
+					const fallbackName = jidUser.replace(/^[+]+/, "")
 
 					return {
 						...p,
-						pushName: pushName || p.userJid.split("@")[0],
+						pushName: pushName || fallbackName,
 						totalStudents: students.length,
 						totalBonds: bonds.length,
 						highestBondLevel: bonds[0]?.bondLevel || 1,
@@ -537,19 +539,31 @@ export const agentRoutes = new Elysia({ prefix: "/api/agents" })
 	.get("/:id/sensei/:userJid", async ({ params: { id, userJid }, set }) => {
 		try {
 			const safeAgentId = socketManager.sanitizeAgentId(id)
+			const decodedJid = decodeURIComponent(userJid)
 			const profile = await gachaRepository.getOrCreateProfile(
 				safeAgentId,
-				userJid,
+				decodedJid,
 			)
-			const pushName = await messageRepository.getPushName(safeAgentId, userJid)
-			const students = await gachaRepository.getCollection(safeAgentId, userJid)
-			const bonds = await momoRepository.getAllBonds(safeAgentId, userJid)
+			const pushName = await messageRepository.getPushName(
+				safeAgentId,
+				profile.userJid,
+			)
+			const students = await gachaRepository.getCollection(
+				safeAgentId,
+				profile.userJid,
+			)
+			const bonds = await momoRepository.getAllBonds(
+				safeAgentId,
+				profile.userJid,
+			)
+			const jidUser = profile.userJid.split("@")[0] ?? profile.userJid
+			const fallbackName = jidUser.replace(/^[+]+/, "")
 
 			return {
 				success: true,
 				data: {
 					...profile,
-					pushName: pushName || userJid.split("@")[0],
+					pushName: pushName || fallbackName,
 					students,
 					bonds,
 				},
@@ -569,18 +583,19 @@ export const agentRoutes = new Elysia({ prefix: "/api/agents" })
 		async ({ params: { id, userJid }, body, set }) => {
 			try {
 				const safeAgentId = socketManager.sanitizeAgentId(id)
+				const decodedJid = decodeURIComponent(userJid)
 				let updated: unknown
 
 				if (body.setAmount !== undefined) {
 					updated = await gachaRepository.setPyroxenes(
 						safeAgentId,
-						userJid,
+						decodedJid,
 						body.setAmount,
 					)
 				} else if (body.amount !== undefined) {
 					updated = await gachaRepository.addPyroxenes(
 						safeAgentId,
-						userJid,
+						decodedJid,
 						body.amount,
 					)
 				}
@@ -610,7 +625,8 @@ export const agentRoutes = new Elysia({ prefix: "/api/agents" })
 	.delete("/:id/sensei/:userJid", async ({ params: { id, userJid }, set }) => {
 		try {
 			const safeAgentId = socketManager.sanitizeAgentId(id)
-			await gachaRepository.deleteProfile(safeAgentId, userJid)
+			const decodedJid = decodeURIComponent(userJid)
+			await gachaRepository.deleteProfile(safeAgentId, decodedJid)
 			return {
 				success: true,
 				message: "Sensei profile and collection reset successfully",

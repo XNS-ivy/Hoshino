@@ -700,6 +700,7 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 						<SenseiTab
 							agentId={agent.agentId}
 							profiles={senseiProfiles}
+							contacts={contacts}
 							loading={loading}
 							onRefresh={() => fetchTabData("sensei")}
 							onShowToast={showToast}

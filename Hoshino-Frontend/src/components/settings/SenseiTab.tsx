@@ -1,5 +1,7 @@
-import React, { useState } from "react"
+import React, { useState, useMemo } from "react"
 import {
+	Check,
+	Edit3,
 	Gem,
 	Heart,
 	Layers,
@@ -9,6 +11,7 @@ import {
 	Sparkles,
 	Trash2,
 	User,
+	UserCheck,
 	Users,
 	X,
 } from "lucide-react"
@@ -18,10 +21,12 @@ import type {
 	SenseiProfileItem,
 	SenseiStudentItem,
 } from "../../types"
+import type { ContactItem } from "./ContactSelector"
 
 interface SenseiTabProps {
 	agentId: string
 	profiles: SenseiProfileItem[]
+	contacts?: ContactItem[]
 	loading: boolean
 	onRefresh: () => void
 	onShowToast: (type: "success" | "error", message: string) => void
@@ -30,6 +35,7 @@ interface SenseiTabProps {
 export const SenseiTab: React.FC<SenseiTabProps> = ({
 	agentId,
 	profiles,
+	contacts = [],
 	loading,
 	onRefresh,
 	onShowToast,
@@ -40,28 +46,78 @@ export const SenseiTab: React.FC<SenseiTabProps> = ({
 		students: SenseiStudentItem[]
 		bonds: SenseiBondItem[]
 	} | null>(null)
-	const [_loadingDetail, setLoadingDetail] = useState(false)
-	const [grantAmount, setGrantAmount] = useState<number>(1200)
+	const [loadingDetail, setLoadingDetail] = useState(false)
+
+	// Quick Grant Form States
+	const [targetType, setTargetType] = useState<"existing" | "contact" | "custom">("existing")
+	const [selectedProfileJid, setSelectedProfileJid] = useState<string>("")
+	const [selectedContactJid, setSelectedContactJid] = useState<string>("")
 	const [customJid, setCustomJid] = useState("")
+	const [grantMode, setGrantMode] = useState<"add" | "set">("add")
+	const [grantAmount, setGrantAmount] = useState<number>(1200)
 	const [isGranting, setIsGranting] = useState(false)
 
-	const filteredProfiles = profiles.filter((p) => {
-		const q = search.toLowerCase()
+	// Inline Edit Modal
+	const [editingSensei, setEditingSensei] = useState<SenseiProfileItem | null>(null)
+	const [editAmount, setEditAmount] = useState<number>(0)
+	const [isEditing, setIsEditing] = useState(false)
+
+	// Helper to format clean phone display
+	const formatPhone = (jid: string) => {
+		const raw = jid.split("@")[0].replace(/[^0-9]/g, "")
+		return raw ? `+${raw}` : jid
+	}
+
+	// Active targeted JID for quick grant
+	const resolvedTargetJid = useMemo(() => {
+		if (targetType === "existing") {
+			return selectedProfileJid || (profiles[0]?.userJid ?? "")
+		}
+		if (targetType === "contact") {
+			return selectedContactJid
+		}
+		return customJid.trim()
+	}, [targetType, selectedProfileJid, selectedContactJid, customJid, profiles])
+
+	// Target profile for live preview
+	const targetProfile = useMemo(() => {
+		if (!resolvedTargetJid) return null
+		const cleanTarget = resolvedTargetJid.replace(/@.*$/, "").replace(/[^0-9]/g, "")
 		return (
-			p.userJid.toLowerCase().includes(q) ||
-			(p.pushName && p.pushName.toLowerCase().includes(q))
+			profiles.find(
+				(p) =>
+					p.userJid === resolvedTargetJid ||
+					p.userJid.replace(/@.*$/, "").replace(/[^0-9]/g, "") === cleanTarget,
+			) || null
 		)
-	})
+	}, [resolvedTargetJid, profiles])
+
+	const filteredProfiles = useMemo(() => {
+		const q = search.toLowerCase().trim()
+		if (!q) return profiles
+		const digits = q.replace(/[^0-9]/g, "")
+		return profiles.filter((p) => {
+			const jidMatch = p.userJid.toLowerCase().includes(q)
+			const nameMatch = p.pushName && p.pushName.toLowerCase().includes(q)
+			const phoneMatch =
+				digits && p.userJid.replace(/@.*$/, "").replace(/[^0-9]/g, "").includes(digits)
+			return jidMatch || nameMatch || phoneMatch
+		})
+	}, [profiles, search])
 
 	const handleGrantPyroxenes = async (
 		userJid: string,
 		amount: number,
 		isSet = false,
 	) => {
+		if (!userJid.trim()) {
+			onShowToast("error", "Please select or enter a Sensei JID/Phone number")
+			return
+		}
 		setIsGranting(true)
 		try {
 			const res = await fetch(
-				`${API_BASE_URL}/api/agents/${agentId}/sensei/${encodeURIComponent(userJid)}/pyroxenes`,
+				`${API_BASE_URL}/api/agents/${agentId}/sensei/${encodeURIComponent(userJid.trim())}/pyroxenes`,
 				{
 					method: "PATCH",
 					headers: { "Content-Type": "application/json" },
@@ -70,7 +126,8 @@ export const SenseiTab: React.FC<SenseiTabProps> = ({
 			)
 			const json = await res.json()
 			if (json.success) {
-				onShowToast("success", `Pyroxenes updated: ${amount > 0 ? `+${amount}` : amount} 💎`)
+				const verb = isSet ? `set to ${amount.toLocaleString()}` : `+${amount.toLocaleString()}`
+				onShowToast("success", `Pyroxenes successfully ${verb} 💎`)
 				onRefresh()
 				if (selectedSensei && selectedSensei.profile.userJid === userJid) {
 					inspectSensei(userJid)
@@ -79,16 +136,27 @@ export const SenseiTab: React.FC<SenseiTabProps> = ({
 				onShowToast("error", json.message || "Failed to update Pyroxenes")
 			}
 		} catch (err) {
-			onShowToast("error", `Error: ${err}`)
+			onShowToast("error", `Network error: ${err}`)
 		} finally {
 			setIsGranting(false)
 		}
 	}
 
-	const handleDeleteSensei = async (userJid: string) => {
+	const handleInlineSave = async () => {
+		if (!editingSensei) return
+		setIsEditing(true)
+		try {
+			await handleGrantPyroxenes(editingSensei.userJid, editAmount, true)
+			setEditingSensei(null)
+		} finally {
+			setIsEditing(false)
+		}
+	}
+
+	const handleDeleteSensei = async (userJid: string, name: string) => {
 		if (
 			!window.confirm(
-				`Are you sure you want to reset and delete Sensei ${userJid}? All students and bond data will be deleted.`,
+				`Are you sure you want to reset and delete Sensei "${name}" (${userJid})?\n\nAll student collection and bond progress will be permanently erased.`,
 			)
 		) {
 			return
@@ -172,7 +240,7 @@ export const SenseiTab: React.FC<SenseiTabProps> = ({
 					</div>
 					<div>
 						<span style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block" }}>
-							Total Sensei
+							Total Sensei Players
 						</span>
 						<span style={{ fontSize: "1.2rem", fontWeight: 700 }}>
 							{profiles.length} Players
@@ -251,6 +319,326 @@ export const SenseiTab: React.FC<SenseiTabProps> = ({
 				</div>
 			</div>
 
+			{/* Quick Pyroxene Grant Panel */}
+			<div
+				style={{
+					background: "linear-gradient(135deg, rgba(0, 242, 254, 0.05) 0%, rgba(236, 72, 153, 0.05) 100%)",
+					border: "1px solid rgba(0, 242, 254, 0.25)",
+					borderRadius: "14px",
+					padding: "18px 20px",
+					display: "flex",
+					flexDirection: "column",
+					gap: "14px",
+				}}
+			>
+				<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "10px" }}>
+					<span style={{ fontSize: "0.92rem", fontWeight: 700, color: "var(--primary-cyan)", display: "flex", alignItems: "center", gap: "8px" }}>
+						<Gem size={18} /> Quick Pyroxene Grant & Management
+					</span>
+
+					{/* Target Mode Selector Tabs */}
+					<div
+						style={{
+							display: "flex",
+							background: "rgba(0, 0, 0, 0.3)",
+							padding: "3px",
+							borderRadius: "8px",
+							border: "1px solid var(--border-color)",
+							gap: "4px",
+						}}
+					>
+						<button
+							type="button"
+							onClick={() => setTargetType("existing")}
+							style={{
+								padding: "4px 10px",
+								borderRadius: "6px",
+								border: "none",
+								background: targetType === "existing" ? "var(--primary-cyan)" : "transparent",
+								color: targetType === "existing" ? "#040914" : "var(--text-muted)",
+								fontWeight: 600,
+								fontSize: "0.75rem",
+								cursor: "pointer",
+								transition: "all 0.15s ease",
+							}}
+						>
+							Existing Sensei ({profiles.length})
+						</button>
+						{contacts.length > 0 && (
+							<button
+								type="button"
+								onClick={() => setTargetType("contact")}
+								style={{
+									padding: "4px 10px",
+									borderRadius: "6px",
+									border: "none",
+									background: targetType === "contact" ? "var(--primary-cyan)" : "transparent",
+									color: targetType === "contact" ? "#040914" : "var(--text-muted)",
+									fontWeight: 600,
+									fontSize: "0.75rem",
+									cursor: "pointer",
+									transition: "all 0.15s ease",
+								}}
+							>
+								Saved Contacts
+							</button>
+						)}
+						<button
+							type="button"
+							onClick={() => setTargetType("custom")}
+							style={{
+								padding: "4px 10px",
+								borderRadius: "6px",
+								border: "none",
+								background: targetType === "custom" ? "var(--primary-cyan)" : "transparent",
+								color: targetType === "custom" ? "#040914" : "var(--text-muted)",
+								fontWeight: 600,
+								fontSize: "0.75rem",
+								cursor: "pointer",
+								transition: "all 0.15s ease",
+							}}
+						>
+							Custom Phone / JID
+						</button>
+					</div>
+				</div>
+
+				<div style={{ display: "flex", flexWrap: "wrap", gap: "12px", alignItems: "center" }}>
+					{/* Target Selector Control */}
+					<div style={{ flex: 2, minWidth: "260px" }}>
+						{targetType === "existing" && (
+							<select
+								value={selectedProfileJid || (profiles[0]?.userJid ?? "")}
+								onChange={(e) => setSelectedProfileJid(e.target.value)}
+								style={{
+									width: "100%",
+									padding: "9px 12px",
+									borderRadius: "8px",
+									background: "rgba(0, 0, 0, 0.4)",
+									border: "1px solid rgba(0, 242, 254, 0.3)",
+									color: "var(--text-main)",
+									fontSize: "0.85rem",
+									outline: "none",
+								}}
+							>
+								{profiles.length === 0 ? (
+									<option value="">No existing Sensei registered yet</option>
+								) : (
+									profiles.map((p) => (
+										<option key={p.userJid} value={p.userJid}>
+											🌸 {p.pushName || formatPhone(p.userJid)} ({formatPhone(p.userJid)}) • {p.pyroxenes.toLocaleString()} 💎
+										</option>
+									))
+								)}
+							</select>
+						)}
+
+						{targetType === "contact" && (
+							<select
+								value={selectedContactJid}
+								onChange={(e) => setSelectedContactJid(e.target.value)}
+								style={{
+									width: "100%",
+									padding: "9px 12px",
+									borderRadius: "8px",
+									background: "rgba(0, 0, 0, 0.4)",
+									border: "1px solid rgba(0, 242, 254, 0.3)",
+									color: "var(--text-main)",
+									fontSize: "0.85rem",
+									outline: "none",
+								}}
+							>
+								<option value="">-- Select Saved Contact --</option>
+								{contacts.map((c) => (
+									<option key={c.jid} value={c.jid}>
+										{c.pushName ? `${c.pushName} (${c.phoneNumber})` : c.jid}
+									</option>
+								))}
+							</select>
+						)}
+
+						{targetType === "custom" && (
+							<input
+								type="text"
+								placeholder="Enter phone or JID (e.g. 6283199219663 or +55955454697708)"
+								value={customJid}
+								onChange={(e) => setCustomJid(e.target.value)}
+								style={{
+									width: "100%",
+									padding: "9px 12px",
+									borderRadius: "8px",
+									background: "rgba(0, 0, 0, 0.4)",
+									border: "1px solid rgba(0, 242, 254, 0.3)",
+									color: "var(--text-main)",
+									fontSize: "0.85rem",
+									outline: "none",
+								}}
+							/>
+						)}
+					</div>
+
+					{/* Grant Mode Toggle: Add (+) vs Set (=) */}
+					<div
+						style={{
+							display: "flex",
+							background: "rgba(0, 0, 0, 0.3)",
+							padding: "3px",
+							borderRadius: "8px",
+							border: "1px solid var(--border-color)",
+						}}
+					>
+						<button
+							type="button"
+							onClick={() => setGrantMode("add")}
+							style={{
+								padding: "6px 12px",
+								borderRadius: "6px",
+								border: "none",
+								background: grantMode === "add" ? "rgba(56, 189, 248, 0.25)" : "transparent",
+								color: grantMode === "add" ? "#38bdf8" : "var(--text-muted)",
+								fontWeight: 700,
+								fontSize: "0.8rem",
+								cursor: "pointer",
+							}}
+						>
+							+ Add
+						</button>
+						<button
+							type="button"
+							onClick={() => setGrantMode("set")}
+							style={{
+								padding: "6px 12px",
+								borderRadius: "6px",
+								border: "none",
+								background: grantMode === "set" ? "rgba(236, 72, 153, 0.25)" : "transparent",
+								color: grantMode === "set" ? "#ec4899" : "var(--text-muted)",
+								fontWeight: 700,
+								fontSize: "0.8rem",
+								cursor: "pointer",
+							}}
+						>
+							= Set Exact
+						</button>
+					</div>
+
+					{/* Amount Input */}
+					<div style={{ width: "130px" }}>
+						<input
+							type="number"
+							value={grantAmount}
+							onChange={(e) => setGrantAmount(Number(e.target.value))}
+							style={{
+								width: "100%",
+								padding: "9px 12px",
+								borderRadius: "8px",
+								background: "rgba(0, 0, 0, 0.4)",
+								border: "1px solid var(--border-color)",
+								color: "#38bdf8",
+								fontWeight: 700,
+								fontSize: "0.9rem",
+								outline: "none",
+							}}
+						/>
+					</div>
+
+					{/* Submit Action Button */}
+					<button
+						type="button"
+						disabled={!resolvedTargetJid || isGranting}
+						onClick={() => handleGrantPyroxenes(resolvedTargetJid, grantAmount, grantMode === "set")}
+						style={{
+							padding: "9px 18px",
+							borderRadius: "8px",
+							background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)",
+							border: "none",
+							color: "#040914",
+							fontWeight: 700,
+							fontSize: "0.88rem",
+							cursor: !resolvedTargetJid || isGranting ? "not-allowed" : "pointer",
+							opacity: !resolvedTargetJid || isGranting ? 0.6 : 1,
+							display: "flex",
+							alignItems: "center",
+							gap: "6px",
+							boxShadow: "0 4px 12px rgba(0, 242, 254, 0.25)",
+						}}
+					>
+						<Plus size={16} /> {isGranting ? "Sending..." : "Send Pyroxenes"}
+					</button>
+				</div>
+
+				{/* Quick Presets & Target Balance Preview */}
+				<div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "10px", paddingTop: "4px" }}>
+					<div style={{ display: "flex", flexWrap: "wrap", gap: "6px", alignItems: "center" }}>
+						<span style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginRight: "4px" }}>
+							Presets:
+						</span>
+						{[
+							{ label: "+1.2k (10-Pull)", val: 1200 },
+							{ label: "+6k (50-Pull)", val: 6000 },
+							{ label: "+12k (100-Pull)", val: 12000 },
+							{ label: "+24k (Spark 200)", val: 24000 },
+						].map((preset) => (
+							<button
+								key={preset.val}
+								type="button"
+								onClick={() => {
+									setGrantAmount(preset.val)
+									setGrantMode("add")
+								}}
+								style={{
+									padding: "4px 9px",
+									borderRadius: "6px",
+									background: grantAmount === preset.val && grantMode === "add" ? "rgba(0, 242, 254, 0.2)" : "rgba(255, 255, 255, 0.05)",
+									border: `1px solid ${grantAmount === preset.val && grantMode === "add" ? "var(--primary-cyan)" : "var(--border-color)"}`,
+									color: grantAmount === preset.val && grantMode === "add" ? "var(--primary-cyan)" : "var(--text-muted)",
+									fontSize: "0.75rem",
+									cursor: "pointer",
+								}}
+							>
+								{preset.label}
+							</button>
+						))}
+					</div>
+
+					{/* Live Target Projected Balance Preview */}
+					{targetProfile && (
+						<div
+							style={{
+								fontSize: "0.78rem",
+								color: "var(--text-muted)",
+								background: "rgba(0, 0, 0, 0.3)",
+								padding: "4px 10px",
+								borderRadius: "6px",
+								border: "1px solid rgba(255, 255, 255, 0.08)",
+								display: "flex",
+								alignItems: "center",
+								gap: "6px",
+							}}
+						>
+							<UserCheck size={13} color="var(--primary-cyan)" />
+							<span>
+								Target: <strong style={{ color: "var(--text-main)" }}>{targetProfile.pushName || formatPhone(targetProfile.userJid)}</strong>
+							</span>
+							<span>•</span>
+							<span>
+								Current: <strong style={{ color: "#38bdf8" }}>{targetProfile.pyroxenes.toLocaleString()} 💎</strong>
+							</span>
+							<span>➔</span>
+							<span>
+								Projected:{" "}
+								<strong style={{ color: "#34d399" }}>
+									{(grantMode === "set"
+										? grantAmount
+										: Math.max(0, targetProfile.pyroxenes + grantAmount)
+									).toLocaleString()}{" "}
+									💎
+								</strong>
+							</span>
+						</div>
+					)}
+				</div>
+			</div>
+
 			{/* Action Toolbar */}
 			<div
 				style={{
@@ -313,79 +701,6 @@ export const SenseiTab: React.FC<SenseiTabProps> = ({
 				</div>
 			</div>
 
-			{/* Manual Grant Box */}
-			<div
-				style={{
-					background: "rgba(0, 242, 254, 0.03)",
-					border: "1px solid rgba(0, 242, 254, 0.15)",
-					borderRadius: "12px",
-					padding: "14px 18px",
-					display: "flex",
-					flexWrap: "wrap",
-					alignItems: "center",
-					gap: "12px",
-				}}
-			>
-				<span style={{ fontSize: "0.88rem", fontWeight: 600, color: "var(--primary-cyan)", display: "flex", alignItems: "center", gap: "6px" }}>
-					<Gem size={16} /> Quick Pyroxene Grant:
-				</span>
-				<input
-					type="text"
-					placeholder="Phone or JID (e.g. 6283199219663)"
-					value={customJid}
-					onChange={(e) => setCustomJid(e.target.value)}
-					style={{
-						padding: "8px 12px",
-						borderRadius: "6px",
-						background: "rgba(255, 255, 255, 0.05)",
-						border: "1px solid var(--border-color)",
-						color: "var(--text-main)",
-						fontSize: "0.85rem",
-						width: "220px",
-						outline: "none",
-					}}
-				/>
-				<input
-					type="number"
-					value={grantAmount}
-					onChange={(e) => setGrantAmount(Number(e.target.value))}
-					style={{
-						padding: "8px 12px",
-						borderRadius: "6px",
-						background: "rgba(255, 255, 255, 0.05)",
-						border: "1px solid var(--border-color)",
-						color: "var(--text-main)",
-						fontSize: "0.85rem",
-						width: "110px",
-						outline: "none",
-					}}
-				/>
-				<button
-					type="button"
-					disabled={!customJid || isGranting}
-					onClick={() => {
-						const jid = customJid.includes("@") ? customJid : `${customJid}@s.whatsapp.net`
-						handleGrantPyroxenes(jid, grantAmount)
-					}}
-					style={{
-						padding: "8px 14px",
-						borderRadius: "6px",
-						background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)",
-						border: "none",
-						color: "#040914",
-						fontWeight: 600,
-						fontSize: "0.85rem",
-						cursor: !customJid || isGranting ? "not-allowed" : "pointer",
-						opacity: !customJid || isGranting ? 0.6 : 1,
-						display: "flex",
-						alignItems: "center",
-						gap: "6px",
-					}}
-				>
-					<Plus size={14} /> Send Pyroxenes
-				</button>
-			</div>
-
 			{/* Sensei Profiles Table */}
 			<div
 				style={{
@@ -426,31 +741,72 @@ export const SenseiTab: React.FC<SenseiTabProps> = ({
 										<div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
 											<div
 												style={{
-													width: "32px",
-													height: "32px",
+													width: "34px",
+													height: "34px",
 													borderRadius: "50%",
-													background: "rgba(255, 255, 255, 0.08)",
+													background: "rgba(0, 242, 254, 0.12)",
+													border: "1px solid rgba(0, 242, 254, 0.25)",
 													display: "flex",
 													alignItems: "center",
 													justifyContent: "center",
 													color: "var(--primary-cyan)",
+													fontWeight: 700,
+													fontSize: "0.85rem",
 												}}
 											>
 												<User size={16} />
 											</div>
 											<div>
 												<span style={{ fontWeight: 600, display: "block" }}>
-													{p.pushName || p.userJid.split("@")[0]}
+													{p.pushName || formatPhone(p.userJid)}
 												</span>
-												<span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-													+{p.userJid.split("@")[0]}
-												</span>
+												<div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+													<span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+														{formatPhone(p.userJid)}
+													</span>
+													{p.userJid.includes("@lid") && (
+														<span
+															style={{
+																fontSize: "0.65rem",
+																padding: "1px 5px",
+																borderRadius: "4px",
+																background: "rgba(168, 85, 247, 0.2)",
+																color: "#c084fc",
+																fontWeight: 600,
+															}}
+														>
+															LID
+														</span>
+													)}
+												</div>
 											</div>
 										</div>
 									</td>
 
-									<td style={{ padding: "12px 16px", fontWeight: 700, color: "#38bdf8" }}>
-										{p.pyroxenes.toLocaleString()} 💎
+									<td style={{ padding: "12px 16px" }}>
+										<div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+											<span style={{ fontWeight: 700, color: "#38bdf8", fontSize: "0.95rem" }}>
+												{p.pyroxenes.toLocaleString()} 💎
+											</span>
+											<button
+												type="button"
+												title="Edit balance"
+												onClick={() => {
+													setEditingSensei(p)
+													setEditAmount(p.pyroxenes)
+												}}
+												style={{
+													background: "none",
+													border: "none",
+													color: "var(--text-muted)",
+													cursor: "pointer",
+													padding: "2px",
+													opacity: 0.7,
+												}}
+											>
+												<Edit3 size={13} />
+											</button>
+										</div>
 									</td>
 
 									<td style={{ padding: "12px 16px" }}>
@@ -482,7 +838,7 @@ export const SenseiTab: React.FC<SenseiTabProps> = ({
 										<div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
 											<button
 												type="button"
-												title="Grant 1,200 Pyroxenes (10-pull)"
+												title="Quick Grant +1,200 Pyroxenes (10-pull)"
 												onClick={() => handleGrantPyroxenes(p.userJid, 1200)}
 												style={{
 													padding: "5px 9px",
@@ -522,7 +878,7 @@ export const SenseiTab: React.FC<SenseiTabProps> = ({
 											<button
 												type="button"
 												title="Reset Sensei Profile"
-												onClick={() => handleDeleteSensei(p.userJid)}
+												onClick={() => handleDeleteSensei(p.userJid, p.pushName || formatPhone(p.userJid))}
 												style={{
 													padding: "5px 8px",
 													borderRadius: "6px",
@@ -542,6 +898,119 @@ export const SenseiTab: React.FC<SenseiTabProps> = ({
 					</tbody>
 				</table>
 			</div>
+
+			{/* Inline Edit Balance Modal */}
+			{editingSensei && (
+				<div
+					style={{
+						position: "fixed",
+						top: 0,
+						left: 0,
+						right: 0,
+						bottom: 0,
+						background: "rgba(0, 0, 0, 0.75)",
+						backdropFilter: "blur(4px)",
+						display: "flex",
+						alignItems: "center",
+						justifyContent: "center",
+						zIndex: 1200,
+						padding: "20px",
+					}}
+				>
+					<div
+						style={{
+							background: "var(--card-bg, #0b1329)",
+							border: "1px solid var(--border-color)",
+							borderRadius: "16px",
+							width: "100%",
+							maxWidth: "420px",
+							padding: "20px",
+							display: "flex",
+							flexDirection: "column",
+							gap: "16px",
+							boxShadow: "0 20px 40px rgba(0, 0, 0, 0.6)",
+						}}
+					>
+						<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+							<h3 style={{ fontSize: "1rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "8px" }}>
+								<Gem size={18} color="#38bdf8" /> Edit Sensei Pyroxenes
+							</h3>
+							<button
+								type="button"
+								onClick={() => setEditingSensei(null)}
+								style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}
+							>
+								<X size={18} />
+							</button>
+						</div>
+
+						<p style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
+							Setting exact balance for{" "}
+							<strong style={{ color: "var(--text-main)" }}>
+								{editingSensei.pushName || formatPhone(editingSensei.userJid)}
+							</strong>
+						</p>
+
+						<div>
+							<label style={{ display: "block", fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "6px" }}>
+								Pyroxenes Amount (💎)
+							</label>
+							<input
+								type="number"
+								value={editAmount}
+								onChange={(e) => setEditAmount(Number(e.target.value))}
+								style={{
+									width: "100%",
+									padding: "10px 14px",
+									borderRadius: "8px",
+									background: "rgba(0, 0, 0, 0.4)",
+									border: "1px solid var(--border-color)",
+									color: "#38bdf8",
+									fontSize: "1rem",
+									fontWeight: 700,
+									outline: "none",
+								}}
+							/>
+						</div>
+
+						<div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+							<button
+								type="button"
+								onClick={() => setEditingSensei(null)}
+								style={{
+									padding: "8px 14px",
+									borderRadius: "8px",
+									background: "rgba(255, 255, 255, 0.05)",
+									border: "1px solid var(--border-color)",
+									color: "var(--text-muted)",
+									cursor: "pointer",
+								}}
+							>
+								Cancel
+							</button>
+							<button
+								type="button"
+								disabled={isEditing}
+								onClick={handleInlineSave}
+								style={{
+									padding: "8px 16px",
+									borderRadius: "8px",
+									background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)",
+									border: "none",
+									color: "#040914",
+									fontWeight: 700,
+									cursor: isEditing ? "not-allowed" : "pointer",
+									display: "flex",
+									alignItems: "center",
+									gap: "6px",
+								}}
+							>
+								<Check size={16} /> {isEditing ? "Saving..." : "Save Balance"}
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
 
 			{/* Detail Drawer / Modal */}
 			{selectedSensei && (
@@ -587,24 +1056,48 @@ export const SenseiTab: React.FC<SenseiTabProps> = ({
 						>
 							<div>
 								<h3 style={{ fontSize: "1.1rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "8px" }}>
-									🌸 Sensei: {selectedSensei.profile.pushName || selectedSensei.profile.userJid.split("@")[0]}
+									🌸 Sensei: {selectedSensei.profile.pushName || formatPhone(selectedSensei.profile.userJid)}
 								</h3>
 								<span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
-									ID: {selectedSensei.profile.userJid} • Balance: {selectedSensei.profile.pyroxenes.toLocaleString()} 💎 • Spark: {selectedSensei.profile.sparkPoints}/200
+									ID: {selectedSensei.profile.userJid} • Balance: {selectedSensei.profile.pyroxenes.toLocaleString()} 💎 • Spark: {selectedSensei.profile.sparkPoints}/200 ⭐
 								</span>
 							</div>
 
-							<button
-								type="button"
-								onClick={() => setSelectedSensei(null)}
-								style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}
-							>
-								<X size={20} />
-							</button>
+							<div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+								<button
+									type="button"
+									onClick={() => handleGrantPyroxenes(selectedSensei.profile.userJid, 1200)}
+									style={{
+										padding: "6px 10px",
+										borderRadius: "6px",
+										background: "rgba(56, 189, 248, 0.15)",
+										border: "1px solid rgba(56, 189, 248, 0.3)",
+										color: "#38bdf8",
+										fontSize: "0.78rem",
+										fontWeight: 600,
+										cursor: "pointer",
+									}}
+								>
+									+1.2k 💎
+								</button>
+								<button
+									type="button"
+									onClick={() => setSelectedSensei(null)}
+									style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}
+								>
+									<X size={20} />
+								</button>
+							</div>
 						</div>
 
 						{/* Drawer Content */}
 						<div style={{ padding: "20px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "20px" }}>
+							{loadingDetail && (
+								<div style={{ textAlign: "center", padding: "20px", color: "var(--text-muted)" }}>
+									Loading sensei details...
+								</div>
+							)}
+
 							{/* Recruited Students Grid */}
 							<div>
 								<h4 style={{ fontSize: "0.95rem", fontWeight: 600, marginBottom: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
