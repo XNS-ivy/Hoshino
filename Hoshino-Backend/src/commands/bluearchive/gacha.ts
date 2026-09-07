@@ -46,7 +46,7 @@ const command: ICommand = {
 				await ctx.reply(
 					`⏳ *Daily Pyroxenes Already Claimed!*\n\n` +
 						`Sensei, Arona is still preparing tomorrow's work reward.\n` +
-						`⏱️ *Time Remaining:* ${res.remainingHours} hour(s) ${res.remainingMinutes} minute(s)\n` +
+						`⏱️ *Reset In:* ${res.remainingHours} hour(s) ${res.remainingMinutes} minute(s) _(Daily reset at 06:00 WIB)_\n` +
 						`💎 *Current Balance:* ${res.pyroxenes.toLocaleString("en-US")} Pyroxenes`,
 				)
 			}
@@ -61,7 +61,9 @@ const command: ICommand = {
 			cmd === "students" ||
 			cmd === "pyroxene" ||
 			subArg === "profile" ||
-			subArg === "my"
+			subArg === "my" ||
+			subArg === "students" ||
+			subArg === "mystudent"
 		) {
 			const profile = await gachaRepository.getOrCreateProfile(
 				ctx.agentId,
@@ -76,6 +78,109 @@ const command: ICommand = {
 			const twoStars = collection.filter((s) => s.starGrade === 2)
 			const oneStars = collection.filter((s) => s.starGrade === 1)
 
+			// Determine filter arg if passed: e.g. !mystudent 1, !mystudent 2, !mystudent 3
+			let filterArg = (args[0] || "").toLowerCase().replace(/[^a-z0-9]/g, "")
+			if (
+				(cmd === "gacha" || cmd === "pull") &&
+				(subArg === "students" || subArg === "my" || subArg === "profile")
+			) {
+				filterArg = (args[1] || "").toLowerCase().replace(/[^a-z0-9]/g, "")
+			}
+
+			// ── Case A: Specific Filter for 3★ Students ──
+			if (
+				filterArg === "3" ||
+				filterArg === "3star" ||
+				filterArg === "3stars" ||
+				filterArg === "3s"
+			) {
+				let text = `╔══════════════════════════╗\n`
+				text += `  🌟 *3★ SENSEI ROSTER (${threeStars.length})*\n`
+				text += `╚══════════════════════════╝\n\n`
+				text += `👤 *Sensei:* @${ctx.senderJid.split("@")[0]}\n`
+				text += `⭐ *Total 3★ Murid:* ${threeStars.length} murid\n\n`
+
+				if (threeStars.length === 0) {
+					text += `_Belum ada murid 3★. Coba keberuntunganmu di *${ctx.prefix}gacha 10*!_\n`
+				} else {
+					for (let i = 0; i < threeStars.length; i++) {
+						const s = threeStars[i]!
+						const dupeText = s.count > 1 ? ` _(Eleph x${s.count - 1})_` : ""
+						text += `${i + 1}. ⭐⭐⭐ *${s.studentName}*${dupeText}\n`
+					}
+				}
+
+				text += `\n💡 *Navigasi Roster:*\n`
+				text += `• *${ctx.prefix}mystudent 2* — Lihat seluruh murid 2★\n`
+				text += `• *${ctx.prefix}mystudent 1* — Lihat seluruh murid 1★\n`
+				text += `• *${ctx.prefix}mystudent* — Ringkasan profil & balance`
+				await ctx.reply(text)
+				return
+			}
+
+			// ── Case B: Specific Filter for 2★ Students ──
+			if (
+				filterArg === "2" ||
+				filterArg === "2star" ||
+				filterArg === "2stars" ||
+				filterArg === "2s"
+			) {
+				let text = `╔══════════════════════════╗\n`
+				text += `  ⭐ *2★ SENSEI ROSTER (${twoStars.length})*\n`
+				text += `╚══════════════════════════╝\n\n`
+				text += `👤 *Sensei:* @${ctx.senderJid.split("@")[0]}\n`
+				text += `⭐ *Total 2★ Murid:* ${twoStars.length} murid\n\n`
+
+				if (twoStars.length === 0) {
+					text += `_Belum ada murid 2★ yang direkrut._\n`
+				} else {
+					for (let i = 0; i < twoStars.length; i++) {
+						const s = twoStars[i]!
+						const dupeText = s.count > 1 ? ` _(Eleph x${s.count - 1})_` : ""
+						text += `${i + 1}. ⭐⭐ *${s.studentName}*${dupeText}\n`
+					}
+				}
+
+				text += `\n💡 *Navigasi Roster:*\n`
+				text += `• *${ctx.prefix}mystudent 3* — Lihat seluruh murid 3★\n`
+				text += `• *${ctx.prefix}mystudent 1* — Lihat seluruh murid 1★\n`
+				text += `• *${ctx.prefix}mystudent* — Ringkasan profil & balance`
+				await ctx.reply(text)
+				return
+			}
+
+			// ── Case C: Specific Filter for 1★ Students ──
+			if (
+				filterArg === "1" ||
+				filterArg === "1star" ||
+				filterArg === "1stars" ||
+				filterArg === "1s"
+			) {
+				let text = `╔══════════════════════════╗\n`
+				text += `  ⭐ *1★ SENSEI ROSTER (${oneStars.length})*\n`
+				text += `╚══════════════════════════╝\n\n`
+				text += `👤 *Sensei:* @${ctx.senderJid.split("@")[0]}\n`
+				text += `⭐ *Total 1★ Murid:* ${oneStars.length} murid\n\n`
+
+				if (oneStars.length === 0) {
+					text += `_Belum ada murid 1★ yang direkrut._\n`
+				} else {
+					for (let i = 0; i < oneStars.length; i++) {
+						const s = oneStars[i]!
+						const dupeText = s.count > 1 ? ` _(Eleph x${s.count - 1})_` : ""
+						text += `${i + 1}. ⭐ *${s.studentName}*${dupeText}\n`
+					}
+				}
+
+				text += `\n💡 *Navigasi Roster:*\n`
+				text += `• *${ctx.prefix}mystudent 3* — Lihat seluruh murid 3★\n`
+				text += `• *${ctx.prefix}mystudent 2* — Lihat seluruh murid 2★\n`
+				text += `• *${ctx.prefix}mystudent* — Ringkasan profil & balance`
+				await ctx.reply(text)
+				return
+			}
+
+			// ── Case D: General Overview (.mystudent or .mystudent all) ──
 			let text = `╔══════════════════════════╗\n`
 			text += `  🎓 *SCHALE SENSEI RECORD*\n`
 			text += `╚══════════════════════════╝\n\n`
@@ -85,27 +190,56 @@ const command: ICommand = {
 			text += `📊 *Total Recruited:* ${profile.totalPulls} pulls\n`
 			text += `👥 *Roster:* ${collection.length}/274 unique students\n\n`
 			text += `⭐ *Grade Breakdown:*\n`
-			text += `  • ⭐⭐⭐ (3★): ${threeStars.length} students\n`
-			text += `  • ⭐⭐ (2★): ${twoStars.length} students\n`
-			text += `  • ⭐ (1★): ${oneStars.length} students\n\n`
+			text += `  • ⭐⭐⭐ (3★): ${threeStars.length} murid\n`
+			text += `  • ⭐⭐ (2★): ${twoStars.length} murid\n`
+			text += `  • ⭐ (1★): ${oneStars.length} murid\n\n`
 
 			if (threeStars.length > 0) {
-				text += `🌟 *Your 3★ Students (${threeStars.length}):*\n`
-				for (const s of threeStars.slice(0, 15)) {
-					const dupeText = s.count > 1 ? ` (Eleph x${s.count - 1})` : ""
+				text += `🌟 *Murid 3★ (${threeStars.length}):*\n`
+				const limit = Math.min(threeStars.length, 12)
+				for (let i = 0; i < limit; i++) {
+					const s = threeStars[i]!
+					const dupeText = s.count > 1 ? ` _(Eleph x${s.count - 1})_` : ""
 					text += `  • ⭐⭐⭐ *${s.studentName}*${dupeText}\n`
 				}
-				if (threeStars.length > 15) {
-					text += `  _...and ${threeStars.length - 15} more 3★ students._\n`
+				if (threeStars.length > limit) {
+					text += `  _...dan ${threeStars.length - limit} murid 3★ lainnya. (Ketik *${ctx.prefix}mystudent 3* untuk lihat semua)_\n`
 				}
 			} else {
-				text += `_No 3★ students yet. Try your luck with *${ctx.prefix}gacha 10*!_\n`
+				text += `_Belum ada murid 3★. Gunakan *${ctx.prefix}gacha 10* untuk merekrut!_\n`
 			}
 
-			text += `\n📌 *Commands:*\n`
-			text += `• *${ctx.prefix}daily* — Claim 1,200 daily Pyroxenes\n`
-			text += `• *${ctx.prefix}gacha 10* — 10x Student Recruitment\n`
-			text += `• *${ctx.prefix}spark* — Redeem 200 Points for guaranteed 3★`
+			if (twoStars.length > 0) {
+				text += `\n⭐ *Murid 2★ (${twoStars.length}):*\n`
+				const names = twoStars
+					.slice(0, 8)
+					.map((s) => s.studentName)
+					.join(", ")
+				text += `  ${names}`
+				if (twoStars.length > 8) {
+					text += ` _...dan ${twoStars.length - 8} lainnya. (Ketik *${ctx.prefix}mystudent 2* untuk lihat semua)_`
+				}
+				text += `\n`
+			}
+
+			if (oneStars.length > 0) {
+				text += `\n⭐ *Murid 1★ (${oneStars.length}):*\n`
+				const names = oneStars
+					.slice(0, 8)
+					.map((s) => s.studentName)
+					.join(", ")
+				text += `  ${names}`
+				if (oneStars.length > 8) {
+					text += ` _...dan ${oneStars.length - 8} lainnya. (Ketik *${ctx.prefix}mystudent 1* untuk lihat semua)_`
+				}
+				text += `\n`
+			}
+
+			text += `\n📌 *Navigasi Perintah:*\n`
+			text += `• *${ctx.prefix}mystudent 1 / 2 / 3* — Lihat daftar lengkap per bintang\n`
+			text += `• *${ctx.prefix}daily* — Klaim 1.200 Pyroxenes harian (Reset 06:00 WIB)\n`
+			text += `• *${ctx.prefix}gacha 10* — Rekrut 10 Murid Kivotos\n`
+			text += `• *${ctx.prefix}spark* — Tukar 200 Poin untuk jaminan murid 3★`
 
 			await ctx.reply(text)
 			return

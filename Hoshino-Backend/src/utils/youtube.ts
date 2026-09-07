@@ -2,6 +2,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import youtubedl from "youtube-dl-exec"
+import { transcodeForWhatsapp } from "./media"
 
 export interface YoutubeMetadata {
 	id: string
@@ -190,15 +191,18 @@ export async function downloadYoutubeMedia(
 			})
 		}
 
-		const buffer = await fs.readFile(outputPath)
-		const stats = await fs.stat(outputPath)
+		const rawBuffer = await fs.readFile(outputPath)
+		const finalBuffer =
+			type === "video"
+				? await transcodeForWhatsapp(rawBuffer, false)
+				: rawBuffer
 
 		return {
-			buffer,
+			buffer: finalBuffer,
 			meta,
 			mimetype: type === "video" ? "video/mp4" : "audio/mpeg",
 			fileName: `${safeTitle}.${ext}`,
-			sizeBytes: stats.size,
+			sizeBytes: finalBuffer.length,
 		}
 	} finally {
 		// Clean up temporary file asynchronously

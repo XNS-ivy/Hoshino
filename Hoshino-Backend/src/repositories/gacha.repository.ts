@@ -59,7 +59,7 @@ export class GachaRepository {
 	}
 
 	/**
-	 * Claims daily Pyroxenes (1,200 Pyroxenes / 24h).
+	 * Claims daily Pyroxenes (1,200 Pyroxenes / daily reset at 06:00 WIB).
 	 */
 	public async claimDaily(
 		agentId: string,
@@ -73,14 +73,34 @@ export class GachaRepository {
 	}> {
 		const profile = await this.getOrCreateProfile(agentId, userJid)
 		const now = Date.now()
-		const ONE_DAY_MS = 24 * 60 * 60 * 1000
+		const WIB_OFFSET_MS = 7 * 60 * 60 * 1000
+		const nowWib = new Date(now + WIB_OFFSET_MS)
+
+		const year = nowWib.getUTCFullYear()
+		const month = nowWib.getUTCMonth()
+		const date = nowWib.getUTCDate()
+		const hour = nowWib.getUTCHours()
+
+		let lastResetWibMs: number
+		let nextResetWibMs: number
+
+		if (hour < 6) {
+			lastResetWibMs = Date.UTC(year, month, date - 1, 6, 0, 0, 0)
+			nextResetWibMs = Date.UTC(year, month, date, 6, 0, 0, 0)
+		} else {
+			lastResetWibMs = Date.UTC(year, month, date, 6, 0, 0, 0)
+			nextResetWibMs = Date.UTC(year, month, date + 1, 6, 0, 0, 0)
+		}
+
+		const lastResetUtcMs = lastResetWibMs - WIB_OFFSET_MS
+		const nextResetUtcMs = nextResetWibMs - WIB_OFFSET_MS
 
 		if (profile.lastDaily) {
 			const lastDailyMs = new Date(profile.lastDaily).getTime()
-			const diff = now - lastDailyMs
 
-			if (diff < ONE_DAY_MS) {
-				const remainingMs = ONE_DAY_MS - diff
+			// If claimed at or after the last 06:00 WIB reset boundary, it's already claimed for today
+			if (lastDailyMs >= lastResetUtcMs) {
+				const remainingMs = Math.max(0, nextResetUtcMs - now)
 				const remainingHours = Math.floor(remainingMs / (60 * 60 * 1000))
 				const remainingMinutes = Math.ceil(
 					(remainingMs % (60 * 60 * 1000)) / (60 * 1000),

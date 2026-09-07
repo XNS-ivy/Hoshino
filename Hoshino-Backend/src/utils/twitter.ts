@@ -4,6 +4,7 @@ import path from "node:path"
 import { getLinkPreview } from "link-preview-js"
 import youtubedl from "youtube-dl-exec"
 import { logger } from "./logger"
+import { transcodeForWhatsapp } from "./media"
 
 export interface TwitterMediaResult {
 	type: "video" | "image" | "images" | "gif"
@@ -92,18 +93,18 @@ export async function downloadTwitterMedia(
 			noCheckCertificates: true,
 		})
 
-		const buffer = await fs.readFile(outputPath)
-		const stats = await fs.stat(outputPath)
+		const rawBuffer = await fs.readFile(outputPath)
+		const finalBuffer = await transcodeForWhatsapp(rawBuffer, isGif)
 
 		return {
 			type: isGif ? "gif" : "video",
-			buffer,
+			buffer: finalBuffer,
 			title,
 			uploader,
 			duration,
 			url: clean,
 			fileName: `twitter_${tweetId}.${isGif ? "mp4" : "mp4"}`,
-			sizeBytes: stats.size,
+			sizeBytes: finalBuffer.length,
 		}
 	} catch (videoError) {
 		const errStr = String(videoError)

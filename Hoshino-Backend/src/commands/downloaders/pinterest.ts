@@ -1,5 +1,6 @@
 import type { CommandContext, ICommand } from "@customTypes/command"
 import { logger } from "@utils/logger"
+import { transcodeForWhatsapp } from "@utils/media"
 import { pinterest } from "btch-downloader"
 
 interface PinterestItem {
@@ -91,15 +92,33 @@ const command: ICommand = {
 			}
 			caption += `🔍 *Query:* ${query}`
 
-			// 4. Send Image to WhatsApp
-			await ctx.sock.sendMessage(
-				ctx.jid,
-				{
-					image: imgBuf,
-					caption,
-				},
-				{ quoted: ctx.rawMsg },
-			)
+			// 4. Send to WhatsApp (Auto-detect animated GIF vs static image)
+			const isGif =
+				selected.image_url.toLowerCase().includes(".gif") ||
+				imgBuf.slice(0, 3).toString("ascii") === "GIF"
+
+			if (isGif) {
+				const mp4GifBuf = await transcodeForWhatsapp(imgBuf, true)
+				await ctx.sock.sendMessage(
+					ctx.jid,
+					{
+						video: mp4GifBuf,
+						gifPlayback: true,
+						caption,
+						mimetype: "video/mp4",
+					},
+					{ quoted: ctx.rawMsg },
+				)
+			} else {
+				await ctx.sock.sendMessage(
+					ctx.jid,
+					{
+						image: imgBuf,
+						caption,
+					},
+					{ quoted: ctx.rawMsg },
+				)
+			}
 		} catch (error) {
 			logger.error(
 				"/commands/downloaders/pinterest.ts",

@@ -5,6 +5,7 @@ import { fbdown } from "btch-downloader"
 import { getLinkPreview } from "link-preview-js"
 import youtubedl from "youtube-dl-exec"
 import { logger } from "./logger"
+import { transcodeForWhatsapp } from "./media"
 
 export interface FacebookMediaResult {
 	type: "video" | "image" | "images"
@@ -143,18 +144,18 @@ export async function downloadFacebookMedia(
 			noCheckCertificates: true,
 		})
 
-		const buffer = await fs.readFile(outputPath)
-		const stats = await fs.stat(outputPath)
+		const rawBuffer = await fs.readFile(outputPath)
+		const finalBuffer = await transcodeForWhatsapp(rawBuffer, false)
 
 		return {
 			type: "video",
-			buffer,
+			buffer: finalBuffer,
 			title,
 			uploader,
 			duration,
 			url: clean,
 			fileName: `facebook_${Date.now()}.mp4`,
-			sizeBytes: stats.size,
+			sizeBytes: finalBuffer.length,
 		}
 	} catch (primaryError) {
 		// Attempt 2: Fallback via btch-downloader fbdown
@@ -177,16 +178,17 @@ export async function downloadFacebookMedia(
 			}
 
 			const arrayBuffer = await videoFetch.arrayBuffer()
-			const buffer = Buffer.from(arrayBuffer)
+			const rawBuffer = Buffer.from(arrayBuffer)
+			const finalBuffer = await transcodeForWhatsapp(rawBuffer, false)
 
 			return {
 				type: "video",
-				buffer,
+				buffer: finalBuffer,
 				title: "Facebook Video",
 				uploader: "Facebook User",
 				url: clean,
 				fileName: `facebook_${Date.now()}.mp4`,
-				sizeBytes: buffer.length,
+				sizeBytes: finalBuffer.length,
 			}
 		} catch {
 			// Attempt 3: Try photo fallback if yt-dlp threw "No video found"
