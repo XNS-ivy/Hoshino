@@ -146,3 +146,10 @@ Hoshino-Backend/cookies.txt
 
 # sratch test folder
 Hoshino-Backend/scratch/*
+
+# agents and vscode
+.agents/
+.vscode/
+
+# obsidian workspace cache
+**/.obsidian/workspace*.json
