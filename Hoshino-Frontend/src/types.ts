@@ -106,3 +106,16 @@ export interface AgentGeneralSettings {
 	autoRead: boolean
 	typingIndicator: boolean
 }
+
+export interface GroupCommandItem {
+	name: string
+	aliases: string[]
+	category: string
+	description?: string
+	access: string
+	needAdminRegisterThisCommand: boolean
+	globalStatus: "enabled" | "disabled"
+	status: "enabled" | "disabled"
+	isCustomized: boolean
+}
+

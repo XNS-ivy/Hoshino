@@ -35,10 +35,12 @@ updated: 2026-10-15
 - `OwnersTab.tsx`: Management of bot owners and administrators (`role: owner | master`).
 - `BlacklistTab.tsx`: Management of blacklisted phone numbers blocked from bot commands.
 - `AutoDeleteTab.tsx`: Management of target phone numbers whose group messages are automatically deleted.
-- `CommandTogglesTab.tsx`: Toggle switches for enabling or disabling individual bot commands.
-- `GroupSettingsTab.tsx`: Per-group controls for listening status (`botEnabled`), welcome messages, and group-specific prefixes.
+- `CommandTogglesTab.tsx`: Toggle switches for enabling or disabling individual bot commands globally, with an informational banner and navigation link to group policies.
+- `GroupSettingsTab.tsx`: Per-group controls for listening status (`botEnabled`), welcome messages, inline group-specific prefix editing, custom command count badges, and trigger for in-group command management.
+- `InGroupCommandModal.tsx`: Dedicated interactive modal for in-group command management featuring group switching dropdown, live search, category pills (`bluearchive`, `downloaders`, `utility`, `waifuImages`, `group`, `owner`), status filters, batch actions (`Enable All`, `Disable All`, `Reset Defaults`), registration requirement indicators, and per-command reset triggers.
 - `SenseiTab.tsx`: Blue Archive dashboard for inspecting Sensei player profiles, student roster inventory, Pyroxene adjustments, and profile resets.
 - `ContactSelector.tsx`: Autocomplete dropdown selector for known WhatsApp contacts.
+
 
 ---
 

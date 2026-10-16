@@ -8,6 +8,13 @@ export interface GroupSettings {
 	welcomeEnabled: boolean
 	goodbyeEnabled: boolean
 	customPrefix?: string | null
+	customizedCommandsCount?: number
+}
+
+export interface GroupCommandRecord {
+	commandName: string
+	status: "enabled" | "disabled"
+	updatedAt: Date
 }
 
 export interface OwnerRecord {
@@ -252,18 +259,30 @@ export class CommandRepository {
 	 */
 	public async getAllGroupSettings(agentId: string): Promise<GroupSettings[]> {
 		const rows = await sql`
-			SELECT DISTINCT ON (c.jid)
+			WITH group_jids AS (
+				SELECT jid, name as subject, updated_at FROM public.chats WHERE agent_id = ${agentId} AND jid LIKE '%@g.us'
+				UNION
+				SELECT jid, NULL as subject, updated_at FROM public.agent_group_settings WHERE agent_id = ${agentId} AND jid LIKE '%@g.us'
+				UNION
+				SELECT jid, NULL as subject, updated_at FROM public.agent_group_commands WHERE agent_id = ${agentId} AND jid LIKE '%@g.us'
+			)
+			SELECT DISTINCT ON (gj.jid)
 				${agentId} as "agentId",
-				c.jid as "jid",
-				c.name as "subject",
+				gj.jid as "jid",
+				COALESCE(c.name, gj.subject) as "subject",
 				COALESCE(s.bot_enabled, false) as "botEnabled",
 				COALESCE(s.welcome_enabled, false) as "welcomeEnabled",
 				COALESCE(s.goodbye_enabled, false) as "goodbyeEnabled",
-				s.custom_prefix as "customPrefix"
-			FROM public.chats c
-			LEFT JOIN public.agent_group_settings s ON s.agent_id = ${agentId} AND s.jid = c.jid
-			WHERE c.agent_id = ${agentId} AND c.jid LIKE '%@g.us'
-			ORDER BY c.jid ASC, c.updated_at DESC
+				s.custom_prefix as "customPrefix",
+				COALESCE((
+					SELECT COUNT(*)::int
+					FROM public.agent_group_commands gc
+					WHERE gc.agent_id = ${agentId} AND gc.jid = gj.jid
+				), 0) as "customizedCommandsCount"
+			FROM group_jids gj
+			LEFT JOIN public.chats c ON c.agent_id = ${agentId} AND c.jid = gj.jid
+			LEFT JOIN public.agent_group_settings s ON s.agent_id = ${agentId} AND s.jid = gj.jid
+			ORDER BY gj.jid ASC, gj.updated_at DESC
 		`
 		return rows as unknown as GroupSettings[]
 	}
@@ -365,7 +384,42 @@ export class CommandRepository {
 			WHERE agent_id = ${agentId} AND jid = ${groupJid} AND command_name = ${commandName}
 		`
 		if (rows.length === 0) return false
-		return (rows[0] as { status: string }).status !== "disabled"
+		return (rows[0] as { status: string }).status === "enabled"
+	}
+
+	/**
+	 * Checks if a command is allowed inside a specific group for an agent instance,
+	 * taking into account whether the command requires explicit admin registration.
+	 */
+	public async isCommandAllowedInGroup(
+		agentId: string,
+		groupJid: string,
+		commandName: string,
+		needAdminRegisterThisCommand = false,
+	): Promise<boolean> {
+		const rows = await sql`
+			SELECT status FROM public.agent_group_commands
+			WHERE agent_id = ${agentId} AND jid = ${groupJid} AND command_name = ${commandName}
+		`
+		if (rows.length === 0) {
+			return !needAdminRegisterThisCommand
+		}
+		return (rows[0] as { status: string }).status === "enabled"
+	}
+
+	/**
+	 * Retrieves all command overrides for a specific group.
+	 */
+	public async getGroupCommands(
+		agentId: string,
+		groupJid: string,
+	): Promise<GroupCommandRecord[]> {
+		const rows = await sql`
+			SELECT command_name as "commandName", status, updated_at as "updatedAt"
+			FROM public.agent_group_commands
+			WHERE agent_id = ${agentId} AND jid = ${groupJid}
+		`
+		return rows as unknown as GroupCommandRecord[]
 	}
 
 	/**
@@ -382,6 +436,33 @@ export class CommandRepository {
 			VALUES (${agentId}, ${groupJid}, ${commandName}, ${status}, CURRENT_TIMESTAMP)
 			ON CONFLICT (agent_id, jid, command_name)
 			DO UPDATE SET status = EXCLUDED.status, updated_at = CURRENT_TIMESTAMP;
+		`
+	}
+
+	/**
+	 * Resets/removes a specific command override for a group (falls back to default policy).
+	 */
+	public async resetGroupCommandStatus(
+		agentId: string,
+		groupJid: string,
+		commandName: string,
+	): Promise<void> {
+		await sql`
+			DELETE FROM public.agent_group_commands
+			WHERE agent_id = ${agentId} AND jid = ${groupJid} AND command_name = ${commandName}
+		`
+	}
+
+	/**
+	 * Resets all command overrides for a specific group back to defaults.
+	 */
+	public async resetAllGroupCommands(
+		agentId: string,
+		groupJid: string,
+	): Promise<void> {
+		await sql`
+			DELETE FROM public.agent_group_commands
+			WHERE agent_id = ${agentId} AND jid = ${groupJid}
 		`
 	}
 }

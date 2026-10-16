@@ -67,9 +67,8 @@ flowchart TD
   4. **Layer 1 - Prefix Match**: Checks whether body begins with custom or default prefixes (`.`, `!`, `/`, `#`).
   5. **Layer 2 - Command Lookup**: Matches trigger against registered commands.
   6. **Layer 2 - Media Validation**: If command specifies `allowedMediaTypes`, verifies that the message or quoted message contains an allowed format.
-  7. **Layer 2 - Global Toggle**: Verifies global active status via `commandRepository.isCommandEnabledGlobally()`.
-  8. **Layer 3 - Group Registration**: If `needAdminRegisterThisCommand: true`, verifies registration in that group via `commandRepository.isCommandEnabledInGroup()`.
-  9. **Layer 3 - Access Control**:
+  8. **Layer 3 - Group Policy & Registration**: If in group, verifies command permission via `[[Hoshino-Backend/repositories/command.repository#6-command-toggles-matrix--group-policies|commandRepository.isCommandAllowedInGroup()]]`. Blocks explicitly disabled commands in `public.agent_group_commands`, requires admin registration if `needAdminRegisterThisCommand: true`, and exempts `enablecmd`/`disablecmd` from lockout.
+
      - `inGroup`: Must be in group chat.
      - `access: 'owner' | 'master'`: Must have owner role in `public.agent_owners`.
      - `inGroupAccess: 'admin'`: Sender must be group admin.

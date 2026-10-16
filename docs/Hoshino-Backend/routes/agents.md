@@ -43,9 +43,14 @@ updated: 2026-10-15
 
 ### 6. Contacts & Groups
 - `GET /api/agents/:id/contacts`: Lists unique WhatsApp contacts for UI selection.
-- `GET /api/agents/:id/groups`: Lists known group chats and listening configurations.
+- `GET /api/agents/:id/groups`: Lists known group chats and listening configurations with `customizedCommandsCount`.
 - `GET /api/agents/:id/groups/:jid`: Fetches configuration for a specific group.
 - `PATCH /api/agents/:id/groups/:jid`: Updates group configuration (`botEnabled`, `welcomeEnabled`, `goodbyeEnabled`, `customPrefix`).
+- `GET /api/agents/:id/groups/:jid/commands`: Lists all bot commands and effective group statuses (`status`, `isCustomized`, `globalStatus`, `needAdminRegisterThisCommand`).
+- `PATCH /api/agents/:id/groups/:jid/commands/:commandName`: Sets command status for that group (`body: { status: 'enabled' | 'disabled' }`).
+- `DELETE /api/agents/:id/groups/:jid/commands/:commandName`: Resets command status for that group to default policy.
+- `POST /api/agents/:id/groups/:jid/commands/batch`: Batch updates or resets group commands (`body: { action: 'enable_all' | 'disable_all' | 'reset_all', category? }`).
+
 
 ### 7. Sensei & Blue Archive Management (`/api/agents/:id/sensei`)
 - `GET /`: Lists all Sensei user profiles.

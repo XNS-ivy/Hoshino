@@ -26,8 +26,9 @@ Hoshino-Frontend/src/
 └── components/
     ├── dashboard/              # Navbar, MetricCard, MetricsSummary, AgentGrid, AgentCard, BackendStatus
     ├── modals/                 # CreateAgentModal, DeleteAgentModal, AuthModal, PairingCodeGuide, QRCodeGuide
-    ├── settings/               # GeneralSettingsTab, OwnersTab, BlacklistTab, AutoDeleteTab, CommandTogglesTab, GroupSettingsTab, SenseiTab, ContactSelector
+    ├── settings/               # GeneralSettingsTab, OwnersTab, BlacklistTab, AutoDeleteTab, CommandTogglesTab, GroupSettingsTab, InGroupCommandModal, SenseiTab, ContactSelector
     └── chat/                   # ChatSidebar, ChatItem, ChatMessageList, ChatMessageBubble, ChatInputFooter, QuotedPreviewBar
+
 ```
 
 ---

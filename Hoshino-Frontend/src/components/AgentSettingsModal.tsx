@@ -738,13 +738,17 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 						<CommandTogglesTab
 							commands={commands}
 							onToggleCommand={handleToggleCommand}
+							onNavigateToGroups={() => setActiveTab("groups")}
 						/>
 					)}
 
 					{!loading && activeTab === "groups" && (
 						<GroupSettingsTab
+							agentId={agent.agentId}
 							groups={groups}
 							onUpdateGroupSettings={handleUpdateGroupSettings}
+							onShowToast={showToast}
+							onRefreshGroups={() => fetchTabData("groups")}
 						/>
 					)}
 				</div>

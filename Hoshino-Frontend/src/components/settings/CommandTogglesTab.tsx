@@ -14,11 +14,13 @@ export interface CommandToggleItem {
 interface CommandTogglesTabProps {
 	commands: CommandToggleItem[]
 	onToggleCommand: (name: string, status: "enabled" | "disabled") => Promise<void>
+	onNavigateToGroups?: () => void
 }
 
 export const CommandTogglesTab: React.FC<CommandTogglesTabProps> = ({
 	commands,
 	onToggleCommand,
+	onNavigateToGroups,
 }) => {
 	const [cmdSearch, setCmdSearch] = useState("")
 
@@ -31,6 +33,37 @@ export const CommandTogglesTab: React.FC<CommandTogglesTabProps> = ({
 
 	return (
 		<div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+			{/* Informational Scope Banner */}
+			<div
+				style={{
+					padding: "12px 16px",
+					background: "rgba(0, 242, 254, 0.06)",
+					border: "1px solid rgba(0, 242, 254, 0.2)",
+					borderRadius: "10px",
+					display: "flex",
+					alignItems: "center",
+					justifyContent: "space-between",
+					gap: "12px",
+					flexWrap: "wrap",
+				}}
+			>
+				<div style={{ fontSize: "0.8rem", color: "var(--text-muted)", flex: 1, minWidth: "220px" }}>
+					<strong style={{ color: "var(--primary-cyan)" }}>Global Scope:</strong> Toggles here apply
+					to all chats across this agent instance. To configure permissions for individual WhatsApp groups,
+					use the <strong>Groups</strong> tab.
+				</div>
+				{onNavigateToGroups && (
+					<button
+						type="button"
+						onClick={onNavigateToGroups}
+						className="secondary-btn"
+						style={{ padding: "5px 12px", fontSize: "0.75rem", whiteSpace: "nowrap" }}
+					>
+						Go to Groups →
+					</button>
+				)}
+			</div>
+
 			<div style={{ position: "relative" }}>
 				<Search size={16} color="var(--text-muted)" style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)" }} />
 				<input
@@ -38,6 +71,7 @@ export const CommandTogglesTab: React.FC<CommandTogglesTabProps> = ({
 					value={cmdSearch}
 					onChange={(e) => setCmdSearch(e.target.value)}
 					placeholder="Search commands by name or category..."
+
 					style={{
 						width: "100%",
 						background: "rgba(0, 0, 0, 0.3)",

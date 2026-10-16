@@ -495,7 +495,177 @@ export const agentRoutes = new Elysia({ prefix: "/api/agents" })
 		},
 	)
 
+	// GET /api/agents/:id/groups/:jid/commands - List all commands and group status
+	.get("/:id/groups/:jid/commands", async ({ params: { id, jid }, set }) => {
+		try {
+			const safeAgentId = socketManager.sanitizeAgentId(id)
+			await commandLoader.init()
+			const allCmds = commandLoader.getAllCommands()
+			const globalToggles =
+				await commandRepository.getAllCommandToggles(safeAgentId)
+			const globalToggleMap = new Map(
+				globalToggles.map((t) => [t.commandName, t.status]),
+			)
+
+			const groupOverrides = await commandRepository.getGroupCommands(
+				safeAgentId,
+				jid,
+			)
+			const groupOverrideMap = new Map(
+				groupOverrides.map((g) => [g.commandName, g.status]),
+			)
+
+			const result = allCmds.map((cmd) => {
+				const primaryName = Array.isArray(cmd.name) ? cmd.name[0] : cmd.name
+				const isRegisteredReq = !!cmd.needAdminRegisterThisCommand
+				const override = groupOverrideMap.get(primaryName || "")
+
+				const effectiveStatus: "enabled" | "disabled" = override
+					? override
+					: isRegisteredReq
+						? "disabled"
+						: "enabled"
+
+				return {
+					name: primaryName,
+					aliases: Array.isArray(cmd.name) ? cmd.name.slice(1) : [],
+					category: cmd.category || "general",
+					description: cmd.description,
+					access: cmd.access || "user",
+					needAdminRegisterThisCommand: isRegisteredReq,
+					globalStatus: globalToggleMap.get(primaryName || "") || "enabled",
+					status: effectiveStatus,
+					isCustomized: override !== undefined,
+				}
+			})
+
+			return { success: true, data: result }
+		} catch (error) {
+			set.status = 500
+			return {
+				success: false,
+				message: `Failed to fetch group commands: ${error}`,
+			}
+		}
+	})
+
+	// PATCH /api/agents/:id/groups/:jid/commands/:commandName - Set command status for group
+	.patch(
+		"/:id/groups/:jid/commands/:commandName",
+		async ({ params: { id, jid, commandName }, body, set }) => {
+			try {
+				const safeAgentId = socketManager.sanitizeAgentId(id)
+				await commandRepository.setGroupCommandStatus(
+					safeAgentId,
+					jid,
+					commandName,
+					body.status,
+				)
+				return {
+					success: true,
+					message: `Command '${commandName}' in group '${jid}' set to '${body.status}'`,
+				}
+			} catch (error) {
+				set.status = 500
+				return {
+					success: false,
+					message: `Failed to set group command status: ${error}`,
+				}
+			}
+		},
+		{
+			body: t.Object({
+				status: t.Union([t.Literal("enabled"), t.Literal("disabled")]),
+			}),
+		},
+	)
+
+	// DELETE /api/agents/:id/groups/:jid/commands/:commandName - Reset group command to default policy
+	.delete(
+		"/:id/groups/:jid/commands/:commandName",
+		async ({ params: { id, jid, commandName }, set }) => {
+			try {
+				const safeAgentId = socketManager.sanitizeAgentId(id)
+				await commandRepository.resetGroupCommandStatus(
+					safeAgentId,
+					jid,
+					commandName,
+				)
+				return {
+					success: true,
+					message: `Command '${commandName}' in group '${jid}' reset to default`,
+				}
+			} catch (error) {
+				set.status = 500
+				return {
+					success: false,
+					message: `Failed to reset group command: ${error}`,
+				}
+			}
+		},
+	)
+
+	// POST /api/agents/:id/groups/:jid/commands/batch - Batch update group commands
+	.post(
+		"/:id/groups/:jid/commands/batch",
+		async ({ params: { id, jid }, body, set }) => {
+			try {
+				const safeAgentId = socketManager.sanitizeAgentId(id)
+				await commandLoader.init()
+				const allCmds = commandLoader.getAllCommands()
+
+				if (body.action === "reset_all") {
+					await commandRepository.resetAllGroupCommands(safeAgentId, jid)
+					return {
+						success: true,
+						message: "All group command overrides reset to default",
+					}
+				}
+
+				const targetCmds = body.category
+					? allCmds.filter((c) => c.category === body.category)
+					: allCmds
+
+				const targetStatus =
+					body.action === "enable_all" ? "enabled" : "disabled"
+				for (const cmd of targetCmds) {
+					const primaryName = Array.isArray(cmd.name) ? cmd.name[0] : cmd.name
+					if (primaryName) {
+						await commandRepository.setGroupCommandStatus(
+							safeAgentId,
+							jid,
+							primaryName,
+							targetStatus,
+						)
+					}
+				}
+
+				return {
+					success: true,
+					message: `Successfully set ${targetCmds.length} commands to ${targetStatus}`,
+				}
+			} catch (error) {
+				set.status = 500
+				return {
+					success: false,
+					message: `Failed to batch update group commands: ${error}`,
+				}
+			}
+		},
+		{
+			body: t.Object({
+				action: t.Union([
+					t.Literal("enable_all"),
+					t.Literal("disable_all"),
+					t.Literal("reset_all"),
+				]),
+				category: t.Optional(t.String()),
+			}),
+		},
+	)
+
 	// GET /api/agents/:id/sensei - List all Sensei profiles for this agent
+
 	.get("/:id/sensei", async ({ params: { id }, set }) => {
 		try {
 			const safeAgentId = socketManager.sanitizeAgentId(id)

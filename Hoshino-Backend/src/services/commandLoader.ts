@@ -269,14 +269,26 @@ export class CommandLoader {
 		)
 		if (!isGloballyEnabled) return
 
-		// Layer 3: Check Group Command Registration (if command requires it)
-		if (command.needAdminRegisterThisCommand && isGroup) {
-			const isGroupRegistered = await commandRepository.isCommandEnabledInGroup(
-				agentId,
-				jid,
-				commandName,
-			)
-			if (!isGroupRegistered) return
+		// Layer 3: Check Group Command Permission & Registration
+		if (isGroup) {
+			const isExempt =
+				commandName === "enablecmd" || commandName === "disablecmd"
+			if (!isExempt) {
+				const isAllowedInGroup =
+					await commandRepository.isCommandAllowedInGroup(
+						agentId,
+						jid,
+						commandName,
+						!!command.needAdminRegisterThisCommand,
+					)
+				if (!isAllowedInGroup) {
+					logger.debug(
+						"/services/commandLoader.ts",
+						`[${agentId}] Command "${commandName}" blocked in group ${jid} (group policy / not registered).`,
+					)
+					return
+				}
+			}
 		}
 
 		// Construct Lazy Context
