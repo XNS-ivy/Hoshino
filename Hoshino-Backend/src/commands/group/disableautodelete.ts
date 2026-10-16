@@ -25,9 +25,9 @@ const command: ICommand = {
 			return
 		}
 
-		await commandRepository.removeAutoDelete(ctx.agentId, targetJid)
+		await commandRepository.removeAutoDelete(ctx.agentId, targetJid, ctx.jid)
 		await ctx.reply(
-			`✅ User *@${targetJid.split("@")[0]}* removed from Auto-Delete list.`,
+			`✅ User *@${targetJid.split("@")[0]}* removed from Auto-Delete list for *this group*.`,
 		)
 	},
 }

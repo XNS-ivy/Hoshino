@@ -33,8 +33,10 @@ export interface BlacklistRecord {
 
 export interface AutoDeleteRecord {
 	agentId: string
+	jid: string
 	userJid: string
 	createdAt: Date
+	groupSubject?: string | null
 }
 
 export interface CommandToggleRecord {
@@ -176,57 +178,88 @@ export class CommandRepository {
 	}
 
 	/**
-	 * Checks if a user JID is marked for auto-delete in group chats for an agent.
+	 * Checks if a user JID is marked for auto-delete in a group chat for an agent.
+	 * Matches specific groupJid or global wildcard ('*').
 	 */
 	public async isAutoDelete(
 		agentId: string,
+		groupJid: string,
 		userJid: string,
 	): Promise<boolean> {
 		const cleanJid = this.normalizeJid(userJid)
 		const rows = await sql`
 			SELECT user_jid FROM public.agent_autodeletes
-			WHERE agent_id = ${agentId} AND user_jid = ${cleanJid}
+			WHERE agent_id = ${agentId}
+			  AND user_jid = ${cleanJid}
+			  AND (jid = ${groupJid} OR jid = '*')
 		`
 		return rows.length > 0
 	}
 
 	/**
-	 * Fetches all auto-delete users for an agent.
+	 * Fetches auto-delete records for an agent, optionally filtered by groupJid.
 	 */
-	public async getAutoDeleteList(agentId: string): Promise<AutoDeleteRecord[]> {
+	public async getAutoDeleteList(
+		agentId: string,
+		groupJid?: string,
+	): Promise<AutoDeleteRecord[]> {
+		if (groupJid) {
+			const rows = await sql`
+				SELECT a.agent_id as "agentId", a.jid, a.user_jid as "userJid", a.created_at as "createdAt", c.name as "groupSubject"
+				FROM public.agent_autodeletes a
+				LEFT JOIN public.chats c ON c.agent_id = a.agent_id AND c.jid = a.jid
+				WHERE a.agent_id = ${agentId} AND a.jid = ${groupJid}
+				ORDER BY a.created_at DESC
+			`
+			return rows as unknown as AutoDeleteRecord[]
+		}
+
 		const rows = await sql`
-			SELECT agent_id as "agentId", user_jid as "userJid", created_at as "createdAt"
-			FROM public.agent_autodeletes
-			WHERE agent_id = ${agentId}
-			ORDER BY created_at DESC
+			SELECT a.agent_id as "agentId", a.jid, a.user_jid as "userJid", a.created_at as "createdAt", c.name as "groupSubject"
+			FROM public.agent_autodeletes a
+			LEFT JOIN public.chats c ON c.agent_id = a.agent_id AND c.jid = a.jid
+			WHERE a.agent_id = ${agentId}
+			ORDER BY a.created_at DESC
 		`
 		return rows as unknown as AutoDeleteRecord[]
 	}
 
 	/**
-	 * Adds a user to auto-delete list for an agent.
+	 * Adds a user to auto-delete list for an agent in a specific group (or global wildcard '*').
 	 */
-	public async addAutoDelete(agentId: string, userJid: string): Promise<void> {
+	public async addAutoDelete(
+		agentId: string,
+		userJid: string,
+		groupJid = "*",
+	): Promise<void> {
 		const cleanJid = this.normalizeJid(userJid)
 		await sql`
-			INSERT INTO public.agent_autodeletes (agent_id, user_jid)
-			VALUES (${agentId}, ${cleanJid})
-			ON CONFLICT (agent_id, user_jid) DO NOTHING;
+			INSERT INTO public.agent_autodeletes (agent_id, jid, user_jid)
+			VALUES (${agentId}, ${groupJid}, ${cleanJid})
+			ON CONFLICT (agent_id, jid, user_jid) DO NOTHING;
 		`
 	}
 
 	/**
-	 * Removes a user from auto-delete list for an agent.
+	 * Removes a user from auto-delete list for an agent in a specific group (or all groups if groupJid omitted).
 	 */
 	public async removeAutoDelete(
 		agentId: string,
 		userJid: string,
+		groupJid?: string,
 	): Promise<void> {
 		const cleanJid = this.normalizeJid(userJid)
-		await sql`
-			DELETE FROM public.agent_autodeletes
-			WHERE agent_id = ${agentId} AND user_jid = ${cleanJid};
-		`
+		if (groupJid) {
+			await sql`
+				DELETE FROM public.agent_autodeletes
+				WHERE agent_id = ${agentId} AND jid = ${groupJid} AND user_jid = ${cleanJid};
+			`
+		} else {
+			await sql`
+				DELETE FROM public.agent_autodeletes
+				WHERE agent_id = ${agentId} AND user_jid = ${cleanJid};
+			`
+		}
 	}
 
 	/**

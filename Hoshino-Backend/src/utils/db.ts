@@ -121,14 +121,30 @@ export async function initAuthDatabase(): Promise<void> {
 			);
 		`
 
-		// 11. Create public.agent_autodeletes table
+		// 11. Create public.agent_autodeletes table (scoped per group or global '*')
 		await sql`
 			CREATE TABLE IF NOT EXISTS public.agent_autodeletes (
 				agent_id VARCHAR(255) NOT NULL,
+				jid VARCHAR(255) NOT NULL DEFAULT '*',
 				user_jid VARCHAR(255) NOT NULL,
 				created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-				PRIMARY KEY (agent_id, user_jid)
+				PRIMARY KEY (agent_id, jid, user_jid)
 			);
+		`
+
+		// 11b. Ensure jid column and composite PK exist on public.agent_autodeletes
+		await sql`
+			DO $$
+			BEGIN
+				IF NOT EXISTS (
+					SELECT 1 FROM information_schema.columns 
+					WHERE table_schema = 'public' AND table_name = 'agent_autodeletes' AND column_name = 'jid'
+				) THEN
+					ALTER TABLE public.agent_autodeletes ADD COLUMN jid VARCHAR(255) NOT NULL DEFAULT '*';
+					ALTER TABLE public.agent_autodeletes DROP CONSTRAINT IF EXISTS agent_autodeletes_pkey;
+					ALTER TABLE public.agent_autodeletes ADD PRIMARY KEY (agent_id, jid, user_jid);
+				END IF;
+			END $$;
 		`
 
 		// 12. Create public.agent_group_settings table

@@ -49,8 +49,9 @@ updated: 2026-10-15
 | `goodbye.ts` | `goodbye` | `true` | `admin` | Toggles farewell messages for departing members (`goodbye_enabled`) |
 | `kick.ts` | `kick` | `true` | `admin` | Kicks a participant from the group (requires bot admin rights) |
 | `delete.ts` | `delete`, `del` | `true` | `admin` | Deletes a replied message in the group (requires bot admin rights) |
-| `autodelete.ts` | `autodelete` | `true` | `admin` | Adds a user to the group auto-delete target list |
-| `disableautodelete.ts` | `disableautodelete` | `true` | `admin` | Removes a user from the group auto-delete target list |
+| `autodelete.ts` | `autodelete` | `true` | `admin` | Adds a user to the auto-delete target list strictly for this group (`public.agent_autodeletes`) |
+| `disableautodelete.ts` | `disableautodelete` | `true` | `admin` | Removes a user from the auto-delete target list in this group |
+
 
 ---
 

@@ -138,10 +138,10 @@ export class CommandLoader {
 		)
 		if (isBlacklisted) return
 
-		// Layer 0: Check User Auto-Delete (Deletes ALL message types: text, media, stickers, audio, docs, etc.)
+		// Layer 0: Check User Auto-Delete (scoped per group or global '*')
 		const isAutoDelete = isGroup
-			? (await commandRepository.isAutoDelete(agentId, senderJid)) ||
-				(await commandRepository.isAutoDelete(agentId, rawSender))
+			? (await commandRepository.isAutoDelete(agentId, jid, senderJid)) ||
+				(await commandRepository.isAutoDelete(agentId, jid, rawSender))
 			: false
 
 		if (isAutoDelete) {

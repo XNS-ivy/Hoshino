@@ -33,9 +33,9 @@ updated: 2026-10-15
 - `DELETE /:userJid`: Removes user from blacklist.
 
 ### 4. Auto-Delete Targets (`/api/agents/:id/autodelete`)
-- `GET /`: Lists target users whose group messages are automatically deleted.
-- `POST /`: Adds user to auto-delete list (`body: { userJid }`).
-- `DELETE /:userJid`: Removes user from auto-delete list.
+- `GET /`: Lists target users whose group messages are automatically deleted (optional `query: { groupJid? }`).
+- `POST /`: Adds user to auto-delete list (`body: { userJid, groupJid? }`).
+- `DELETE /:userJid`: Removes user from auto-delete list (optional `query: { groupJid? }`).
 
 ### 5. Command Toggles (`/api/agents/:id/commands`)
 - `GET /`: Lists all loaded commands and their global enabled status for this agent.
@@ -50,6 +50,10 @@ updated: 2026-10-15
 - `PATCH /api/agents/:id/groups/:jid/commands/:commandName`: Sets command status for that group (`body: { status: 'enabled' | 'disabled' }`).
 - `DELETE /api/agents/:id/groups/:jid/commands/:commandName`: Resets command status for that group to default policy.
 - `POST /api/agents/:id/groups/:jid/commands/batch`: Batch updates or resets group commands (`body: { action: 'enable_all' | 'disable_all' | 'reset_all', category? }`).
+- `GET /api/agents/:id/groups/:jid/autodelete`: Lists auto-delete targets for this specific group.
+- `POST /api/agents/:id/groups/:jid/autodelete`: Adds user to auto-delete for this specific group (`body: { userJid }`).
+- `DELETE /api/agents/:id/groups/:jid/autodelete/:userJid`: Removes user from auto-delete for this specific group.
+
 
 
 ### 7. Sensei & Blue Archive Management (`/api/agents/:id/sensei`)

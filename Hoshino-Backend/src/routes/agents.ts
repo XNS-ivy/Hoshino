@@ -274,28 +274,45 @@ export const agentRoutes = new Elysia({ prefix: "/api/agents" })
 		},
 	)
 
-	// GET /api/agents/:id/autodelete - List auto-delete target users
-	.get("/:id/autodelete", async ({ params: { id }, set }) => {
-		try {
-			const safeAgentId = socketManager.sanitizeAgentId(id)
-			const list = await commandRepository.getAutoDeleteList(safeAgentId)
-			return { success: true, data: list }
-		} catch (error) {
-			set.status = 500
-			return {
-				success: false,
-				message: `Failed to fetch auto-delete list: ${error}`,
+	// GET /api/agents/:id/autodelete - List auto-delete target users (optionally filtered by groupJid)
+	.get(
+		"/:id/autodelete",
+		async ({ params: { id }, query, set }) => {
+			try {
+				const safeAgentId = socketManager.sanitizeAgentId(id)
+				const list = await commandRepository.getAutoDeleteList(
+					safeAgentId,
+					query?.groupJid,
+				)
+				return { success: true, data: list }
+			} catch (error) {
+				set.status = 500
+				return {
+					success: false,
+					message: `Failed to fetch auto-delete list: ${error}`,
+				}
 			}
-		}
-	})
+		},
+		{
+			query: t.Optional(
+				t.Object({
+					groupJid: t.Optional(t.String()),
+				}),
+			),
+		},
+	)
 
-	// POST /api/agents/:id/autodelete - Add auto-delete target user
+	// POST /api/agents/:id/autodelete - Add auto-delete target user (scoped per group or global '*')
 	.post(
 		"/:id/autodelete",
 		async ({ params: { id }, body, set }) => {
 			try {
 				const safeAgentId = socketManager.sanitizeAgentId(id)
-				await commandRepository.addAutoDelete(safeAgentId, body.userJid)
+				await commandRepository.addAutoDelete(
+					safeAgentId,
+					body.userJid,
+					body.groupJid || "*",
+				)
 				return { success: true, message: "User added to auto-delete list" }
 			} catch (error) {
 				set.status = 500
@@ -308,17 +325,22 @@ export const agentRoutes = new Elysia({ prefix: "/api/agents" })
 		{
 			body: t.Object({
 				userJid: t.String({ minLength: 1 }),
+				groupJid: t.Optional(t.String()),
 			}),
 		},
 	)
 
-	// DELETE /api/agents/:id/autodelete/:userJid - Remove auto-delete user
+	// DELETE /api/agents/:id/autodelete/:userJid - Remove auto-delete user (scoped per group or all)
 	.delete(
 		"/:id/autodelete/:userJid",
-		async ({ params: { id, userJid }, set }) => {
+		async ({ params: { id, userJid }, query, set }) => {
 			try {
 				const safeAgentId = socketManager.sanitizeAgentId(id)
-				await commandRepository.removeAutoDelete(safeAgentId, userJid)
+				await commandRepository.removeAutoDelete(
+					safeAgentId,
+					userJid,
+					query?.groupJid,
+				)
 				return {
 					success: true,
 					message: "User removed from auto-delete list",
@@ -330,6 +352,13 @@ export const agentRoutes = new Elysia({ prefix: "/api/agents" })
 					message: `Failed to remove user from auto-delete list: ${error}`,
 				}
 			}
+		},
+		{
+			query: t.Optional(
+				t.Object({
+					groupJid: t.Optional(t.String()),
+				}),
+			),
 		},
 	)
 
@@ -661,6 +690,68 @@ export const agentRoutes = new Elysia({ prefix: "/api/agents" })
 				]),
 				category: t.Optional(t.String()),
 			}),
+		},
+	)
+
+	// GET /api/agents/:id/groups/:jid/autodelete - List auto-delete targets for this specific group
+	.get("/:id/groups/:jid/autodelete", async ({ params: { id, jid }, set }) => {
+		try {
+			const safeAgentId = socketManager.sanitizeAgentId(id)
+			const list = await commandRepository.getAutoDeleteList(safeAgentId, jid)
+			return { success: true, data: list }
+		} catch (error) {
+			set.status = 500
+			return {
+				success: false,
+				message: `Failed to fetch group auto-delete list: ${error}`,
+			}
+		}
+	})
+
+	// POST /api/agents/:id/groups/:jid/autodelete - Add auto-delete target in this group
+	.post(
+		"/:id/groups/:jid/autodelete",
+		async ({ params: { id, jid }, body, set }) => {
+			try {
+				const safeAgentId = socketManager.sanitizeAgentId(id)
+				await commandRepository.addAutoDelete(safeAgentId, body.userJid, jid)
+				return {
+					success: true,
+					message: "User added to auto-delete list for this group",
+				}
+			} catch (error) {
+				set.status = 500
+				return {
+					success: false,
+					message: `Failed to add user to group auto-delete list: ${error}`,
+				}
+			}
+		},
+		{
+			body: t.Object({
+				userJid: t.String({ minLength: 1 }),
+			}),
+		},
+	)
+
+	// DELETE /api/agents/:id/groups/:jid/autodelete/:userJid - Remove auto-delete target from this group
+	.delete(
+		"/:id/groups/:jid/autodelete/:userJid",
+		async ({ params: { id, jid, userJid }, set }) => {
+			try {
+				const safeAgentId = socketManager.sanitizeAgentId(id)
+				await commandRepository.removeAutoDelete(safeAgentId, userJid, jid)
+				return {
+					success: true,
+					message: "User removed from auto-delete list for this group",
+				}
+			} catch (error) {
+				set.status = 500
+				return {
+					success: false,
+					message: `Failed to remove user from group auto-delete list: ${error}`,
+				}
+			}
 		},
 	)
 

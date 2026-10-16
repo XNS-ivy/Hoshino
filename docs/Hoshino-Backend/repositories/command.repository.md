@@ -36,10 +36,11 @@ updated: 2026-10-15
 - `removeBlacklist(agentId, userJid): Promise<void>`: Removes user from blacklist.
 
 ### 4. Auto-Delete Targets (`public.agent_autodeletes`)
-- `isAutoDelete(agentId, userJid): Promise<boolean>`: Checks if messages from user should be automatically deleted in group chats.
-- `getAutoDeleteList(agentId): Promise<AutoDeleteRecord[]>`: Retrieves all auto-delete targets.
-- `addAutoDelete(agentId, userJid): Promise<void>`: Adds a user to the auto-delete target list.
-- `removeAutoDelete(agentId, userJid): Promise<void>`: Removes a user from the auto-delete target list.
+- `isAutoDelete(agentId, groupJid, userJid): Promise<boolean>`: Checks if messages from user should be automatically deleted in a specific group chat or global wildcard (`*`).
+- `getAutoDeleteList(agentId, groupJid?): Promise<AutoDeleteRecord[]>`: Retrieves auto-delete targets for an agent, optionally filtered by group JID.
+- `addAutoDelete(agentId, userJid, groupJid = "*"): Promise<void>`: Adds a user to the auto-delete target list for a specific group or globally.
+- `removeAutoDelete(agentId, userJid, groupJid?): Promise<void>`: Removes a user from the auto-delete target list for a specific group or all groups.
+
 
 ### 5. Group Settings (`public.agent_group_settings`)
 - `getGroupSettings(agentId, groupJid): Promise<GroupSettings>`: Retrieves `botEnabled`, `welcomeEnabled`, `goodbyeEnabled`, and `customPrefix` for a group.

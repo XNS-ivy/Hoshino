@@ -199,14 +199,14 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 	}
 
 	// AutoDelete Handlers
-	const handleAddAutoDelete = async (userJid: string) => {
+	const handleAddAutoDelete = async (userJid: string, groupJid?: string) => {
 		try {
 			const res = await fetch(
 				`${API_BASE_URL}/api/agents/${agent.agentId}/autodelete`,
 				{
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ userJid }),
+					body: JSON.stringify({ userJid, groupJid: groupJid || "*" }),
 				},
 			)
 			const json = await res.json()
@@ -221,10 +221,13 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 		}
 	}
 
-	const handleRemoveAutoDelete = async (userJid: string) => {
+	const handleRemoveAutoDelete = async (userJid: string, groupJid?: string) => {
 		try {
+			const queryParam = groupJid
+				? `?groupJid=${encodeURIComponent(groupJid)}`
+				: ""
 			const res = await fetch(
-				`${API_BASE_URL}/api/agents/${agent.agentId}/autodelete/${encodeURIComponent(userJid)}`,
+				`${API_BASE_URL}/api/agents/${agent.agentId}/autodelete/${encodeURIComponent(userJid)}${queryParam}`,
 				{ method: "DELETE" },
 			)
 			const json = await res.json()
@@ -729,6 +732,7 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 						<AutoDeleteTab
 							autoDeleteList={autoDeleteList}
 							contacts={contacts}
+							groups={groups}
 							onAddAutoDelete={handleAddAutoDelete}
 							onRemoveAutoDelete={handleRemoveAutoDelete}
 						/>

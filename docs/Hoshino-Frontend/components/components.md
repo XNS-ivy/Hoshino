@@ -34,7 +34,8 @@ updated: 2026-10-15
 - `GeneralSettingsTab.tsx`: Custom prefix configuration (`.`, `!`, etc.), auto-read blue ticks toggle, typing indicator simulation, and welcome/goodbye message templates.
 - `OwnersTab.tsx`: Management of bot owners and administrators (`role: owner | master`).
 - `BlacklistTab.tsx`: Management of blacklisted phone numbers blocked from bot commands.
-- `AutoDeleteTab.tsx`: Management of target phone numbers whose group messages are automatically deleted.
+- `AutoDeleteTab.tsx`: Management of target phone numbers whose group messages are automatically deleted, supporting target scope selection (per specific WhatsApp group or global `*`) and scope badges.
+
 - `CommandTogglesTab.tsx`: Toggle switches for enabling or disabling individual bot commands globally, with an informational banner and navigation link to group policies.
 - `GroupSettingsTab.tsx`: Per-group controls for listening status (`botEnabled`), welcome messages, inline group-specific prefix editing, custom command count badges, and trigger for in-group command management.
 - `InGroupCommandModal.tsx`: Dedicated interactive modal for in-group command management featuring group switching dropdown, live search, category pills (`bluearchive`, `downloaders`, `utility`, `waifuImages`, `group`, `owner`), status filters, batch actions (`Enable All`, `Disable All`, `Reset Defaults`), registration requirement indicators, and per-command reset triggers.

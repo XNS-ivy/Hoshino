@@ -26,9 +26,9 @@ const command: ICommand = {
 			return
 		}
 
-		await commandRepository.addAutoDelete(ctx.agentId, targetJid)
+		await commandRepository.addAutoDelete(ctx.agentId, targetJid, ctx.jid)
 		await ctx.reply(
-			`🗑️ User *@${targetJid.split("@")[0]}* added to Auto-Delete list.\nBot will automatically delete all future messages from this user in groups.`,
+			`🗑️ User *@${targetJid.split("@")[0]}* added to Auto-Delete list for *this group*.\nBot will automatically delete all future messages from this user in this group.`,
 		)
 	},
 }
