@@ -75,6 +75,18 @@ updated: 2026-10-15
 
 ## 6. SchaleDB Blue Archive Wiki (`schaledb.ts`)
 - Fetches character stats, EX skill details, armor types, voice actors, and HD artwork directly from the SchaleDB public dataset with in-memory caching.
+- **Function `getStudentMatchScore(candidateName: string, query: string, devName?: string, familyName?: string, personalName?: string): number`**:
+  Calculates a deterministic relevance score to guarantee high search precision:
+  - `10000`: Exact raw match on student full name.
+  - `9800`: Cleaned name match (ignoring punctuation, brackets, parentheses).
+  - `8500`: Base name match (e.g. query `"mari"` correctly matching `"Mari (Track)"`).
+  - `7000-7800`: Multi-token match across all words in any order (e.g. `"track mari"` matching `"Mari (Track)"`).
+  - `5000-6500`: Whole-word boundary token match (prevents `"Mari"` from matching inside `"Himari"`).
+  - `3000-4500`: Prefix match on full name or base name.
+  - `2000-4000`: Exact or partial matches on `PersonalName`, `FamilyName` (e.g. `"Iochi"`, `"Akeboshi"`), or `DevName`.
+  - `50-800`: Weak internal substring match (restricted strictly to queries of length >= 3).
+- **Function `searchSchaleStudent(query: string): Promise<SchaleStudent[]>`**:
+  Searches students by ID or multi-tier relevance scoring, sorting the results descending by score so exact/base-name matches always precede substring candidates.
 
 ---
 

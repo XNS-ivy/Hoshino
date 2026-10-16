@@ -17,9 +17,9 @@ updated: 2026-10-15
 | :--- | :--- | :--- | :--- |
 | `gacha.ts` | `gacha`, `pull`, `daily`, `spark`, `mystudent`, `students`, `pyroxene` | `user` | Official 3% rate Blue Archive gacha simulation, 1,200 daily Pyroxenes claim, 200 spark points pity redemption, and student roster viewing |
 | `hoshino.ts` | `hoshino`, `ojisan`, `takanashi` | `user` | Multi-turn conversational AI persona for Takanashi Hoshino |
-| `momotalk.ts` | `momo`, `momotalk`, `bond` | `user` | Interactive MomoTalk conversations with bond EXP progression and Live2D Memorial Lobby unlock at Level 9 |
+| `momotalk.ts` | `momo`, `momotalk`, `bond` | `user` | Interactive MomoTalk conversations with bond EXP progression and Live2D Memorial Lobby unlock at Level 5. Features multi-tier deterministic student name resolution with anti-hijack guard (e.g., prevents "Himari" from intercepting "Mari" searches), and authentic dialogue sets for Hoshino, Shiroko, Serika, Nonomi, Ayane, Mika, Mari, and Himari |
 | `raid.ts` | `raid`, `boss`, `totalassault` | `user` | Total Assault raid boss guide from SchaleDB (armor weaknesses, insane attacks, best striker counters) |
-| `student.ts` | `student`, `ba`, `murid`, `schale` | `user` | Full student wiki profiles from SchaleDB (combat roles, armor types, VAs, HD art) |
+| `student.ts` | `student`, `ba`, `murid`, `schale` | `user` | Full student wiki profiles from SchaleDB with relevance scoring (combat roles, armor types, VAs, HD art) |
 
 ---
 

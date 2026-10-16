@@ -152,4 +152,8 @@ Hoshino-Backend/scratch/*
 .vscode/
 
 # obsidian workspace cache
-**/.obsidian/workspace*.json
+**/.obsidian/workspace*.json
+
+# local cache data
+data/
+Hoshino-Backend/data/

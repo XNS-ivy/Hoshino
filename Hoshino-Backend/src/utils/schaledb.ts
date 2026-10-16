@@ -120,7 +120,112 @@ export async function getSchaleStudents(): Promise<SchaleStudent[]> {
 }
 
 /**
- * Searches students by Name, DevName, or ID.
+ * Calculates a match relevance score between a student and a search query.
+ * Higher scores indicate a more precise match:
+ * - 10000: Exact match on full name
+ * - 9800: Exact match on cleaned name (ignoring punctuation/parentheses)
+ * - 8500: Exact match on base name (e.g. "Mari" matching "Mari (Track)")
+ * - 7000-7800: Multi-token match (all tokens matched in any order)
+ * - 5000-6500: Whole word boundary match (prevents "Mari" matching inside "Himari")
+ * - 3000-4500: Prefix match
+ * - 2000-4000: Exact/partial PersonalName, FamilyName, or DevName
+ * - 50-800: Weak substring match inside a word (only for queries >= 3 chars)
+ */
+export function getStudentMatchScore(
+	candidateName: string,
+	query: string,
+	devName?: string,
+	familyName?: string,
+	personalName?: string,
+): number {
+	const q = query.trim().toLowerCase()
+	const name = candidateName.trim().toLowerCase()
+	if (!q || !name) return 0
+
+	// 1. Direct raw exact match
+	if (name === q) return 10000
+
+	// Normalize punctuation and extra whitespace
+	const cleanQ = q
+		.replace(/[()[\]*_\-.]/g, " ")
+		.replace(/\s+/g, " ")
+		.trim()
+	const cleanName = name
+		.replace(/[()[\]*_\-.]/g, " ")
+		.replace(/\s+/g, " ")
+		.trim()
+
+	if (cleanName === cleanQ) return 9800
+
+	// Extract base student name (without parentheses or variant qualifiers)
+	const baseName = name
+		.replace(/\s*[(*[].*?[)*\]]/g, "")
+		.replace(/\s+/g, " ")
+		.trim()
+	const cleanBase = baseName
+		.replace(/[()[\]*_\-.]/g, " ")
+		.replace(/\s+/g, " ")
+		.trim()
+
+	// 2. Exact match against base name (e.g. query "mari" matching "Mari (Track)")
+	if (cleanBase === cleanQ) {
+		return 8500
+	}
+
+	// 3. Multi-token match (e.g. "mari track" or "track mari" matching "Mari (Track)")
+	const qTokens = cleanQ.split(" ").filter(Boolean)
+	const nameTokens = cleanName.split(" ").filter(Boolean)
+	if (qTokens.length > 1) {
+		const allTokensMatch = qTokens.every((qt) =>
+			nameTokens.some((nt) => nt === qt || nt.startsWith(qt)),
+		)
+		if (allTokensMatch) {
+			const lenDiff = Math.abs(cleanName.length - cleanQ.length)
+			return Math.max(7000, 7800 - lenDiff * 10)
+		}
+	}
+
+	// 4. Whole-word boundary token match (prevents "Mari" from matching inside "Himari")
+	const escapedQ = cleanQ.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+	const wordRegex = new RegExp(
+		`(^|\\s|[(_\\-\\./])${escapedQ}($|\\s|[)_\\-\\./])`,
+		"i",
+	)
+	if (wordRegex.test(name) || wordRegex.test(cleanName)) {
+		const lenDiff = Math.abs(cleanName.length - cleanQ.length)
+		return Math.max(5000, 6500 - lenDiff * 20)
+	}
+
+	// 5. Prefix match on full name or base name (e.g. "mari" matching "Marina", "hima" matching "Himari")
+	if (cleanName.startsWith(cleanQ) || cleanBase.startsWith(cleanQ)) {
+		const lenDiff = Math.abs(cleanName.length - cleanQ.length)
+		return Math.max(3000, 4500 - lenDiff * 30)
+	}
+
+	// 6. Name parts (PersonalName, FamilyName, DevName)
+	const devLower = devName?.toLowerCase().trim()
+	const famLower = familyName?.toLowerCase().trim()
+	const perLower = personalName?.toLowerCase().trim()
+
+	if (perLower === q) return 4000
+	if (famLower === q) return 3800
+	if (devLower === q) return 3700
+
+	if (perLower?.includes(q)) return 2500
+	if (famLower?.includes(q)) return 2400
+	if (devLower?.includes(q)) return 2300
+
+	// 7. Weak substring match inside words (only for queries >= 3 chars, e.g. "mari" inside "himari")
+	if (cleanQ.length >= 3 && cleanName.includes(cleanQ)) {
+		const lenDiff = Math.abs(cleanName.length - cleanQ.length)
+		return Math.max(50, 800 - lenDiff * 50)
+	}
+
+	return 0
+}
+
+/**
+ * Searches students by Name, DevName, or ID with intelligent relevance scoring.
  */
 export async function searchSchaleStudent(
 	query: string,
@@ -136,24 +241,28 @@ export async function searchSchaleStudent(
 		if (byId) return [byId]
 	}
 
-	// Filter matches (name, devName, familyName, personalName)
-	const matched = students.filter(
-		(s) =>
-			s.Name.toLowerCase().includes(q) ||
-			s.DevName.toLowerCase().includes(q) ||
-			s.FamilyName?.toLowerCase().includes(q) ||
-			s.PersonalName?.toLowerCase().includes(q),
-	)
+	// Score all students and filter out zero-score candidates
+	const scored: { student: SchaleStudent; score: number }[] = []
+	for (const s of students) {
+		const score = getStudentMatchScore(
+			s.Name,
+			q,
+			s.DevName,
+			s.FamilyName,
+			s.PersonalName,
+		)
+		if (score > 0) {
+			scored.push({ student: s, score })
+		}
+	}
 
-	// Sort so exact matches come first
-	matched.sort((a, b) => {
-		const aExact = a.Name.toLowerCase() === q ? 1 : 0
-		const bExact = b.Name.toLowerCase() === q ? 1 : 0
-		if (aExact !== bExact) return bExact - aExact
-		return a.Name.localeCompare(b.Name)
+	// Sort by relevance score descending, then alphabetically by Name
+	scored.sort((a, b) => {
+		if (b.score !== a.score) return b.score - a.score
+		return a.student.Name.localeCompare(b.student.Name)
 	})
 
-	return matched
+	return scored.map((item) => item.student)
 }
 
 /**
