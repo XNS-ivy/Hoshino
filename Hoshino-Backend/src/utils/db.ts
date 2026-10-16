@@ -230,9 +230,27 @@ export async function initAuthDatabase(): Promise<void> {
 			);
 		`
 
+		// 18. Create public.database_settings table (Storage & Retention Management)
+		await sql`
+			CREATE TABLE IF NOT EXISTS public.database_settings (
+				id VARCHAR(50) PRIMARY KEY DEFAULT 'default',
+				auto_prune_enabled BOOLEAN DEFAULT true,
+				retention_days INT DEFAULT 7,
+				max_messages_per_chat INT DEFAULT 500,
+				clean_media_bloat BOOLEAN DEFAULT true,
+				last_pruned_at TIMESTAMPTZ,
+				updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+			);
+		`
+		await sql`
+			INSERT INTO public.database_settings (id, auto_prune_enabled, retention_days, max_messages_per_chat, clean_media_bloat)
+			VALUES ('default', true, 7, 500, true)
+			ON CONFLICT (id) DO NOTHING;
+		`
+
 		logger.system(
 			"/utils/db.ts",
-			"PostgreSQL auth schema, agents, chats, messages, gacha, and momotalk tables initialized successfully",
+			"PostgreSQL auth schema, agents, chats, messages, gacha, momotalk, and database_settings tables initialized successfully",
 		)
 	} catch (error) {
 		logger.error("/utils/db.ts", `Failed to initialize auth schema: ${error}`)

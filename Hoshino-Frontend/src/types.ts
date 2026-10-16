@@ -119,3 +119,49 @@ export interface GroupCommandItem {
 	isCustomized: boolean
 }
 
+export interface DatabaseSettings {
+	id: string
+	autoPruneEnabled: boolean
+	retentionDays: number
+	maxMessagesPerChat: number
+	cleanMediaBloat: boolean
+	lastPrunedAt: string | null
+	updatedAt: string
+}
+
+export interface TableStat {
+	tableSchema: string
+	tableName: string
+	totalSize: string
+	tableSize: string
+	indexSize: string
+	rowCount: number
+	rawSize: number
+}
+
+export interface DatabaseStats {
+	databaseName: string
+	totalSize: string
+	totalSizeBytes: number
+	messagesCount: number
+	chatsCount: number
+	authKeysCount: number
+	mediaBloatCount: number
+	tables: TableStat[]
+	settings: DatabaseSettings
+}
+
+export interface DatabaseCleanResult {
+	deletedMessages: number
+	strippedMedia: number
+	remainingMessages: number
+	durationMs: number
+}
+
+export interface DatabaseVacuumResult {
+	success: boolean
+	durationMs: number
+	message: string
+}
+
+

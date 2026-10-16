@@ -5,13 +5,7 @@ import {
 } from "@repositories/message.repository"
 import { commandLoader } from "@services/commandLoader"
 import { wsManager } from "@services/wsManager"
-import {
-	downloadMediaMessage,
-	type MessageUpsertType,
-	type proto,
-	type WAMessage,
-	type WASocket,
-} from "baileys"
+import type { MessageUpsertType, proto, WAMessage, WASocket } from "baileys"
 import type { Logger } from "pino"
 import { resolveGroupSubject } from "../utils/groupHelper"
 import {
@@ -28,42 +22,6 @@ export interface MessageHandlerContext {
 }
 
 /**
- * Auto-downloads media preview for stickers and images to store base64 in DB for instant offline rendering.
- */
-async function autoDownloadMediaPreview(
-	msg: WAMessage,
-	sock: WASocket,
-	baileysLogger: Logger,
-): Promise<string | undefined> {
-	const isStickerOrImage =
-		msg.message?.stickerMessage || msg.message?.imageMessage
-	if (!isStickerOrImage) return undefined
-
-	try {
-		const buffer = await downloadMediaMessage(
-			msg,
-			"buffer",
-			{},
-			{
-				logger: baileysLogger,
-				reuploadRequest: sock.updateMediaMessage,
-			},
-		)
-
-		if (!buffer) return undefined
-
-		const mime =
-			msg.message?.stickerMessage?.mimetype ||
-			msg.message?.imageMessage?.mimetype ||
-			"image/webp"
-
-		return `data:${mime};base64,${buffer.toString("base64")}`
-	} catch {
-		return undefined
-	}
-}
-
-/**
  * Handles 'messages.upsert' event, processing each incoming message with clean guard clauses.
  */
 export async function handleMessagesUpsert(
@@ -73,7 +31,7 @@ export async function handleMessagesUpsert(
 	const { messages } = upsert
 	if (!messages?.length) return
 
-	const { sock, safeAgentId, groupCache, messageStore, baileysLogger } = ctx
+	const { sock, safeAgentId, groupCache, messageStore } = ctx
 
 	for (const msg of messages) {
 		// Guard: message key and message payload must exist
@@ -92,17 +50,7 @@ export async function handleMessagesUpsert(
 			contentData.quoted = quoted
 		}
 
-		// 2. Auto-download media preview for stickers & images
-		const mediaPreview = await autoDownloadMediaPreview(
-			msg,
-			sock,
-			baileysLogger,
-		)
-		if (mediaPreview) {
-			contentData.mediaData = mediaPreview
-		}
-
-		// 3. Resolve group subject if in group chat
+		// 2. Resolve group subject if in group chat
 		const groupSubject = await resolveGroupSubject(jid, sock, groupCache)
 
 		// 4. Determine sender JID and display name

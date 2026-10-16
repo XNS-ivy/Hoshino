@@ -6,6 +6,7 @@ import { MetricsSummary } from "../components/dashboard/MetricsSummary"
 import { Navbar } from "../components/dashboard/Navbar"
 import { AuthModal } from "../components/modals/AuthModal"
 import { CreateAgentModal } from "../components/modals/CreateAgentModal"
+import { DatabaseModal } from "../components/modals/DatabaseModal"
 import { DeleteAgentModal } from "../components/modals/DeleteAgentModal"
 import { createAgent, deleteAgent, fetchAgents, reconnectAgent } from "../services/api"
 import type { Agent } from "../types"
@@ -15,6 +16,7 @@ export const AgentListPage: React.FC = () => {
 	const [isLoading, setIsLoading] = useState(true)
 	const [isBackendOnline, setIsBackendOnline] = useState(false)
 	const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+	const [isDatabaseModalOpen, setIsDatabaseModalOpen] = useState(false)
 
 	const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null)
 	const selectedAgentIdRef = useRef<string | null>(null)
@@ -91,6 +93,7 @@ export const AgentListPage: React.FC = () => {
 				isLoading={isLoading}
 				onRefresh={loadAgents}
 				onOpenCreateModal={() => setIsCreateModalOpen(true)}
+				onOpenDatabaseModal={() => setIsDatabaseModalOpen(true)}
 			/>
 
 			<main style={{ maxWidth: "1280px", margin: "0 auto", padding: "0 24px" }}>
@@ -118,6 +121,11 @@ export const AgentListPage: React.FC = () => {
 				agent={agentToDelete}
 				onClose={() => setAgentToDelete(null)}
 				onConfirmDelete={handleConfirmDelete}
+			/>
+
+			<DatabaseModal
+				isOpen={isDatabaseModalOpen}
+				onClose={() => setIsDatabaseModalOpen(false)}
 			/>
 
 			<AuthModal

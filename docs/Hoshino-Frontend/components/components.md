@@ -25,6 +25,7 @@ updated: 2026-10-15
 - `CreateAgentModal.tsx`: Creation modal for new agent sessions with choice of QR Code scanning or 8-digit Pairing Code phone number input.
 - `DeleteAgentModal.tsx`: Deletion confirmation dialog warning of database cascade purge.
 - `AuthModal.tsx`: Live connection modal rendering animated QR code or pairing code in real time via WebSocket.
+- `DatabaseModal.tsx`: System maintenance and database monitoring modal displaying live storage metrics, table row counts, manual cleanup triggers, VACUUM execution, and retention configuration.
 - `QRCodeGuide.tsx`: Visual instructions for scanning QR codes in WhatsApp mobile app (`Settings ➔ Linked Devices ➔ Link a Device`).
 - `PairingCodeGuide.tsx`: Visual guide for entering 8-digit pairing codes on the mobile device.
 

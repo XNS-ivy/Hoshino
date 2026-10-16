@@ -26,16 +26,19 @@ updated: 2026-10-15
 - [[Hoshino-Backend/services/commandLoader|src/services/commandLoader.ts]]: Dynamic loader and 3-layer execution pipeline (Shields: anti-spam, timeout, deduplication).
 - [[Hoshino-Backend/services/contextBuilder|src/services/contextBuilder.ts]]: High-performance `CommandContext` builder with **Lazy Resolvers** for expensive DB/RPC operations.
 - [[Hoshino-Backend/services/wsManager|src/services/wsManager.ts]]: Real-time WebSocket connection manager & multi-agent event broadcaster.
+- [[Hoshino-Backend/services/databaseMaintenance|src/services/databaseMaintenance.ts]]: Automated background maintenance scheduler (6-hour loop) for message pruning and storage reclamation.
 
 ### 4. Database Repositories (`src/repositories/`)
 - [[Hoshino-Backend/repositories/agent.repository|src/repositories/agent.repository.ts]]: Database migration, agent statuses, and behavior settings.
 - [[Hoshino-Backend/repositories/command.repository|src/repositories/command.repository.ts]]: Per-agent settings: owners, blacklist, autodelete, command toggles, prefix.
 - [[Hoshino-Backend/repositories/message.repository|src/repositories/message.repository.ts]]: Chat storage & message history, unread tracking, unique contacts.
+- [[Hoshino-Backend/repositories/database.repository|src/repositories/database.repository.ts]]: PostgreSQL storage health, table sizing, message pruning, media bloat purging, and VACUUM FULL.
 - [[Hoshino-Backend/repositories/gacha_momo.repository|src/repositories/gacha.repository.ts & momo.repository.ts]]: Sensei profile, Blue Archive student inventory, and MomoTalk logs.
 
 ### 5. API Routes (`src/routes/`)
 - [[Hoshino-Backend/routes/agents|src/routes/agents.ts]]: REST Endpoints `/api/agents` for session CRUD & isolated agent settings.
 - [[Hoshino-Backend/routes/messages|src/routes/messages.ts]]: Endpoints `/api/agents/:id/messages` & WebSocket `/api/agents/:id/ws`.
+- [[Hoshino-Backend/routes/database|src/routes/database.ts]]: Endpoints `/api/database/stats`, `/settings`, `/clean`, `/vacuum` for storage health & retention management.
 
 ### 6. Commands & Utilities
 - [[Hoshino-Backend/commands/commands|src/commands/]]: Complete catalog of bot commands (Blue Archive, Downloader, Group Admin, Owner, Utility).

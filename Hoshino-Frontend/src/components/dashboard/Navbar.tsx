@@ -1,5 +1,5 @@
 import React from "react"
-import { Bot, Plus, RefreshCw } from "lucide-react"
+import { Bot, Database, Plus, RefreshCw } from "lucide-react"
 import { BackendStatus } from "./BackendStatus"
 
 interface NavbarProps {
@@ -7,6 +7,7 @@ interface NavbarProps {
 	isLoading: boolean
 	onRefresh: () => void
 	onOpenCreateModal: () => void
+	onOpenDatabaseModal?: () => void
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -14,6 +15,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 	isLoading,
 	onRefresh,
 	onOpenCreateModal,
+	onOpenDatabaseModal,
 }) => {
 	return (
 		<header
@@ -54,8 +56,21 @@ export const Navbar: React.FC<NavbarProps> = ({
 				</div>
 			</div>
 
-			<div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+			<div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
 				<BackendStatus isOnline={isOnline} />
+
+				{onOpenDatabaseModal && (
+					<button
+						type="button"
+						onClick={onOpenDatabaseModal}
+						className="secondary-btn"
+						style={{ padding: "8px 14px", display: "flex", alignItems: "center", gap: "6px" }}
+						title="Open Database Storage & Retention Management"
+					>
+						<Database size={15} color="#00f2fe" />
+						Database
+					</button>
+				)}
 
 				<button
 					type="button"

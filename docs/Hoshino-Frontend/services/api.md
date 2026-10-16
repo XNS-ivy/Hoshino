@@ -28,3 +28,18 @@ updated: 2026-10-15
 
 ### 5. `deleteAgent(agentId: string): Promise<void>`
 - Sends `DELETE /api/agents/${agentId}` to permanently delete the agent and cascade delete all associated database records.
+
+### 6. `fetchDatabaseStats(): Promise<DatabaseStats>`
+- Fetches database disk usage, active connection count, and table-level statistics from `GET /api/database/stats`.
+
+### 7. `fetchDatabaseSettings(): Promise<DatabaseSettings>`
+- Retrieves auto-maintenance and message retention settings from `GET /api/database/settings`.
+
+### 8. `updateDatabaseSettings(settings: Partial<DatabaseSettings>): Promise<DatabaseSettings>`
+- Updates maintenance schedule and retention policies via `PUT /api/database/settings`.
+
+### 9. `cleanDatabaseMessages(options): Promise<DatabaseCleanResult>`
+- Dispatches manual message pruning task to `POST /api/database/clean` with retention and media purge options.
+
+### 10. `runDatabaseVacuum(table?: string): Promise<DatabaseVacuumResult>`
+- Dispatches manual `VACUUM` / `VACUUM FULL` optimization task to `POST /api/database/vacuum`.

@@ -1,4 +1,11 @@
-import type { Agent, ApiResponse } from "../types"
+import type {
+	Agent,
+	ApiResponse,
+	DatabaseCleanResult,
+	DatabaseSettings,
+	DatabaseStats,
+	DatabaseVacuumResult,
+} from "../types"
 
 export const API_BASE_URL =
 	typeof window !== "undefined"
@@ -49,3 +56,70 @@ export async function deleteAgent(agentId: string): Promise<void> {
 	})
 	if (!res.ok) throw new Error("Failed to delete agent")
 }
+
+// ── Database Management APIs ──
+export async function fetchDatabaseStats(): Promise<DatabaseStats> {
+	const res = await fetch(`${API_BASE_URL}/api/database/stats`)
+	if (!res.ok) throw new Error("Failed to fetch database metrics")
+	const json: ApiResponse<DatabaseStats> = await res.json()
+	if (!json.success || !json.data) {
+		throw new Error(json.message || "Failed to fetch database metrics")
+	}
+	return json.data
+}
+
+export async function fetchDatabaseSettings(): Promise<DatabaseSettings> {
+	const res = await fetch(`${API_BASE_URL}/api/database/settings`)
+	if (!res.ok) throw new Error("Failed to fetch database settings")
+	const json: ApiResponse<DatabaseSettings> = await res.json()
+	if (!json.success || !json.data) {
+		throw new Error(json.message || "Failed to fetch database settings")
+	}
+	return json.data
+}
+
+export async function updateDatabaseSettings(
+	settings: Partial<DatabaseSettings>,
+): Promise<DatabaseSettings> {
+	const res = await fetch(`${API_BASE_URL}/api/database/settings`, {
+		method: "PUT",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(settings),
+	})
+	const json: ApiResponse<DatabaseSettings> = await res.json()
+	if (!res.ok || !json.success || !json.data) {
+		throw new Error(json.message || "Failed to update database settings")
+	}
+	return json.data
+}
+
+export async function cleanDatabaseMessages(options: {
+	retentionDays?: number
+	maxMessagesPerChat?: number
+	purgeMediaOnly?: boolean
+}): Promise<DatabaseCleanResult> {
+	const res = await fetch(`${API_BASE_URL}/api/database/clean`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(options),
+	})
+	const json: ApiResponse<DatabaseCleanResult> = await res.json()
+	if (!res.ok || !json.success || !json.data) {
+		throw new Error(json.message || "Failed to clean database messages")
+	}
+	return json.data
+}
+
+export async function runDatabaseVacuum(table?: string): Promise<DatabaseVacuumResult> {
+	const res = await fetch(`${API_BASE_URL}/api/database/vacuum`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ table }),
+	})
+	const json: ApiResponse<DatabaseVacuumResult> = await res.json()
+	if (!res.ok || !json.success || !json.data) {
+		throw new Error(json.message || "Failed to run database VACUUM")
+	}
+	return json.data
+}
+

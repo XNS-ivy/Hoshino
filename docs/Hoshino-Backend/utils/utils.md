@@ -20,6 +20,7 @@ updated: 2026-10-15
   - Creates `public.agent_owners`, `public.agent_blacklists`, `public.agent_autodeletes`
   - Creates `public.agent_group_settings`, `public.agent_command_toggles`, `public.agent_group_commands`
   - Creates `public.sensei_profiles`, `public.sensei_students`, `public.sensei_bonds`
+  - Creates `public.database_settings` (automated retention, message pruning, and media bloat rules)
   - Creates query performance indexes: `idx_auth_keys_agent_id`, `idx_messages_agent_jid`.
 
 ---
