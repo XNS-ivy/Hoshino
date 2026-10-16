@@ -78,9 +78,9 @@ export const InGroupCommandModal: React.FC<InGroupCommandModalProps> = ({
 
 	// Fetch commands for selected group
 	const fetchGroupCommands = useCallback(
-		async (jid: string) => {
+		async (jid: string, silent = false) => {
 			if (!jid) return
-			setLoading(true)
+			if (!silent) setLoading(true)
 			try {
 				const res = await fetch(
 					`${API_BASE_URL}/api/agents/${agentId}/groups/${encodeURIComponent(jid)}/commands`,
@@ -94,7 +94,7 @@ export const InGroupCommandModal: React.FC<InGroupCommandModalProps> = ({
 			} catch (err) {
 				onShowToast("error", `Network error loading group commands: ${err}`)
 			} finally {
-				setLoading(false)
+				if (!silent) setLoading(false)
 			}
 		},
 		[agentId, onShowToast],
@@ -139,11 +139,11 @@ export const InGroupCommandModal: React.FC<InGroupCommandModalProps> = ({
 				if (onRefreshGroups) onRefreshGroups()
 			} else {
 				onShowToast("error", json.message || "Failed to toggle command")
-				fetchGroupCommands(activeJid)
+				fetchGroupCommands(activeJid, true)
 			}
 		} catch (err) {
 			onShowToast("error", `Failed to toggle command: ${err}`)
-			fetchGroupCommands(activeJid)
+			fetchGroupCommands(activeJid, true)
 		} finally {
 			setTogglingMap((prev) => ({ ...prev, [commandName]: false }))
 		}
@@ -160,7 +160,7 @@ export const InGroupCommandModal: React.FC<InGroupCommandModalProps> = ({
 			const json = await res.json()
 			if (json.success) {
 				onShowToast("success", `.${commandName} reset to default policy`)
-				await fetchGroupCommands(activeJid)
+				await fetchGroupCommands(activeJid, true)
 				if (onRefreshGroups) onRefreshGroups()
 			} else {
 				onShowToast("error", json.message || "Failed to reset command")
@@ -202,7 +202,7 @@ export const InGroupCommandModal: React.FC<InGroupCommandModalProps> = ({
 			const json = await res.json()
 			if (json.success) {
 				onShowToast("success", json.message || `Successfully executed ${actionLabel}`)
-				await fetchGroupCommands(activeJid)
+				await fetchGroupCommands(activeJid, true)
 				if (onRefreshGroups) onRefreshGroups()
 			} else {
 				onShowToast("error", json.message || "Failed to execute batch action")
@@ -848,7 +848,10 @@ export const InGroupCommandModal: React.FC<InGroupCommandModalProps> = ({
 												<button
 													type="button"
 													disabled={isToggling}
-													onClick={() => handleResetCommand(cmd.name)}
+													onClick={(e) => {
+														e.stopPropagation()
+														handleResetCommand(cmd.name)
+													}}
 													title="Reset override back to default policy"
 													style={{
 														padding: "6px 10px",
@@ -873,7 +876,10 @@ export const InGroupCommandModal: React.FC<InGroupCommandModalProps> = ({
 											<button
 												type="button"
 												disabled={isToggling}
-												onClick={() => handleToggleCommand(cmd.name, cmd.status)}
+												onClick={(e) => {
+													e.stopPropagation()
+													handleToggleCommand(cmd.name, cmd.status)
+												}}
 												style={{
 													minWidth: "100px",
 													padding: "7px 16px",

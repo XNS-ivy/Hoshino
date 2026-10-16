@@ -83,9 +83,9 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 	}, [agent.agentId])
 
 	const fetchTabData = useCallback(
-		async (tab: TabType) => {
+		async (tab: TabType, silent = false) => {
 			if (tab === "general") return // handled inside GeneralSettingsTab
-			setLoading(true)
+			if (!silent) setLoading(true)
 			try {
 				const res = await fetch(
 					`${API_BASE_URL}/api/agents/${agent.agentId}/${tab}`,
@@ -102,7 +102,7 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 			} catch (err) {
 				showToast("error", `Failed to load ${tab}: ${err}`)
 			} finally {
-				setLoading(false)
+				if (!silent) setLoading(false)
 			}
 		},
 		[agent.agentId, showToast],
@@ -130,7 +130,7 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 			const json = await res.json()
 			if (json.success) {
 				showToast("success", "Owner added successfully")
-				fetchTabData("owners")
+				fetchTabData("owners", true)
 			} else {
 				showToast("error", json.message)
 			}
@@ -148,7 +148,7 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 			const json = await res.json()
 			if (json.success) {
 				showToast("success", "Owner removed successfully")
-				fetchTabData("owners")
+				fetchTabData("owners", true)
 			} else {
 				showToast("error", json.message)
 			}
@@ -171,7 +171,7 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 			const json = await res.json()
 			if (json.success) {
 				showToast("success", "User blacklisted successfully")
-				fetchTabData("blacklist")
+				fetchTabData("blacklist", true)
 			} else {
 				showToast("error", json.message)
 			}
@@ -189,7 +189,7 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 			const json = await res.json()
 			if (json.success) {
 				showToast("success", "User removed from blacklist")
-				fetchTabData("blacklist")
+				fetchTabData("blacklist", true)
 			} else {
 				showToast("error", json.message)
 			}
@@ -212,7 +212,7 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 			const json = await res.json()
 			if (json.success) {
 				showToast("success", "User added to auto-delete list")
-				fetchTabData("autodelete")
+				fetchTabData("autodelete", true)
 			} else {
 				showToast("error", json.message)
 			}
@@ -233,7 +233,7 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 			const json = await res.json()
 			if (json.success) {
 				showToast("success", "User removed from auto-delete list")
-				fetchTabData("autodelete")
+				fetchTabData("autodelete", true)
 			} else {
 				showToast("error", json.message)
 			}
@@ -268,11 +268,11 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 				)
 			} else {
 				showToast("error", json.message)
-				fetchTabData("commands")
+				fetchTabData("commands", true)
 			}
 		} catch (err) {
 			showToast("error", `Failed to toggle command: ${err}`)
-			fetchTabData("commands")
+			fetchTabData("commands", true)
 		}
 	}
 
@@ -304,11 +304,11 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 				showToast("success", "Group settings updated")
 			} else {
 				showToast("error", json.message)
-				fetchTabData("groups")
+				fetchTabData("groups", true)
 			}
 		} catch (err) {
 			showToast("error", `Failed to update group: ${err}`)
-			fetchTabData("groups")
+			fetchTabData("groups", true)
 		}
 	}
 
@@ -679,82 +679,141 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 
 				{/* Tab Content */}
 				<div style={{ flex: 1, overflowY: "auto", padding: "20px" }}>
-					{loading && (
-						<div
-							style={{
-								padding: "30px",
-								textAlign: "center",
-								color: "var(--text-muted)",
-								fontSize: "0.85rem",
-							}}
-						>
-							Loading settings data...
-						</div>
-					)}
-
-					{!loading && activeTab === "general" && (
+					{activeTab === "general" && (
 						<GeneralSettingsTab
 							agentId={agent.agentId}
 							onShowToast={showToast}
 						/>
 					)}
 
-					{!loading && activeTab === "sensei" && (
-						<SenseiTab
-							agentId={agent.agentId}
-							profiles={senseiProfiles}
-							contacts={contacts}
-							loading={loading}
-							onRefresh={() => fetchTabData("sensei")}
-							onShowToast={showToast}
-						/>
-					)}
+					{activeTab === "sensei" &&
+						(loading && senseiProfiles.length === 0 ? (
+							<div
+								style={{
+									padding: "30px",
+									textAlign: "center",
+									color: "var(--text-muted)",
+									fontSize: "0.85rem",
+								}}
+							>
+								Loading sensei profiles...
+							</div>
+						) : (
+							<SenseiTab
+								agentId={agent.agentId}
+								profiles={senseiProfiles}
+								contacts={contacts}
+								loading={loading}
+								onRefresh={() => fetchTabData("sensei", true)}
+								onShowToast={showToast}
+							/>
+						))}
 
-					{!loading && activeTab === "owners" && (
-						<OwnersTab
-							owners={owners}
-							contacts={contacts}
-							onAddOwner={handleAddOwner}
-							onRemoveOwner={handleRemoveOwner}
-						/>
-					)}
+					{activeTab === "owners" &&
+						(loading && owners.length === 0 ? (
+							<div
+								style={{
+									padding: "30px",
+									textAlign: "center",
+									color: "var(--text-muted)",
+									fontSize: "0.85rem",
+								}}
+							>
+								Loading owners...
+							</div>
+						) : (
+							<OwnersTab
+								owners={owners}
+								contacts={contacts}
+								onAddOwner={handleAddOwner}
+								onRemoveOwner={handleRemoveOwner}
+							/>
+						))}
 
-					{!loading && activeTab === "blacklist" && (
-						<BlacklistTab
-							blacklist={blacklist}
-							contacts={contacts}
-							onAddBlacklist={handleAddBlacklist}
-							onRemoveBlacklist={handleRemoveBlacklist}
-						/>
-					)}
+					{activeTab === "blacklist" &&
+						(loading && blacklist.length === 0 ? (
+							<div
+								style={{
+									padding: "30px",
+									textAlign: "center",
+									color: "var(--text-muted)",
+									fontSize: "0.85rem",
+								}}
+							>
+								Loading blacklist...
+							</div>
+						) : (
+							<BlacklistTab
+								blacklist={blacklist}
+								contacts={contacts}
+								onAddBlacklist={handleAddBlacklist}
+								onRemoveBlacklist={handleRemoveBlacklist}
+							/>
+						))}
 
-					{!loading && activeTab === "autodelete" && (
-						<AutoDeleteTab
-							autoDeleteList={autoDeleteList}
-							contacts={contacts}
-							groups={groups}
-							onAddAutoDelete={handleAddAutoDelete}
-							onRemoveAutoDelete={handleRemoveAutoDelete}
-						/>
-					)}
+					{activeTab === "autodelete" &&
+						(loading && autoDeleteList.length === 0 ? (
+							<div
+								style={{
+									padding: "30px",
+									textAlign: "center",
+									color: "var(--text-muted)",
+									fontSize: "0.85rem",
+								}}
+							>
+								Loading auto-delete list...
+							</div>
+						) : (
+							<AutoDeleteTab
+								autoDeleteList={autoDeleteList}
+								contacts={contacts}
+								groups={groups}
+								onAddAutoDelete={handleAddAutoDelete}
+								onRemoveAutoDelete={handleRemoveAutoDelete}
+							/>
+						))}
 
-					{!loading && activeTab === "commands" && (
-						<CommandTogglesTab
-							commands={commands}
-							onToggleCommand={handleToggleCommand}
-							onNavigateToGroups={() => setActiveTab("groups")}
-						/>
-					)}
+					{activeTab === "commands" &&
+						(loading && commands.length === 0 ? (
+							<div
+								style={{
+									padding: "30px",
+									textAlign: "center",
+									color: "var(--text-muted)",
+									fontSize: "0.85rem",
+								}}
+							>
+								Loading commands...
+							</div>
+						) : (
+							<CommandTogglesTab
+								commands={commands}
+								onToggleCommand={handleToggleCommand}
+								onNavigateToGroups={() => setActiveTab("groups")}
+							/>
+						))}
 
-					{!loading && activeTab === "groups" && (
-						<GroupSettingsTab
-							agentId={agent.agentId}
-							groups={groups}
-							onUpdateGroupSettings={handleUpdateGroupSettings}
-							onShowToast={showToast}
-							onRefreshGroups={() => fetchTabData("groups")}
-						/>
-					)}
+					{activeTab === "groups" &&
+						(loading && groups.length === 0 ? (
+							<div
+								style={{
+									padding: "30px",
+									textAlign: "center",
+									color: "var(--text-muted)",
+									fontSize: "0.85rem",
+								}}
+							>
+								Loading groups...
+							</div>
+						) : (
+							<GroupSettingsTab
+								agentId={agent.agentId}
+								groups={groups}
+								onUpdateGroupSettings={handleUpdateGroupSettings}
+								onShowToast={showToast}
+								onRefreshGroups={() => fetchTabData("groups", true)}
+							/>
+						))}
 				</div>
 			</div>
 		</div>

@@ -1,7 +1,7 @@
 ---
 tags: [memory, frontend, components, react, ui]
 aliases: [Frontend Components, components.md]
-updated: 2026-10-15
+updated: 2026-10-16
 ---
 
 # 🎨 Frontend Components & Modals (`src/components/`)
@@ -37,9 +37,10 @@ updated: 2026-10-15
 - `BlacklistTab.tsx`: Management of blacklisted phone numbers blocked from bot commands.
 - `AutoDeleteTab.tsx`: Management of target phone numbers whose group messages are automatically deleted, supporting target scope selection (per specific WhatsApp group or global `*`) and scope badges.
 
+- `AgentSettingsModal.tsx`: Comprehensive modal orchestrating tab navigation across General, Sensei, Owners, Blacklist, Auto-Delete, Commands, and Groups. Features silent background synchronization (`fetchTabData(tab, silent)`) to prevent tab unmounting and state loss during mutation operations.
 - `CommandTogglesTab.tsx`: Toggle switches for enabling or disabling individual bot commands globally, with an informational banner and navigation link to group policies.
 - `GroupSettingsTab.tsx`: Per-group controls for listening status (`botEnabled`), welcome messages, inline group-specific prefix editing, custom command count badges, and trigger for in-group command management.
-- `InGroupCommandModal.tsx`: Dedicated interactive modal for in-group command management featuring group switching dropdown, live search, category pills (`bluearchive`, `downloaders`, `utility`, `waifuImages`, `group`, `owner`), status filters, batch actions (`Enable All`, `Disable All`, `Reset Defaults`), registration requirement indicators, and per-command reset triggers.
+- `InGroupCommandModal.tsx`: Dedicated interactive modal for in-group command management featuring group switching dropdown, live search, category pills (`bluearchive`, `downloaders`, `utility`, `waifuImages`, `group`, `owner`), status filters, batch actions (`Enable All`, `Disable All`, `Reset Defaults`), registration requirement indicators, and per-command reset triggers. Implements optimistic updates with silent background synchronization to maintain modal visibility across state toggles.
 - `SenseiTab.tsx`: Blue Archive dashboard for inspecting Sensei player profiles, student roster inventory, Pyroxene adjustments, and profile resets.
 - `ContactSelector.tsx`: Autocomplete dropdown selector for known WhatsApp contacts.
 
