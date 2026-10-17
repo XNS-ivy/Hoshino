@@ -5,6 +5,8 @@ import type {
 	DatabaseSettings,
 	DatabaseStats,
 	DatabaseVacuumResult,
+	FlushLogsResult,
+	LogStats,
 } from "../types"
 
 export const API_BASE_URL =
@@ -122,4 +124,32 @@ export async function runDatabaseVacuum(table?: string): Promise<DatabaseVacuumR
 	}
 	return json.data
 }
+
+// ── Log Management APIs ──
+export async function fetchLogStats(): Promise<LogStats> {
+	const res = await fetch(`${API_BASE_URL}/api/database/logs`)
+	if (!res.ok) throw new Error("Failed to fetch log statistics")
+	const json: ApiResponse<LogStats> = await res.json()
+	if (!json.success || !json.data) {
+		throw new Error(json.message || "Failed to fetch log statistics")
+	}
+	return json.data
+}
+
+export async function flushLogs(options: {
+	retentionDays?: number
+	flushAll?: boolean
+}): Promise<FlushLogsResult> {
+	const res = await fetch(`${API_BASE_URL}/api/database/logs/flush`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(options),
+	})
+	const json: ApiResponse<FlushLogsResult> = await res.json()
+	if (!res.ok || !json.success || !json.data) {
+		throw new Error(json.message || "Failed to flush log files")
+	}
+	return json.data
+}
+
 

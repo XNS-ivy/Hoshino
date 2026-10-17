@@ -37,8 +37,20 @@ const command: ICommand = {
 			return
 		}
 
-		const primaryName =
+		const primaryName = (
 			(Array.isArray(found.name) ? found.name[0] : found.name) || targetCmd
+		).toLowerCase()
+
+		const allAliases = (
+			Array.isArray(found.name) ? found.name : [found.name]
+		).map((n: string) => n.toLowerCase())
+
+		// Clean up any stale alias overrides
+		await commandRepository.resetGroupCommandStatus(
+			ctx.agentId,
+			ctx.jid,
+			allAliases,
+		)
 
 		await commandRepository.setGroupCommandStatus(
 			ctx.agentId,

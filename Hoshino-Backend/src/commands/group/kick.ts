@@ -35,6 +35,15 @@ const command: ICommand = {
 			return
 		}
 
+		const isTargetOwner = await commandRepository.isOwner(
+			ctx.agentId,
+			targetJid,
+		)
+		if (isTargetOwner) {
+			await ctx.reply("❌ Cannot kick Bot Owner!")
+			return
+		}
+
 		try {
 			await ctx.sock.groupParticipantsUpdate(ctx.jid, [targetJid], "remove")
 			await ctx.reply(

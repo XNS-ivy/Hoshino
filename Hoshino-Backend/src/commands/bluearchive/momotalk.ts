@@ -480,7 +480,11 @@ const command: ICommand = {
 		let targetStudentName = "Hoshino"
 		let targetStudentId = 10005
 
-		const requestedName = args.join(" ").trim().toLowerCase()
+		const requestedName = args
+			.join(" ")
+			.replace(/^["'“”‘’`]+|["'“”‘’`]+$/g, "")
+			.trim()
+			.toLowerCase()
 
 		if (requestedName) {
 			// 1. Fetch reference SchaleDB data for accurate matching & metadata
@@ -514,7 +518,7 @@ const command: ICommand = {
 
 			// 3. Guard against substring hijacking (e.g. searching "Mari" incorrectly selecting "Himari"):
 			// If SchaleDB has a strong canonical match for what Sensei typed (score >= 5000),
-			// but Sensei's best owned match is only a weak partial substring (score < 3000),
+			// but Sensei's best owned match is not an exact/word-boundary match (score < 5000),
 			// Sensei asked for a student they haven't recruited yet.
 			const schaleScore = canonicalStudent
 				? getStudentMatchScore(
@@ -529,7 +533,7 @@ const command: ICommand = {
 			const isHijacked =
 				canonicalStudent &&
 				schaleScore >= 5000 &&
-				(!bestOwned || bestOwned.score < 3000)
+				(!bestOwned || bestOwned.score < 5000)
 
 			if (!bestOwned || isHijacked) {
 				const foundName = canonicalStudent?.Name || requestedName

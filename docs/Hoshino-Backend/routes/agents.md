@@ -58,7 +58,8 @@ updated: 2026-10-15
 
 ### 7. Sensei & Blue Archive Management (`/api/agents/:id/sensei`)
 - `GET /`: Lists all Sensei user profiles.
-- `GET /:userJid`: Fetches detailed profile, student roster, and bond levels.
+- `GET /:userJid`: Fetches detailed profile, student roster, bond levels, and `elephSummary` (total duplicate counts, Elephs, and exchangeable Pyroxene yields).
+- `POST /:userJid/claim-eleph`: Converts duplicate student Elephs into Pyroxenes (`body: { filter?, starGrade?, studentNameOrId? }`). Resets student `count = 1` while preserving base roster ownership.
 - `PATCH /:userJid/pyroxenes`: Adjusts Pyroxenes balance (`body: { amount?, setAmount? }`).
 - `DELETE /:userJid`: Resets Sensei profile and student roster.
 

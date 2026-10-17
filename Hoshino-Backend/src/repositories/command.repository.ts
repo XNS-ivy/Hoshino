@@ -374,70 +374,104 @@ export class CommandRepository {
 	}
 
 	/**
-	 * Checks if a command is globally enabled for an agent instance.
+	 * Checks if a command (or any of its aliases) is globally enabled for an agent instance.
 	 */
 	public async isCommandEnabledGlobally(
 		agentId: string,
-		commandName: string,
+		commandName: string | string[],
 	): Promise<boolean> {
+		const rawNames = Array.isArray(commandName) ? commandName : [commandName]
+		const names = rawNames.map((n) => n.toLowerCase()).filter(Boolean)
+		if (names.length === 0) return true
+
 		const rows = await sql`
 			SELECT status FROM public.agent_command_toggles
-			WHERE agent_id = ${agentId} AND command_name = ${commandName}
+			WHERE agent_id = ${agentId} AND command_name IN ${sql(names)}
 		`
 		if (rows.length === 0) return true
-		return (rows[0] as { status: string }).status !== "disabled"
+		const hasDisabled = (rows as { status: string }[]).some(
+			(r) => r.status === "disabled",
+		)
+		return !hasDisabled
 	}
 
 	/**
-	 * Sets global command status for an agent instance.
+	 * Sets global command status for an agent instance with normalized lowercase name.
 	 */
 	public async setGlobalCommandStatus(
 		agentId: string,
 		commandName: string,
 		status: "enabled" | "disabled",
 	): Promise<void> {
+		const normName = commandName.toLowerCase()
 		await sql`
 			INSERT INTO public.agent_command_toggles (agent_id, command_name, status, updated_at)
-			VALUES (${agentId}, ${commandName}, ${status}, CURRENT_TIMESTAMP)
+			VALUES (${agentId}, ${normName}, ${status}, CURRENT_TIMESTAMP)
 			ON CONFLICT (agent_id, command_name)
 			DO UPDATE SET status = EXCLUDED.status, updated_at = CURRENT_TIMESTAMP;
 		`
 	}
 
 	/**
-	 * Checks if a command is enabled inside a specific group for an agent instance.
+	 * Checks if a command (or any of its aliases) is enabled inside a specific group for an agent instance.
 	 */
 	public async isCommandEnabledInGroup(
 		agentId: string,
 		groupJid: string,
-		commandName: string,
+		commandName: string | string[],
 	): Promise<boolean> {
+		const rawNames = Array.isArray(commandName) ? commandName : [commandName]
+		const names = rawNames.map((n) => n.toLowerCase()).filter(Boolean)
+		if (names.length === 0) return false
+
 		const rows = await sql`
 			SELECT status FROM public.agent_group_commands
-			WHERE agent_id = ${agentId} AND jid = ${groupJid} AND command_name = ${commandName}
+			WHERE agent_id = ${agentId} AND jid = ${groupJid} AND command_name IN ${sql(names)}
 		`
 		if (rows.length === 0) return false
-		return (rows[0] as { status: string }).status === "enabled"
+		const hasDisabled = (rows as { status: string }[]).some(
+			(r) => r.status === "disabled",
+		)
+		if (hasDisabled) return false
+		return (rows as { status: string }[]).some((r) => r.status === "enabled")
 	}
 
 	/**
 	 * Checks if a command is allowed inside a specific group for an agent instance,
-	 * taking into account whether the command requires explicit admin registration.
+	 * taking into account whether the command requires explicit admin registration
+	 * and inspecting all aliases to prevent bypasses.
 	 */
 	public async isCommandAllowedInGroup(
 		agentId: string,
 		groupJid: string,
-		commandName: string,
+		commandName: string | string[],
 		needAdminRegisterThisCommand = false,
 	): Promise<boolean> {
+		const rawNames = Array.isArray(commandName) ? commandName : [commandName]
+		const names = rawNames.map((n) => n.toLowerCase()).filter(Boolean)
+		if (names.length === 0) return !needAdminRegisterThisCommand
+
 		const rows = await sql`
 			SELECT status FROM public.agent_group_commands
-			WHERE agent_id = ${agentId} AND jid = ${groupJid} AND command_name = ${commandName}
+			WHERE agent_id = ${agentId} AND jid = ${groupJid} AND command_name IN ${sql(names)}
 		`
 		if (rows.length === 0) {
 			return !needAdminRegisterThisCommand
 		}
-		return (rows[0] as { status: string }).status === "enabled"
+
+		// Priority 1: If ANY matching alias record is explicitly disabled, execution is blocked
+		const hasDisabled = (rows as { status: string }[]).some(
+			(r) => r.status === "disabled",
+		)
+		if (hasDisabled) return false
+
+		// Priority 2: If ANY matching alias record is enabled, execution is permitted
+		const hasEnabled = (rows as { status: string }[]).some(
+			(r) => r.status === "enabled",
+		)
+		if (hasEnabled) return true
+
+		return !needAdminRegisterThisCommand
 	}
 
 	/**
@@ -456,7 +490,7 @@ export class CommandRepository {
 	}
 
 	/**
-	 * Registers/enables or disables a command inside a specific group.
+	 * Registers/enables or disables a command inside a specific group with normalized lowercase name.
 	 */
 	public async setGroupCommandStatus(
 		agentId: string,
@@ -464,25 +498,30 @@ export class CommandRepository {
 		commandName: string,
 		status: "enabled" | "disabled",
 	): Promise<void> {
+		const normName = commandName.toLowerCase()
 		await sql`
 			INSERT INTO public.agent_group_commands (agent_id, jid, command_name, status, updated_at)
-			VALUES (${agentId}, ${groupJid}, ${commandName}, ${status}, CURRENT_TIMESTAMP)
+			VALUES (${agentId}, ${groupJid}, ${normName}, ${status}, CURRENT_TIMESTAMP)
 			ON CONFLICT (agent_id, jid, command_name)
 			DO UPDATE SET status = EXCLUDED.status, updated_at = CURRENT_TIMESTAMP;
 		`
 	}
 
 	/**
-	 * Resets/removes a specific command override for a group (falls back to default policy).
+	 * Resets/removes specific command override(s) for a group (falls back to default policy).
 	 */
 	public async resetGroupCommandStatus(
 		agentId: string,
 		groupJid: string,
-		commandName: string,
+		commandName: string | string[],
 	): Promise<void> {
+		const rawNames = Array.isArray(commandName) ? commandName : [commandName]
+		const names = rawNames.map((n) => n.toLowerCase()).filter(Boolean)
+		if (names.length === 0) return
+
 		await sql`
 			DELETE FROM public.agent_group_commands
-			WHERE agent_id = ${agentId} AND jid = ${groupJid} AND command_name = ${commandName}
+			WHERE agent_id = ${agentId} AND jid = ${groupJid} AND command_name IN ${sql(names)}
 		`
 	}
 

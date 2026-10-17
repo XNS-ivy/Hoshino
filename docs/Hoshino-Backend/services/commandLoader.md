@@ -67,12 +67,12 @@ flowchart TD
   4. **Layer 1 - Prefix Match**: Checks whether body begins with custom or default prefixes (`.`, `!`, `/`, `#`).
   5. **Layer 2 - Command Lookup**: Matches trigger against registered commands.
   6. **Layer 2 - Media Validation**: If command specifies `allowedMediaTypes`, verifies that the message or quoted message contains an allowed format.
-  7. **Layer 2 - Global Toggle**: Verifies global active status via `commandRepository.isCommandEnabledGlobally()`.
-  8. **Layer 3 - Group Policy & Registration**: If in group, verifies command permission via `[[Hoshino-Backend/repositories/command.repository#6-command-toggles-matrix--group-policies|commandRepository.isCommandAllowedInGroup()]]`. Blocks explicitly disabled commands in `public.agent_group_commands`, requires admin registration if `needAdminRegisterThisCommand: true`, and exempts `enablecmd`/`disablecmd` from lockout.
-
+  7. **Layer 2 - Global Toggle**: Verifies global active status via `[[Hoshino-Backend/repositories/command.repository#6-command-toggles-matrix--group-policies|commandRepository.isCommandEnabledGlobally(agentId, allCommandNames)]]`. Inspects all command aliases so disabling a command cannot be bypassed via trigger aliases.
+  8. **Layer 3 - Group Policy & Registration**: If in group, verifies command permission via `[[Hoshino-Backend/repositories/command.repository#6-command-toggles-matrix--group-policies|commandRepository.isCommandAllowedInGroup(agentId, jid, allCommandNames, needAdminRegisterThisCommand)]]`. Blocks explicitly disabled commands in `public.agent_group_commands` across all aliases, requires admin registration if `needAdminRegisterThisCommand: true`, and exempts `enablecmd`/`disablecmd` from lockout.
+  9. **Layer 3 - Role & Environment Controls**:
      - `inGroup`: Must be in group chat.
      - `access: 'owner' | 'master'`: Must have owner role in `public.agent_owners`.
-     - `inGroupAccess: 'admin'`: Sender must be group admin.
+     - `inGroupAccess: 'admin'`: Sender must be group admin or bot owner.
      - `botAdminRequired`: Bot must be group admin.
-  10. **Shield Cooldown**: Checks per-user cooldown window (default: 2 seconds).
+  10. **Shield Cooldown**: Checks per-user cooldown window (default: 2 seconds, owner exempt).
   11. **Execution**: Dispatches `command.execute(args, ctx)` under the 30-second timeout guard.

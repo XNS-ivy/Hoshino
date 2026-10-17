@@ -48,12 +48,12 @@ updated: 2026-10-15
 - `updateGroupSettings(agentId, groupJid, settings): Promise<GroupSettings>`: Upserts group settings.
 
 ### 6. Command Toggles Matrix & Group Policies
-- `isCommandEnabledGlobally(agentId, commandName): Promise<boolean>`: Checks global enabled status for a command (default: true).
-- `setGlobalCommandStatus(agentId, commandName, status)`: Sets global command toggle per agent.
-- `isCommandEnabledInGroup(agentId, groupJid, commandName): Promise<boolean>`: Checks if command is enabled in a specific group.
-- `isCommandAllowedInGroup(agentId, groupJid, commandName, needAdminRegisterThisCommand): Promise<boolean>`: Checks if a command is permitted in a group, respecting explicit group overrides or default registration requirement.
+- `isCommandEnabledGlobally(agentId, commandName: string | string[]): Promise<boolean>`: Checks global enabled status across command primary name and all aliases (returns `false` if any alias is disabled; default: true).
+- `setGlobalCommandStatus(agentId, commandName, status)`: Sets global command toggle per agent with lowercase normalization.
+- `isCommandEnabledInGroup(agentId, groupJid, commandName: string | string[]): Promise<boolean>`: Checks if command or any alias is enabled inside a specific group.
+- `isCommandAllowedInGroup(agentId, groupJid, commandName: string | string[], needAdminRegisterThisCommand): Promise<boolean>`: Checks if a command (or any of its aliases) is permitted in a group, preventing bypasses via alternative trigger names. Priority: 1. If any alias is disabled -> `false`. 2. If any alias is enabled -> `true`. 3. Fallback to `!needAdminRegisterThisCommand`.
 - `getGroupCommands(agentId, groupJid): Promise<GroupCommandRecord[]>`: Retrieves all command overrides for a specific group.
-- `setGroupCommandStatus(agentId, groupJid, commandName, status)`: Registers/enables or disables a command inside a specific group (`public.agent_group_commands`).
-- `resetGroupCommandStatus(agentId, groupJid, commandName)`: Removes command override in a group, reverting to default policy.
+- `setGroupCommandStatus(agentId, groupJid, commandName, status)`: Registers/enables or disables a command inside a specific group with lowercase normalization (`public.agent_group_commands`).
+- `resetGroupCommandStatus(agentId, groupJid, commandName: string | string[])`: Removes command override(s) in a group for canonical name and all aliases, reverting to default policy.
 - `resetAllGroupCommands(agentId, groupJid)`: Clears all command overrides for a group back to defaults.
 

@@ -99,6 +99,37 @@ export interface SenseiBondItem {
 	lastTalk: string
 }
 
+export interface ElephSummaryItem {
+	studentId: number
+	studentName: string
+	starGrade: number
+	count: number
+	duplicateCount: number
+	elephCount: number
+	pyroxeneValue: number
+}
+
+export interface ElephSummary {
+	totalDuplicates: number
+	totalEleph: number
+	totalPyroxenes: number
+	studentsWithEleph: ElephSummaryItem[]
+	breakdown: {
+		threeStar: { duplicates: number; eleph: number; pyroxenes: number }
+		twoStar: { duplicates: number; eleph: number; pyroxenes: number }
+		oneStar: { duplicates: number; eleph: number; pyroxenes: number }
+	}
+}
+
+export interface ClaimElephResult {
+	success: boolean
+	claimedStudents: number
+	claimedDuplicates: number
+	claimedEleph: number
+	pyroxenesGained: number
+}
+
+
 export interface AgentGeneralSettings {
 	prefix: string
 	welcomeMessage?: string | null
@@ -125,6 +156,8 @@ export interface DatabaseSettings {
 	retentionDays: number
 	maxMessagesPerChat: number
 	cleanMediaBloat: boolean
+	autoCleanLogsEnabled?: boolean
+	logRetentionDays?: number
 	lastPrunedAt: string | null
 	updatedAt: string
 }
@@ -139,6 +172,31 @@ export interface TableStat {
 	rawSize: number
 }
 
+export interface LogFileInfo {
+	filename: string
+	filePath: string
+	date: string
+	sizeBytes: number
+	size: string
+	modifiedAt: string
+	isCurrent: boolean
+}
+
+export interface LogStats {
+	totalFiles: number
+	totalSizeBytes: number
+	totalSize: string
+	logDirs: string[]
+	files: LogFileInfo[]
+}
+
+export interface FlushLogsResult {
+	deletedFiles: number
+	freedBytes: number
+	freedSize: string
+	remainingFiles: number
+}
+
 export interface DatabaseStats {
 	databaseName: string
 	totalSize: string
@@ -149,6 +207,7 @@ export interface DatabaseStats {
 	mediaBloatCount: number
 	tables: TableStat[]
 	settings: DatabaseSettings
+	logsStats?: LogStats
 }
 
 export interface DatabaseCleanResult {

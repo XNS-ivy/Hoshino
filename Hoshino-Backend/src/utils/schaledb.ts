@@ -123,13 +123,12 @@ export async function getSchaleStudents(): Promise<SchaleStudent[]> {
  * Calculates a match relevance score between a student and a search query.
  * Higher scores indicate a more precise match:
  * - 10000: Exact match on full name
- * - 9800: Exact match on cleaned name (ignoring punctuation/parentheses)
+ * - 9800: Exact match on cleaned name (ignoring punctuation/parentheses/quotes)
  * - 8500: Exact match on base name (e.g. "Mari" matching "Mari (Track)")
  * - 7000-7800: Multi-token match (all tokens matched in any order)
- * - 5000-6500: Whole word boundary match (prevents "Mari" matching inside "Himari")
- * - 3000-4500: Prefix match
+ * - 5000-6500: Whole word boundary match (strictly prevents "Mari" matching inside "Himari")
+ * - 3000-4500: Prefix match (e.g. "mari" matching "Marina", "hima" matching "Himari")
  * - 2000-4000: Exact/partial PersonalName, FamilyName, or DevName
- * - 50-800: Weak substring match inside a word (only for queries >= 3 chars)
  */
 export function getStudentMatchScore(
 	candidateName: string,
@@ -138,19 +137,26 @@ export function getStudentMatchScore(
 	familyName?: string,
 	personalName?: string,
 ): number {
-	const q = query.trim().toLowerCase()
-	const name = candidateName.trim().toLowerCase()
-	if (!q || !name) return 0
+	// Strip quotes and trim
+	const rawQ = query
+		.replace(/["'“”‘’`]/g, "")
+		.trim()
+		.toLowerCase()
+	const rawName = candidateName
+		.replace(/["'“”‘’`]/g, "")
+		.trim()
+		.toLowerCase()
+	if (!rawQ || !rawName) return 0
 
 	// 1. Direct raw exact match
-	if (name === q) return 10000
+	if (rawName === rawQ) return 10000
 
 	// Normalize punctuation and extra whitespace
-	const cleanQ = q
+	const cleanQ = rawQ
 		.replace(/[()[\]*_\-.]/g, " ")
 		.replace(/\s+/g, " ")
 		.trim()
-	const cleanName = name
+	const cleanName = rawName
 		.replace(/[()[\]*_\-.]/g, " ")
 		.replace(/\s+/g, " ")
 		.trim()
@@ -158,7 +164,7 @@ export function getStudentMatchScore(
 	if (cleanName === cleanQ) return 9800
 
 	// Extract base student name (without parentheses or variant qualifiers)
-	const baseName = name
+	const baseName = rawName
 		.replace(/\s*[(*[].*?[)*\]]/g, "")
 		.replace(/\s+/g, " ")
 		.trim()
@@ -185,13 +191,13 @@ export function getStudentMatchScore(
 		}
 	}
 
-	// 4. Whole-word boundary token match (prevents "Mari" from matching inside "Himari")
+	// 4. Whole-word boundary token match (strictly requires word boundaries; prevents "Mari" from matching inside "Himari")
 	const escapedQ = cleanQ.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 	const wordRegex = new RegExp(
 		`(^|\\s|[(_\\-\\./])${escapedQ}($|\\s|[)_\\-\\./])`,
 		"i",
 	)
-	if (wordRegex.test(name) || wordRegex.test(cleanName)) {
+	if (wordRegex.test(rawName) || wordRegex.test(cleanName)) {
 		const lenDiff = Math.abs(cleanName.length - cleanQ.length)
 		return Math.max(5000, 6500 - lenDiff * 20)
 	}
@@ -203,24 +209,32 @@ export function getStudentMatchScore(
 	}
 
 	// 6. Name parts (PersonalName, FamilyName, DevName)
-	const devLower = devName?.toLowerCase().trim()
-	const famLower = familyName?.toLowerCase().trim()
-	const perLower = personalName?.toLowerCase().trim()
+	const devLower = devName
+		?.replace(/["'“”‘’`]/g, "")
+		.toLowerCase()
+		.trim()
+	const famLower = familyName
+		?.replace(/["'“”‘’`]/g, "")
+		.toLowerCase()
+		.trim()
+	const perLower = personalName
+		?.replace(/["'“”‘’`]/g, "")
+		.toLowerCase()
+		.trim()
 
-	if (perLower === q) return 4000
-	if (famLower === q) return 3800
-	if (devLower === q) return 3700
+	if (perLower === cleanQ) return 4000
+	if (famLower === cleanQ) return 3800
+	if (devLower === cleanQ) return 3700
 
-	if (perLower?.includes(q)) return 2500
-	if (famLower?.includes(q)) return 2400
-	if (devLower?.includes(q)) return 2300
+	if (perLower && wordRegex.test(perLower)) return 2800
+	if (famLower && wordRegex.test(famLower)) return 2700
+	if (devLower && wordRegex.test(devLower)) return 2600
 
-	// 7. Weak substring match inside words (only for queries >= 3 chars, e.g. "mari" inside "himari")
-	if (cleanQ.length >= 3 && cleanName.includes(cleanQ)) {
-		const lenDiff = Math.abs(cleanName.length - cleanQ.length)
-		return Math.max(50, 800 - lenDiff * 50)
-	}
+	if (perLower?.startsWith(cleanQ)) return 2500
+	if (famLower?.startsWith(cleanQ)) return 2400
+	if (devLower?.startsWith(cleanQ)) return 2300
 
+	// Disallow arbitrary inside-word substring matches (prevents "Mari" hitting "Himari" or "Aru" hitting "Haruka")
 	return 0
 }
 
@@ -231,12 +245,15 @@ export async function searchSchaleStudent(
 	query: string,
 ): Promise<SchaleStudent[]> {
 	const students = await getSchaleStudents()
-	const q = query.trim().toLowerCase()
+	const q = query
+		.replace(/["'“”‘’`]/g, "")
+		.trim()
+		.toLowerCase()
 	if (!q) return []
 
 	// Exact ID search
 	const num = Number.parseInt(q, 10)
-	if (!Number.isNaN(num)) {
+	if (!Number.isNaN(num) && String(num) === q) {
 		const byId = students.find((s) => s.Id === num)
 		if (byId) return [byId]
 	}

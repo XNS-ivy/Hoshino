@@ -29,6 +29,8 @@ export interface DatabaseSettings {
   retentionDays: number
   maxMessagesPerChat: number
   cleanMediaBloat: boolean
+  autoCleanLogsEnabled: boolean
+  logRetentionDays: number
   lastPrunedAt: string | null
   updatedAt: string
 }
@@ -53,6 +55,7 @@ export interface DatabaseStats {
   mediaBloatCount: number
   tables: TableStat[]
   settings: DatabaseSettings
+  logsStats: LogStats
 }
 
 export interface PruneOptions {

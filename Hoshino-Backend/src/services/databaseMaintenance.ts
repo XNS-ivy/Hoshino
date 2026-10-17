@@ -55,26 +55,39 @@ export class DatabaseMaintenanceService {
 
 		try {
 			const settings = await databaseRepository.getSettings()
-			if (!settings.autoPruneEnabled) {
-				return
+
+			// 1. Automated message pruning
+			if (settings.autoPruneEnabled) {
+				logger.info(
+					"/services/databaseMaintenance.ts",
+					`Running automated message pruning (Retention: ${settings.retentionDays}d, Max/Chat: ${settings.maxMessagesPerChat})...`,
+				)
+
+				const res = await databaseRepository.pruneMessages({
+					retentionDays: settings.retentionDays,
+					maxMessagesPerChat: settings.maxMessagesPerChat,
+					purgeMediaOnly: false,
+				})
+
+				if (res.deletedMessages > 0 || res.strippedMedia > 0) {
+					logger.system(
+						"/services/databaseMaintenance.ts",
+						`Automated prune complete: deleted ${res.deletedMessages} old messages, stripped ${res.strippedMedia} media payloads`,
+					)
+				}
 			}
 
-			logger.info(
-				"/services/databaseMaintenance.ts",
-				`Running automated message pruning (Retention: ${settings.retentionDays}d, Max/Chat: ${settings.maxMessagesPerChat})...`,
-			)
-
-			const res = await databaseRepository.pruneMessages({
-				retentionDays: settings.retentionDays,
-				maxMessagesPerChat: settings.maxMessagesPerChat,
-				purgeMediaOnly: false,
-			})
-
-			if (res.deletedMessages > 0 || res.strippedMedia > 0) {
-				logger.system(
-					"/services/databaseMaintenance.ts",
-					`Automated prune complete: deleted ${res.deletedMessages} old messages, stripped ${res.strippedMedia} media payloads`,
-				)
+			// 2. Automated log file rotation and cleanup
+			if (settings.autoCleanLogsEnabled) {
+				const logRes = logger.flushLogs({
+					retentionDays: settings.logRetentionDays,
+				})
+				if (logRes.deletedFiles > 0) {
+					logger.system(
+						"/services/databaseMaintenance.ts",
+						`Automated log cleanup complete: pruned ${logRes.deletedFiles} log file(s), freed ${logRes.freedSize}`,
+					)
+				}
 			}
 		} catch (error) {
 			logger.warn(

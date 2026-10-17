@@ -2,8 +2,11 @@ import React, { useCallback, useEffect, useState } from "react"
 import {
 	AlertTriangle,
 	Check,
+	ChevronDown,
+	ChevronUp,
 	Clock,
 	Database,
+	FileText,
 	HardDrive,
 	Layers,
 	MessageSquare,
@@ -17,10 +20,11 @@ import {
 import {
 	cleanDatabaseMessages,
 	fetchDatabaseStats,
+	flushLogs,
 	runDatabaseVacuum,
 	updateDatabaseSettings,
 } from "../../services/api"
-import type { DatabaseSettings, DatabaseStats } from "../../types"
+import type { DatabaseStats } from "../../types"
 
 interface DatabaseModalProps {
 	isOpen: boolean
@@ -41,6 +45,9 @@ export const DatabaseModal: React.FC<DatabaseModalProps> = ({
 	const [retentionDays, setRetentionDays] = useState(7)
 	const [maxPerChat, setMaxPerChat] = useState(500)
 	const [cleanMediaBloat, setCleanMediaBloat] = useState(true)
+	const [autoCleanLogs, setAutoCleanLogs] = useState(true)
+	const [logRetentionDays, setLogRetentionDays] = useState(7)
+	const [showLogFiles, setShowLogFiles] = useState(false)
 
 	const showToast = (type: "success" | "error", message: string) => {
 		setToast({ type, message })
@@ -57,6 +64,12 @@ export const DatabaseModal: React.FC<DatabaseModalProps> = ({
 				setRetentionDays(data.settings.retentionDays)
 				setMaxPerChat(data.settings.maxMessagesPerChat)
 				setCleanMediaBloat(data.settings.cleanMediaBloat)
+				if (data.settings.autoCleanLogsEnabled !== undefined) {
+					setAutoCleanLogs(data.settings.autoCleanLogsEnabled)
+				}
+				if (data.settings.logRetentionDays !== undefined) {
+					setLogRetentionDays(data.settings.logRetentionDays)
+				}
 			}
 		} catch (err) {
 			showToast("error", `Failed to load database stats: ${err}`)
@@ -81,11 +94,13 @@ export const DatabaseModal: React.FC<DatabaseModalProps> = ({
 				retentionDays,
 				maxMessagesPerChat: maxPerChat,
 				cleanMediaBloat,
+				autoCleanLogsEnabled: autoCleanLogs,
+				logRetentionDays,
 			})
 			if (stats) {
 				setStats({ ...stats, settings: updated })
 			}
-			showToast("success", "Retention policy settings saved successfully!")
+			showToast("success", "Storage and log retention policy saved successfully!")
 		} catch (err) {
 			showToast("error", `Failed to save settings: ${err}`)
 		} finally {
@@ -148,6 +163,33 @@ export const DatabaseModal: React.FC<DatabaseModalProps> = ({
 			await loadStats()
 		} catch (err) {
 			showToast("error", `VACUUM FULL failed: ${err}`)
+		} finally {
+			setActionLoading(null)
+		}
+	}
+
+	const handleFlushLogs = async (days?: number, flushAll?: boolean) => {
+		const message = flushAll
+			? "Are you sure you want to flush all system log files? Active today's log will be reset to 0 bytes and historical logs will be completely unlinked."
+			: `Are you sure you want to prune system log files older than ${days ?? logRetentionDays} days?`
+
+		if (!confirm(message)) {
+			return
+		}
+
+		try {
+			setActionLoading(flushAll ? "flushAllLogs" : "pruneLogs")
+			const res = await flushLogs({
+				retentionDays: days,
+				flushAll,
+			})
+			showToast(
+				"success",
+				`Log cleanup complete: pruned ${res.deletedFiles} file(s), freed ${res.freedSize}!`,
+			)
+			await loadStats()
+		} catch (err) {
+			showToast("error", `Failed to flush logs: ${err}`)
 		} finally {
 			setActionLoading(null)
 		}
@@ -292,7 +334,7 @@ export const DatabaseModal: React.FC<DatabaseModalProps> = ({
 					<div
 						style={{
 							display: "grid",
-							gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
+							gridTemplateColumns: "repeat(auto-fit, minmax(155px, 1fr))",
 							gap: "14px",
 						}}
 					>
@@ -409,6 +451,34 @@ export const DatabaseModal: React.FC<DatabaseModalProps> = ({
 							</div>
 							<div style={{ fontSize: "0.72rem", color: "var(--text-dim)", marginTop: "4px" }}>
 								Baileys E2EE pre-keys & sessions
+							</div>
+						</div>
+
+						{/* System File Logs */}
+						<div
+							style={{
+								background: "rgba(255, 255, 255, 0.03)",
+								border: "1px solid var(--border-color)",
+								borderRadius: "12px",
+								padding: "14px 16px",
+							}}
+						>
+							<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
+								<span style={{ fontSize: "0.75rem", color: "var(--text-muted)", fontWeight: 600 }}>SYSTEM LOGS</span>
+								<FileText size={16} color="#a78bfa" />
+							</div>
+							<div
+								style={{
+									fontSize: "1.45rem",
+									fontWeight: 800,
+									color: "var(--text-main)",
+									fontFamily: "var(--font-mono)",
+								}}
+							>
+								{stats?.logsStats?.totalSize || "0 B"}
+							</div>
+							<div style={{ fontSize: "0.72rem", color: "var(--text-dim)", marginTop: "4px" }}>
+								{stats?.logsStats?.totalFiles || 0} file(s) across ./logs
 							</div>
 						</div>
 					</div>
@@ -643,6 +713,310 @@ export const DatabaseModal: React.FC<DatabaseModalProps> = ({
 								</button>
 							</div>
 						</div>
+					</div>
+
+					{/* System File Logs & Auto-Flush Policy Card */}
+					<div
+						style={{
+							background: "rgba(255, 255, 255, 0.02)",
+							border: "1px solid var(--border-color)",
+							borderRadius: "14px",
+							padding: "20px",
+							display: "flex",
+							flexDirection: "column",
+							gap: "16px",
+						}}
+					>
+						<div
+							style={{
+								display: "flex",
+								alignItems: "center",
+								justifyContent: "space-between",
+								flexWrap: "wrap",
+								gap: "10px",
+							}}
+						>
+							<div>
+								<h4
+									style={{
+										margin: 0,
+										fontSize: "0.95rem",
+										fontWeight: 700,
+										color: "var(--text-main)",
+										display: "flex",
+										alignItems: "center",
+										gap: "8px",
+									}}
+								>
+									<FileText size={17} color="#a78bfa" />
+									System Execution Logs & Auto-Flush Policy
+								</h4>
+								<p
+									style={{
+										margin: "4px 0 0 0",
+										fontSize: "0.78rem",
+										color: "var(--text-muted)",
+									}}
+								>
+									Rotate and automatically prune daily log files (./logs/*.log) to keep disk lean
+								</p>
+							</div>
+
+							<button
+								type="button"
+								onClick={handleSaveSettings}
+								disabled={actionLoading !== null}
+								className="secondary-btn"
+								style={{
+									fontSize: "0.82rem",
+									padding: "7px 16px",
+									borderColor: "#a78bfa",
+									color: "#c4b5fd",
+								}}
+							>
+								<Save size={14} />
+								{actionLoading === "settings" ? "Saving..." : "Save Policy"}
+							</button>
+						</div>
+
+						{/* Settings Controls */}
+						<div
+							style={{
+								display: "grid",
+								gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+								gap: "16px",
+								paddingTop: "6px",
+							}}
+						>
+							{/* Auto-Clean Switch */}
+							<div>
+								<label
+									style={{
+										display: "block",
+										fontSize: "0.75rem",
+										color: "var(--text-muted)",
+										marginBottom: "8px",
+									}}
+								>
+									Auto Log Cleanup Status
+								</label>
+								<button
+									type="button"
+									onClick={() => setAutoCleanLogs(!autoCleanLogs)}
+									style={{
+										width: "100%",
+										padding: "10px 14px",
+										borderRadius: "8px",
+										background: autoCleanLogs
+											? "rgba(16, 185, 129, 0.15)"
+											: "rgba(239, 68, 68, 0.15)",
+										border: autoCleanLogs
+											? "1px solid rgba(16, 185, 129, 0.4)"
+											: "1px solid rgba(239, 68, 68, 0.4)",
+										color: autoCleanLogs ? "#34d399" : "#f87171",
+										fontSize: "0.85rem",
+										fontWeight: 600,
+										display: "flex",
+										alignItems: "center",
+										justifyContent: "space-between",
+										cursor: "pointer",
+									}}
+								>
+									<span>{autoCleanLogs ? "Enabled (Active)" : "Disabled (Off)"}</span>
+									<span style={{ fontSize: "0.75rem", opacity: 0.8 }}>Click to toggle</span>
+								</button>
+							</div>
+
+							{/* Log Retention Days */}
+							<div>
+								<label
+									style={{
+										display: "block",
+										fontSize: "0.75rem",
+										color: "var(--text-muted)",
+										marginBottom: "8px",
+									}}
+								>
+									Log Retention Days
+								</label>
+								<select
+									value={logRetentionDays}
+									onChange={(e) => setLogRetentionDays(Number(e.target.value))}
+									style={{
+										width: "100%",
+										padding: "10px 12px",
+										borderRadius: "8px",
+										background: "rgba(0, 0, 0, 0.4)",
+										border: "1px solid var(--border-color)",
+										color: "var(--text-main)",
+										fontSize: "0.85rem",
+										cursor: "pointer",
+									}}
+								>
+									<option value={1}>1 Day (Keep today's log only)</option>
+									<option value={3}>3 Days (Compact)</option>
+									<option value={7}>7 Days (Recommended)</option>
+									<option value={14}>14 Days (2 Weeks)</option>
+									<option value={30}>30 Days (1 Month)</option>
+								</select>
+							</div>
+						</div>
+
+						{/* Manual Log Actions & File Explorer Toggle */}
+						<div
+							style={{
+								borderTop: "1px dashed var(--border-color)",
+								paddingTop: "14px",
+								display: "flex",
+								alignItems: "center",
+								justifyContent: "space-between",
+								flexWrap: "wrap",
+								gap: "10px",
+							}}
+						>
+							<div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+								<button
+									type="button"
+									onClick={() => setShowLogFiles(!showLogFiles)}
+									style={{
+										background: "rgba(255, 255, 255, 0.05)",
+										border: "1px solid var(--border-color)",
+										color: "var(--text-main)",
+										borderRadius: "6px",
+										padding: "6px 12px",
+										fontSize: "0.78rem",
+										cursor: "pointer",
+										display: "flex",
+										alignItems: "center",
+										gap: "6px",
+									}}
+								>
+									{showLogFiles ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+									{showLogFiles ? "Hide Files" : `View ${stats?.logsStats?.files?.length || 0} Log File(s)`}
+								</button>
+								<span style={{ fontSize: "0.75rem", color: "var(--text-dim)" }}>
+									Total Size: <strong>{stats?.logsStats?.totalSize || "0 B"}</strong>
+								</span>
+							</div>
+
+							<div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+								{/* Prune Expired Logs Now */}
+								<button
+									type="button"
+									onClick={() => handleFlushLogs(logRetentionDays, false)}
+									disabled={actionLoading !== null}
+									className="secondary-btn"
+									style={{
+										fontSize: "0.78rem",
+										padding: "6px 12px",
+										color: "#fbbf24",
+										borderColor: "rgba(245, 158, 11, 0.4)",
+									}}
+								>
+									<Trash2 size={13} />
+									{actionLoading === "pruneLogs" ? "Pruning..." : `Prune Logs > ${logRetentionDays}d`}
+								</button>
+
+								{/* Flush All Logs Now */}
+								<button
+									type="button"
+									onClick={() => handleFlushLogs(undefined, true)}
+									disabled={actionLoading !== null}
+									className="secondary-btn"
+									style={{
+										fontSize: "0.78rem",
+										padding: "6px 12px",
+										color: "#f87171",
+										borderColor: "rgba(239, 68, 68, 0.4)",
+									}}
+								>
+									<Trash2 size={13} />
+									{actionLoading === "flushAllLogs" ? "Flushing..." : "Flush All Logs"}
+								</button>
+							</div>
+						</div>
+
+						{/* Expanded Log Files Breakdown */}
+						{showLogFiles && (
+							<div
+								style={{
+									marginTop: "8px",
+									border: "1px solid var(--border-color)",
+									borderRadius: "8px",
+									background: "rgba(0, 0, 0, 0.3)",
+									maxHeight: "200px",
+									overflowY: "auto",
+								}}
+							>
+								{stats?.logsStats?.files && stats.logsStats.files.length > 0 ? (
+									stats.logsStats.files.map((file) => (
+										<div
+											key={file.filePath}
+											style={{
+												display: "flex",
+												alignItems: "center",
+												justifyContent: "space-between",
+												padding: "8px 12px",
+												borderBottom: "1px solid rgba(255, 255, 255, 0.03)",
+												fontSize: "0.78rem",
+											}}
+										>
+											<div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+												<FileText size={14} color={file.isCurrent ? "#34d399" : "#94a3b8"} />
+												<span
+													style={{
+														fontFamily: "var(--font-mono)",
+														color: file.isCurrent ? "#34d399" : "var(--text-main)",
+														fontWeight: file.isCurrent ? 700 : 500,
+													}}
+												>
+													{file.filename}
+												</span>
+												{file.isCurrent && (
+													<span
+														style={{
+															fontSize: "0.68rem",
+															padding: "1px 6px",
+															borderRadius: "10px",
+															background: "rgba(16, 185, 129, 0.2)",
+															color: "#34d399",
+															fontWeight: 600,
+														}}
+													>
+														Active Stream
+													</span>
+												)}
+											</div>
+											<div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+												<span style={{ color: "var(--text-dim)", fontSize: "0.72rem" }}>
+													{file.modifiedAt}
+												</span>
+												<span
+													style={{
+														fontFamily: "var(--font-mono)",
+														color: "#00f2fe",
+														fontWeight: 600,
+													}}
+												>
+													{file.size}
+												</span>
+											</div>
+										</div>
+									))
+								) : (
+									<div
+										style={{
+											padding: "16px",
+											textAlign: "center",
+											color: "var(--text-dim)",
+											fontSize: "0.8rem",
+										}}
+									>
+										No log files found in directory
+									</div>
+								)}
+							</div>
+						)}
 					</div>
 
 					{/* Table Storage Breakdown */}

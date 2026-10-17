@@ -206,13 +206,22 @@ export class CommandLoader {
 			args = args.slice(0, 50)
 		}
 
+		// Layer 2: Check Registered Command
+		const command = this.commands.get(commandName)
+		if (!command) return
+
+		const rawPrimary = Array.isArray(command.name)
+			? command.name[0]
+			: command.name
+		const primaryName = (rawPrimary || commandName).toLowerCase()
+		const allCommandNames = (
+			Array.isArray(command.name) ? command.name : [command.name]
+		).map((n) => n.toLowerCase())
+
 		// Allow enablebot / bot / listen commands even if botEnabled is false in group so admins can turn bot ON
-		const isGroupToggleCommand = [
-			"enablebot",
-			"disablebot",
-			"bot",
-			"listen",
-		].includes(commandName)
+		const isGroupToggleCommand =
+			["enablebot", "disablebot", "bot", "listen"].includes(commandName) ||
+			["enablebot", "disablebot", "bot", "listen"].includes(primaryName)
 
 		if (
 			isGroup &&
@@ -223,10 +232,6 @@ export class CommandLoader {
 			// Bot is disabled/not listening in this group
 			return
 		}
-
-		// Layer 2: Check Registered Command
-		const command = this.commands.get(commandName)
-		if (!command) return
 
 		// Layer 2: Check Media Type & Text-Only Rule
 		// textOnly: true means the command requires text body (works for conversation, extendedTextMessage, ephemeral, or captions)
@@ -262,29 +267,38 @@ export class CommandLoader {
 			}
 		}
 
-		// Layer 2: Check Global Agent Command Toggle
+		// Layer 2: Check Global Agent Command Toggle (Inspecting all aliases to prevent bypass)
 		const isGloballyEnabled = await commandRepository.isCommandEnabledGlobally(
 			agentId,
-			commandName,
+			allCommandNames,
 		)
-		if (!isGloballyEnabled) return
+		if (!isGloballyEnabled) {
+			logger.debug(
+				"/services/commandLoader.ts",
+				`[${agentId}] Command "${primaryName}" (triggered as "${commandName}") blocked globally.`,
+			)
+			return
+		}
 
-		// Layer 3: Check Group Command Permission & Registration
+		// Layer 3: Check Group Command Permission & Registration (Inspecting all aliases to prevent bypass)
 		if (isGroup) {
 			const isExempt =
-				commandName === "enablecmd" || commandName === "disablecmd"
+				primaryName === "enablecmd" ||
+				primaryName === "disablecmd" ||
+				commandName === "enablecmd" ||
+				commandName === "disablecmd"
 			if (!isExempt) {
 				const isAllowedInGroup =
 					await commandRepository.isCommandAllowedInGroup(
 						agentId,
 						jid,
-						commandName,
+						allCommandNames,
 						!!command.needAdminRegisterThisCommand,
 					)
 				if (!isAllowedInGroup) {
 					logger.debug(
 						"/services/commandLoader.ts",
-						`[${agentId}] Command "${commandName}" blocked in group ${jid} (group policy / not registered).`,
+						`[${agentId}] Command "${primaryName}" (triggered as "${commandName}") blocked in group ${jid} (group policy / not registered).`,
 					)
 					return
 				}

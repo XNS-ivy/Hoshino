@@ -12,6 +12,39 @@ export interface LogEntry {
 	message: string | object
 }
 
+export interface LogFileInfo {
+	filename: string
+	filePath: string
+	date: string
+	sizeBytes: number
+	size: string
+	modifiedAt: string
+	isCurrent: boolean
+}
+
+export interface LogStats {
+	totalFiles: number
+	totalSizeBytes: number
+	totalSize: string
+	logDirs: string[]
+	files: LogFileInfo[]
+}
+
+export interface FlushLogsResult {
+	deletedFiles: number
+	freedBytes: number
+	freedSize: string
+	remainingFiles: number
+}
+
+export function formatBytes(bytes: number): string {
+	if (bytes === 0) return "0 B"
+	const k = 1024
+	const sizes = ["B", "KB", "MB", "GB", "TB"]
+	const i = Math.floor(Math.log(bytes) / Math.log(k))
+	return `${(bytes / k ** i).toFixed(2)} ${sizes[i]}`
+}
+
 // ─── ANSI Colors ──────────────────────────────────────────────────────────────
 
 const RESET = "\x1b[0m"
@@ -312,6 +345,176 @@ export class Logger {
 
 	private formatDate(date: Date): string {
 		return date.toISOString().slice(0, 10) // YYYY-MM-DD
+	}
+
+	/**
+	 * Returns active log directories (both cwd/logs and workspace root logs if exists).
+	 */
+	public getActiveLogDirs(): string[] {
+		const dirs = [this.logDir]
+		const envFolderName = process.env.LOGS_FOLDER_NAME ?? "logs"
+		const parentDir = path.resolve(process.cwd(), "..", envFolderName)
+		if (fs.existsSync(parentDir) && !dirs.includes(parentDir)) {
+			dirs.push(parentDir)
+		}
+		return dirs
+	}
+
+	/**
+	 * Scans log directories and returns comprehensive statistics and file inventory.
+	 */
+	public getLogStats(): LogStats {
+		this.ensureLogDir()
+		const files: LogFileInfo[] = []
+		let totalSizeBytes = 0
+		const seenPaths = new Set<string>()
+		const todayKey = this.formatDate(new Date())
+
+		for (const dir of this.getActiveLogDirs()) {
+			try {
+				if (!fs.existsSync(dir)) continue
+				const dirEntries = fs.readdirSync(dir, { withFileTypes: true })
+				const logEntries = dirEntries.filter(
+					(entry) => entry.isFile() && entry.name.endsWith(".log"),
+				)
+
+				for (const entry of logEntries) {
+					const filePath = path.join(dir, entry.name)
+					if (seenPaths.has(filePath)) continue
+					seenPaths.add(filePath)
+
+					const stat = fs.statSync(filePath)
+					totalSizeBytes += stat.size
+
+					const dateMatch = entry.name.match(/^(\d{4}-\d{2}-\d{2})\.log$/)
+					const dateStr = dateMatch
+						? dateMatch[1]
+						: stat.mtime.toISOString().slice(0, 10)
+					const isCurrent =
+						dateStr === todayKey || dateStr === this.currentLogDate
+
+					files.push({
+						filename: entry.name,
+						filePath,
+						date: dateStr ?? entry.name,
+						sizeBytes: stat.size,
+						size: formatBytes(stat.size),
+						modifiedAt: stat.mtime.toISOString(),
+						isCurrent: Boolean(isCurrent),
+					})
+				}
+			} catch (err) {
+				originalConsole.error(
+					`[logger] Failed to inspect log directory ${dir}: ${err}`,
+				)
+			}
+		}
+
+		// Sort newest log files first
+		files.sort((a, b) => b.filename.localeCompare(a.filename))
+
+		return {
+			totalFiles: files.length,
+			totalSizeBytes,
+			totalSize: formatBytes(totalSizeBytes),
+			logDirs: this.getActiveLogDirs(),
+			files,
+		}
+	}
+
+	/**
+	 * Flushes or prunes historical log files according to retention policy or flushAll flag.
+	 */
+	public flushLogs(
+		options: { retentionDays?: number; flushAll?: boolean } = {},
+	): FlushLogsResult {
+		this.ensureLogDir()
+		let deletedFiles = 0
+		let freedBytes = 0
+		const todayKey = this.formatDate(new Date())
+		const now = Date.now()
+		const retentionDays = options.retentionDays ?? 7
+
+		for (const dir of this.getActiveLogDirs()) {
+			try {
+				if (!fs.existsSync(dir)) continue
+				const dirEntries = fs.readdirSync(dir, { withFileTypes: true })
+				const logEntries = dirEntries.filter(
+					(entry) => entry.isFile() && entry.name.endsWith(".log"),
+				)
+
+				for (const entry of logEntries) {
+					const filePath = path.join(dir, entry.name)
+					const stat = fs.statSync(filePath)
+					const dateMatch = entry.name.match(/^(\d{4}-\d{2}-\d{2})\.log$/)
+
+					const isCurrent =
+						(dateMatch && dateMatch[1] === todayKey) ||
+						dateMatch?.[1] === this.currentLogDate
+
+					let shouldDelete = false
+
+					if (options.flushAll) {
+						if (!isCurrent) {
+							shouldDelete = true
+						} else {
+							// Truncate current day active log stream to 0 bytes safely
+							try {
+								if (this.logStream) {
+									this.logStream.end()
+									this.logStream = null
+								}
+								fs.truncateSync(filePath, 0)
+								freedBytes += stat.size
+								this.rotateStream(todayKey)
+							} catch (truncErr) {
+								originalConsole.error(
+									`[logger] Failed to truncate active log: ${truncErr}`,
+								)
+							}
+						}
+					} else {
+						// Calculate age
+						let fileTime = stat.mtimeMs
+						if (dateMatch?.[1]) {
+							const parsed = Date.parse(`${dateMatch[1]}T00:00:00Z`)
+							if (!Number.isNaN(parsed)) {
+								fileTime = parsed
+							}
+						}
+
+						const ageDays = (now - fileTime) / (24 * 60 * 60 * 1000)
+						if (ageDays >= retentionDays && !isCurrent) {
+							shouldDelete = true
+						}
+					}
+
+					if (shouldDelete) {
+						try {
+							fs.unlinkSync(filePath)
+							deletedFiles++
+							freedBytes += stat.size
+						} catch (delErr) {
+							originalConsole.error(
+								`[logger] Failed to delete log file ${entry.name}: ${delErr}`,
+							)
+						}
+					}
+				}
+			} catch (err) {
+				originalConsole.error(
+					`[logger] Failed during flushLogs in ${dir}: ${err}`,
+				)
+			}
+		}
+
+		const updatedStats = this.getLogStats()
+		return {
+			deletedFiles,
+			freedBytes,
+			freedSize: formatBytes(freedBytes),
+			remainingFiles: updatedStats.totalFiles,
+		}
 	}
 
 	// ─── Global Error Handlers ─────────────────────────────────────────────────

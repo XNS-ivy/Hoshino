@@ -369,18 +369,36 @@ export const agentRoutes = new Elysia({ prefix: "/api/agents" })
 			await commandLoader.init()
 			const allCmds = commandLoader.getAllCommands()
 			const toggles = await commandRepository.getAllCommandToggles(safeAgentId)
-			const toggleMap = new Map(toggles.map((t) => [t.commandName, t.status]))
+			const toggleMap = new Map(
+				toggles.map((t) => [t.commandName.toLowerCase(), t.status]),
+			)
 
 			const result = allCmds.map((cmd) => {
-				const primaryName = Array.isArray(cmd.name) ? cmd.name[0] : cmd.name
+				const rawName = Array.isArray(cmd.name) ? cmd.name[0] : cmd.name
+				const primaryName = (rawName || "").toLowerCase()
+				const aliases = (Array.isArray(cmd.name) ? cmd.name.slice(1) : []).map(
+					(a) => a.toLowerCase(),
+				)
+
+				// Check primary name or any alias in toggleMap
+				let status = toggleMap.get(primaryName)
+				if (!status) {
+					for (const alias of aliases) {
+						if (toggleMap.has(alias)) {
+							status = toggleMap.get(alias)
+							break
+						}
+					}
+				}
+
 				return {
 					name: primaryName,
-					aliases: Array.isArray(cmd.name) ? cmd.name.slice(1) : [],
+					aliases,
 					category: cmd.category || "general",
 					description: cmd.description,
 					access: cmd.access || "user",
 					needAdminRegisterThisCommand: !!cmd.needAdminRegisterThisCommand,
-					status: toggleMap.get(primaryName || "") || "enabled",
+					status: status || "enabled",
 				}
 			})
 
@@ -400,14 +418,30 @@ export const agentRoutes = new Elysia({ prefix: "/api/agents" })
 		async ({ params: { id, commandName }, body, set }) => {
 			try {
 				const safeAgentId = socketManager.sanitizeAgentId(id)
+				await commandLoader.init()
+				const allCmds = commandLoader.getAllCommands()
+				const target = commandName.toLowerCase()
+				const found = allCmds.find((c) => {
+					const names = (Array.isArray(c.name) ? c.name : [c.name]).map((n) =>
+						n.toLowerCase(),
+					)
+					return names.includes(target)
+				})
+				const rawFound = found
+					? Array.isArray(found.name)
+						? found.name[0]
+						: found.name
+					: target
+				const canonicalName = (rawFound || target).toLowerCase()
+
 				await commandRepository.setGlobalCommandStatus(
 					safeAgentId,
-					commandName,
+					canonicalName,
 					body.status,
 				)
 				return {
 					success: true,
-					message: `Command '${commandName}' status set to '${body.status}'`,
+					message: `Command '${canonicalName}' status set to '${body.status}'`,
 				}
 			} catch (error) {
 				set.status = 500
@@ -533,7 +567,7 @@ export const agentRoutes = new Elysia({ prefix: "/api/agents" })
 			const globalToggles =
 				await commandRepository.getAllCommandToggles(safeAgentId)
 			const globalToggleMap = new Map(
-				globalToggles.map((t) => [t.commandName, t.status]),
+				globalToggles.map((t) => [t.commandName.toLowerCase(), t.status]),
 			)
 
 			const groupOverrides = await commandRepository.getGroupCommands(
@@ -541,13 +575,27 @@ export const agentRoutes = new Elysia({ prefix: "/api/agents" })
 				jid,
 			)
 			const groupOverrideMap = new Map(
-				groupOverrides.map((g) => [g.commandName, g.status]),
+				groupOverrides.map((g) => [g.commandName.toLowerCase(), g.status]),
 			)
 
 			const result = allCmds.map((cmd) => {
-				const primaryName = Array.isArray(cmd.name) ? cmd.name[0] : cmd.name
+				const rawName = Array.isArray(cmd.name) ? cmd.name[0] : cmd.name
+				const primaryName = (rawName || "").toLowerCase()
+				const aliases = (Array.isArray(cmd.name) ? cmd.name.slice(1) : []).map(
+					(a) => a.toLowerCase(),
+				)
 				const isRegisteredReq = !!cmd.needAdminRegisterThisCommand
-				const override = groupOverrideMap.get(primaryName || "")
+
+				// Check primary name or any alias for an override
+				let override = groupOverrideMap.get(primaryName)
+				if (!override) {
+					for (const alias of aliases) {
+						if (groupOverrideMap.has(alias)) {
+							override = groupOverrideMap.get(alias)
+							break
+						}
+					}
+				}
 
 				const effectiveStatus: "enabled" | "disabled" = override
 					? override
@@ -557,12 +605,12 @@ export const agentRoutes = new Elysia({ prefix: "/api/agents" })
 
 				return {
 					name: primaryName,
-					aliases: Array.isArray(cmd.name) ? cmd.name.slice(1) : [],
+					aliases,
 					category: cmd.category || "general",
 					description: cmd.description,
 					access: cmd.access || "user",
 					needAdminRegisterThisCommand: isRegisteredReq,
-					globalStatus: globalToggleMap.get(primaryName || "") || "enabled",
+					globalStatus: globalToggleMap.get(primaryName) || "enabled",
 					status: effectiveStatus,
 					isCustomized: override !== undefined,
 				}
@@ -584,15 +632,43 @@ export const agentRoutes = new Elysia({ prefix: "/api/agents" })
 		async ({ params: { id, jid, commandName }, body, set }) => {
 			try {
 				const safeAgentId = socketManager.sanitizeAgentId(id)
+				await commandLoader.init()
+				const allCmds = commandLoader.getAllCommands()
+				const target = commandName.toLowerCase()
+				const found = allCmds.find((c) => {
+					const names = (Array.isArray(c.name) ? c.name : [c.name]).map((n) =>
+						n.toLowerCase(),
+					)
+					return names.includes(target)
+				})
+				const rawFound = found
+					? Array.isArray(found.name)
+						? found.name[0]
+						: found.name
+					: target
+				const canonicalName = (rawFound || target).toLowerCase()
+
+				// Clean up any stale alias overrides
+				if (found) {
+					const allAliases = (
+						Array.isArray(found.name) ? found.name : [found.name]
+					).map((n) => n.toLowerCase())
+					await commandRepository.resetGroupCommandStatus(
+						safeAgentId,
+						jid,
+						allAliases,
+					)
+				}
+
 				await commandRepository.setGroupCommandStatus(
 					safeAgentId,
 					jid,
-					commandName,
+					canonicalName,
 					body.status,
 				)
 				return {
 					success: true,
-					message: `Command '${commandName}' in group '${jid}' set to '${body.status}'`,
+					message: `Command '${canonicalName}' in group '${jid}' set to '${body.status}'`,
 				}
 			} catch (error) {
 				set.status = 500
@@ -615,10 +691,25 @@ export const agentRoutes = new Elysia({ prefix: "/api/agents" })
 		async ({ params: { id, jid, commandName }, set }) => {
 			try {
 				const safeAgentId = socketManager.sanitizeAgentId(id)
+				await commandLoader.init()
+				const allCmds = commandLoader.getAllCommands()
+				const target = commandName.toLowerCase()
+				const found = allCmds.find((c) => {
+					const names = (Array.isArray(c.name) ? c.name : [c.name]).map((n) =>
+						n.toLowerCase(),
+					)
+					return names.includes(target)
+				})
+				const namesToDelete = found
+					? (Array.isArray(found.name) ? found.name : [found.name]).map((n) =>
+							n.toLowerCase(),
+						)
+					: [target]
+
 				await commandRepository.resetGroupCommandStatus(
 					safeAgentId,
 					jid,
-					commandName,
+					namesToDelete,
 				)
 				return {
 					success: true,
@@ -658,8 +749,18 @@ export const agentRoutes = new Elysia({ prefix: "/api/agents" })
 				const targetStatus =
 					body.action === "enable_all" ? "enabled" : "disabled"
 				for (const cmd of targetCmds) {
-					const primaryName = Array.isArray(cmd.name) ? cmd.name[0] : cmd.name
+					const primaryName = (
+						Array.isArray(cmd.name) ? cmd.name[0] : cmd.name
+					)?.toLowerCase()
 					if (primaryName) {
+						const allAliases = (
+							Array.isArray(cmd.name) ? cmd.name : [cmd.name]
+						).map((n) => n.toLowerCase())
+						await commandRepository.resetGroupCommandStatus(
+							safeAgentId,
+							jid,
+							allAliases,
+						)
 						await commandRepository.setGroupCommandStatus(
 							safeAgentId,
 							jid,
@@ -817,6 +918,10 @@ export const agentRoutes = new Elysia({ prefix: "/api/agents" })
 				safeAgentId,
 				profile.userJid,
 			)
+			const elephSummary = await gachaRepository.getElephSummary(
+				safeAgentId,
+				profile.userJid,
+			)
 			const jidUser = profile.userJid.split("@")[0] ?? profile.userJid
 			const fallbackName = jidUser.replace(/^[+]+/, "")
 
@@ -827,6 +932,7 @@ export const agentRoutes = new Elysia({ prefix: "/api/agents" })
 					pushName: pushName || fallbackName,
 					students,
 					bonds,
+					elephSummary,
 				},
 			}
 		} catch (error) {
@@ -837,6 +943,64 @@ export const agentRoutes = new Elysia({ prefix: "/api/agents" })
 			}
 		}
 	})
+
+	// POST /api/agents/:id/sensei/:userJid/claim-eleph - Convert duplicate student Elephs into Pyroxenes
+	.post(
+		"/:id/sensei/:userJid/claim-eleph",
+		async ({ params: { id, userJid }, body, set }) => {
+			try {
+				const safeAgentId = socketManager.sanitizeAgentId(id)
+				const decodedJid = decodeURIComponent(userJid)
+
+				let filterObj:
+					| { studentNameOrId?: string | number; starGrade?: number }
+					| undefined
+
+				if (body?.starGrade !== undefined) {
+					filterObj = { starGrade: body.starGrade }
+				} else if (body?.studentNameOrId !== undefined) {
+					filterObj = { studentNameOrId: body.studentNameOrId }
+				} else if (body?.filter) {
+					const trimmed = body.filter.trim()
+					if (["1", "2", "3"].includes(trimmed)) {
+						filterObj = { starGrade: Number(trimmed) }
+					} else {
+						filterObj = { studentNameOrId: trimmed }
+					}
+				}
+
+				const result = await gachaRepository.claimElephToPyroxenes(
+					safeAgentId,
+					decodedJid,
+					filterObj,
+				)
+
+				return {
+					success: true,
+					data: result,
+					message:
+						result.claimedEleph > 0
+							? `Successfully claimed ${result.claimedEleph} Eleph for +${result.pyroxenesGained.toLocaleString()} Pyroxenes!`
+							: "No duplicate Elephs available to claim",
+				}
+			} catch (error) {
+				set.status = 500
+				return {
+					success: false,
+					message: `Failed to claim Eleph: ${error}`,
+				}
+			}
+		},
+		{
+			body: t.Optional(
+				t.Object({
+					filter: t.Optional(t.String()),
+					starGrade: t.Optional(t.Number()),
+					studentNameOrId: t.Optional(t.Union([t.String(), t.Number()])),
+				}),
+			),
+		},
+	)
 
 	// PATCH /api/agents/:id/sensei/:userJid/pyroxenes - Grant or set Pyroxenes
 	.patch(

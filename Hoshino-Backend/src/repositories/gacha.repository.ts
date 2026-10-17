@@ -21,6 +21,52 @@ export interface SenseiStudentItem {
 	firstObtainedAt: Date
 }
 
+export const ELEPH_CONFIG = {
+	ELEPH_PER_DUPLICATE: {
+		1: 1, // 1★ duplicate = 1 Eleph
+		2: 10, // 2★ duplicate = 10 Eleph
+		3: 30, // 3★ duplicate = 30 Eleph
+	} as Record<number, number>,
+	PYROXENES_PER_ELEPH: 20, // Fair exchange rate: 1 Eleph = 20 Pyroxenes
+}
+
+export interface ElephSummaryItem {
+	studentId: number
+	studentName: string
+	starGrade: number
+	count: number
+	duplicateCount: number
+	elephCount: number
+	pyroxeneValue: number
+}
+
+export interface ElephSummary {
+	totalDuplicates: number
+	totalEleph: number
+	totalPyroxenes: number
+	studentsWithEleph: ElephSummaryItem[]
+	breakdown: {
+		threeStar: { duplicates: number; eleph: number; pyroxenes: number }
+		twoStar: { duplicates: number; eleph: number; pyroxenes: number }
+		oneStar: { duplicates: number; eleph: number; pyroxenes: number }
+	}
+}
+
+export interface ClaimElephResult {
+	success: boolean
+	claimedStudents: number
+	claimedDuplicates: number
+	claimedEleph: number
+	pyroxenesGained: number
+	newPyroxenes: number
+	breakdown: {
+		threeStar: { duplicates: number; eleph: number; pyroxenes: number }
+		twoStar: { duplicates: number; eleph: number; pyroxenes: number }
+		oneStar: { duplicates: number; eleph: number; pyroxenes: number }
+	}
+	reason?: string
+}
+
 export class GachaRepository {
 	private static instance: GachaRepository
 
@@ -518,6 +564,250 @@ export class GachaRepository {
 		await sql`DELETE FROM public.sensei_profiles WHERE agent_id = ${agentId} AND (user_jid = ${safeJid} OR user_jid = ${userJid})`
 		await sql`DELETE FROM public.sensei_students WHERE agent_id = ${agentId} AND (user_jid = ${safeJid} OR user_jid = ${userJid})`
 		await sql`DELETE FROM public.sensei_bonds WHERE agent_id = ${agentId} AND (user_jid = ${safeJid} OR user_jid = ${userJid})`
+	}
+
+	/**
+	 * Calculates Eleph inventory and potential Pyroxene conversion summary for a Sensei.
+	 */
+	public async getElephSummary(
+		agentId: string,
+		userJid: string,
+	): Promise<ElephSummary> {
+		const safeJid = await this.resolveUserJid(agentId, userJid)
+		const rows = await sql`
+			SELECT 
+				student_id as "studentId",
+				student_name as "studentName",
+				star_grade as "starGrade",
+				count
+			FROM public.sensei_students
+			WHERE agent_id = ${agentId} AND user_jid = ${safeJid} AND count > 1
+			ORDER BY star_grade DESC, count DESC
+		`
+
+		let totalDuplicates = 0
+		let totalEleph = 0
+		let totalPyroxenes = 0
+		const breakdown = {
+			threeStar: { duplicates: 0, eleph: 0, pyroxenes: 0 },
+			twoStar: { duplicates: 0, eleph: 0, pyroxenes: 0 },
+			oneStar: { duplicates: 0, eleph: 0, pyroxenes: 0 },
+		}
+
+		const studentsWithEleph: ElephSummaryItem[] = []
+
+		for (const r of rows) {
+			const s = r as unknown as {
+				studentId: number
+				studentName: string
+				starGrade: number
+				count: number
+			}
+			const dupes = s.count - 1
+			if (dupes <= 0) continue
+
+			const elephPerDupe = ELEPH_CONFIG.ELEPH_PER_DUPLICATE[s.starGrade] || 1
+			const elephs = dupes * elephPerDupe
+			const pyroxenes = elephs * ELEPH_CONFIG.PYROXENES_PER_ELEPH
+
+			totalDuplicates += dupes
+			totalEleph += elephs
+			totalPyroxenes += pyroxenes
+
+			studentsWithEleph.push({
+				studentId: s.studentId,
+				studentName: s.studentName,
+				starGrade: s.starGrade,
+				count: s.count,
+				duplicateCount: dupes,
+				elephCount: elephs,
+				pyroxeneValue: pyroxenes,
+			})
+
+			if (s.starGrade === 3) {
+				breakdown.threeStar.duplicates += dupes
+				breakdown.threeStar.eleph += elephs
+				breakdown.threeStar.pyroxenes += pyroxenes
+			} else if (s.starGrade === 2) {
+				breakdown.twoStar.duplicates += dupes
+				breakdown.twoStar.eleph += elephs
+				breakdown.twoStar.pyroxenes += pyroxenes
+			} else {
+				breakdown.oneStar.duplicates += dupes
+				breakdown.oneStar.eleph += elephs
+				breakdown.oneStar.pyroxenes += pyroxenes
+			}
+		}
+
+		return {
+			totalDuplicates,
+			totalEleph,
+			totalPyroxenes,
+			studentsWithEleph,
+			breakdown,
+		}
+	}
+
+	/**
+	 * Converts/claims duplicate student copies (Elephs) into Pyroxenes fairly.
+	 * Preserves the base student in Sensei's roster (resets count to 1),
+	 * and credits the calculated Pyroxenes to the Sensei profile.
+	 */
+	public async claimElephToPyroxenes(
+		agentId: string,
+		userJid: string,
+		filter?: { studentNameOrId?: string | number; starGrade?: number },
+	): Promise<ClaimElephResult> {
+		const safeJid = await this.resolveUserJid(agentId, userJid)
+		const profile = await this.getOrCreateProfile(agentId, safeJid)
+
+		// Fetch all students with duplicates (count > 1)
+		const rows = await sql`
+			SELECT 
+				student_id as "studentId",
+				student_name as "studentName",
+				star_grade as "starGrade",
+				count
+			FROM public.sensei_students
+			WHERE agent_id = ${agentId} AND user_jid = ${safeJid} AND count > 1
+		`
+
+		if (rows.length === 0) {
+			return {
+				success: false,
+				claimedStudents: 0,
+				claimedDuplicates: 0,
+				claimedEleph: 0,
+				pyroxenesGained: 0,
+				newPyroxenes: profile.pyroxenes,
+				breakdown: {
+					threeStar: { duplicates: 0, eleph: 0, pyroxenes: 0 },
+					twoStar: { duplicates: 0, eleph: 0, pyroxenes: 0 },
+					oneStar: { duplicates: 0, eleph: 0, pyroxenes: 0 },
+				},
+				reason: "NO_DUPLICATES",
+			}
+		}
+
+		let eligible = rows as unknown as Array<{
+			studentId: number
+			studentName: string
+			starGrade: number
+			count: number
+		}>
+
+		if (filter?.starGrade !== undefined) {
+			eligible = eligible.filter((s) => s.starGrade === filter.starGrade)
+		}
+
+		if (filter?.studentNameOrId !== undefined) {
+			const target = String(filter.studentNameOrId).toLowerCase().trim()
+			eligible = eligible.filter(
+				(s) =>
+					String(s.studentId) === target ||
+					s.studentName.toLowerCase().includes(target),
+			)
+		}
+
+		if (eligible.length === 0) {
+			return {
+				success: false,
+				claimedStudents: 0,
+				claimedDuplicates: 0,
+				claimedEleph: 0,
+				pyroxenesGained: 0,
+				newPyroxenes: profile.pyroxenes,
+				breakdown: {
+					threeStar: { duplicates: 0, eleph: 0, pyroxenes: 0 },
+					twoStar: { duplicates: 0, eleph: 0, pyroxenes: 0 },
+					oneStar: { duplicates: 0, eleph: 0, pyroxenes: 0 },
+				},
+				reason: "NO_MATCHING_DUPLICATES",
+			}
+		}
+
+		let totalDuplicates = 0
+		let totalEleph = 0
+		let totalPyroxenes = 0
+		const breakdown = {
+			threeStar: { duplicates: 0, eleph: 0, pyroxenes: 0 },
+			twoStar: { duplicates: 0, eleph: 0, pyroxenes: 0 },
+			oneStar: { duplicates: 0, eleph: 0, pyroxenes: 0 },
+		}
+
+		const studentIdsToReset: number[] = []
+
+		for (const s of eligible) {
+			const dupes = s.count - 1
+			if (dupes <= 0) continue
+
+			const elephPerDupe = ELEPH_CONFIG.ELEPH_PER_DUPLICATE[s.starGrade] || 1
+			const elephs = dupes * elephPerDupe
+			const pyroxenes = elephs * ELEPH_CONFIG.PYROXENES_PER_ELEPH
+
+			totalDuplicates += dupes
+			totalEleph += elephs
+			totalPyroxenes += pyroxenes
+			studentIdsToReset.push(s.studentId)
+
+			if (s.starGrade === 3) {
+				breakdown.threeStar.duplicates += dupes
+				breakdown.threeStar.eleph += elephs
+				breakdown.threeStar.pyroxenes += pyroxenes
+			} else if (s.starGrade === 2) {
+				breakdown.twoStar.duplicates += dupes
+				breakdown.twoStar.eleph += elephs
+				breakdown.twoStar.pyroxenes += pyroxenes
+			} else {
+				breakdown.oneStar.duplicates += dupes
+				breakdown.oneStar.eleph += elephs
+				breakdown.oneStar.pyroxenes += pyroxenes
+			}
+		}
+
+		if (studentIdsToReset.length === 0 || totalPyroxenes <= 0) {
+			return {
+				success: false,
+				claimedStudents: 0,
+				claimedDuplicates: 0,
+				claimedEleph: 0,
+				pyroxenesGained: 0,
+				newPyroxenes: profile.pyroxenes,
+				breakdown,
+				reason: "NO_DUPLICATES",
+			}
+		}
+
+		// Reset count to 1 for all converted students (retaining base student in collection)
+		await sql`
+			UPDATE public.sensei_students
+			SET count = 1
+			WHERE agent_id = ${agentId} AND user_jid = ${safeJid} AND student_id IN ${sql(studentIdsToReset)}
+		`
+
+		// Credit pyroxenes to Sensei profile
+		const updatedProfile = await sql`
+			UPDATE public.sensei_profiles
+			SET 
+				pyroxenes = pyroxenes + ${totalPyroxenes},
+				updated_at = CURRENT_TIMESTAMP
+			WHERE agent_id = ${agentId} AND user_jid = ${safeJid}
+			RETURNING pyroxenes
+		`
+
+		const newPyroxenes = Number(
+			updatedProfile[0]?.pyroxenes ?? profile.pyroxenes + totalPyroxenes,
+		)
+
+		return {
+			success: true,
+			claimedStudents: studentIdsToReset.length,
+			claimedDuplicates: totalDuplicates,
+			claimedEleph: totalEleph,
+			pyroxenesGained: totalPyroxenes,
+			newPyroxenes,
+			breakdown,
+		}
 	}
 }
 

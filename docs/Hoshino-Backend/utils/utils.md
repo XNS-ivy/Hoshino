@@ -32,6 +32,9 @@ updated: 2026-10-15
   - `console.log` Override: Appends cyan caller tag prefix.
   - File Streaming: Writes daily logs to `./logs/YYYY-MM-DD.log` with automatic file stream rotation.
   - Level Shorthands: `logger.info()`, `logger.warn()`, `logger.error()`, `logger.system()`, `logger.debug()`.
+  - `getLogStats()`: Aggregates total files, file paths, individual sizes, dates, and active flags across `./logs` and `../logs`.
+  - `flushLogs(options)`: Safe retention pruning or full flush of log files. For current active stream, performs file truncation to 0 bytes and stream rotation without crashing open write streams or unlinking locked handles on Windows.
+
 
 ---
 
@@ -79,15 +82,15 @@ updated: 2026-10-15
 - **Function `getStudentMatchScore(candidateName: string, query: string, devName?: string, familyName?: string, personalName?: string): number`**:
   Calculates a deterministic relevance score to guarantee high search precision:
   - `10000`: Exact raw match on student full name.
-  - `9800`: Cleaned name match (ignoring punctuation, brackets, parentheses).
+  - `9800`: Cleaned name match (ignoring punctuation, brackets, parentheses, and quotes `""`, `“”`, `''`).
   - `8500`: Base name match (e.g. query `"mari"` correctly matching `"Mari (Track)"`).
   - `7000-7800`: Multi-token match across all words in any order (e.g. `"track mari"` matching `"Mari (Track)"`).
-  - `5000-6500`: Whole-word boundary token match (prevents `"Mari"` from matching inside `"Himari"`).
-  - `3000-4500`: Prefix match on full name or base name.
+  - `5000-6500`: Whole-word boundary token match (strictly requires token word boundaries; prevents `"Mari"` from matching inside `"Himari"`).
+  - `3000-4500`: Prefix match on full name or base name (e.g. `"mari"` matching `"Marina"`).
   - `2000-4000`: Exact or partial matches on `PersonalName`, `FamilyName` (e.g. `"Iochi"`, `"Akeboshi"`), or `DevName`.
-  - `50-800`: Weak internal substring match (restricted strictly to queries of length >= 3).
+  - Strictly disallows arbitrary inside-word substring matches without word boundaries, preventing student hijacking bugs where querying `"Mari"` incorrectly selected `"Himari"`.
 - **Function `searchSchaleStudent(query: string): Promise<SchaleStudent[]>`**:
-  Searches students by ID or multi-tier relevance scoring, sorting the results descending by score so exact/base-name matches always precede substring candidates.
+  Searches students by ID or multi-tier relevance scoring with automatic quotation stripping, sorting the results descending by score so exact/base-name matches always precede substring candidates.
 
 ---
 

@@ -26,6 +26,10 @@ updated: 2026-10-15
 - `getStudents(agentId, userJid): Promise<SenseiStudentItem[]>`: Returns all students owned by the user.
 - `redeemSpark(agentId, userJid, studentId, studentName, starGrade): Promise<boolean>`: Exchanges 200 Spark Points for a guaranteed 3-star student.
 - `adjustPyroxenes(agentId, userJid, delta): Promise<number>`: Modifies Pyroxene balance directly for admin actions or minigame rewards.
+- `ELEPH_CONFIG`: Configuration for duplicate conversions (`1★: 1 Eleph`, `2★: 10 Eleph`, `3★: 30 Eleph`, rate `1 Eleph = 20 Pyroxenes`).
+- `getElephSummary(agentId, userJid): Promise<ElephSummary>`: Calculates total duplicate students, Elephs available, and exchangeable Pyroxene yields across 1★, 2★, and 3★ tiers.
+- `claimElephToPyroxenes(agentId, userJid, filter?): Promise<ClaimElephResult>`: Atomically converts duplicate students into Pyroxenes, resets student `count = 1` (preserving base student ownership), and credits Pyroxenes to `public.sensei_profiles`. Supports star-tier or student-specific filters.
+
 
 ---
 

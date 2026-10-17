@@ -1,4 +1,5 @@
 import { databaseRepository } from "@repositories/database.repository"
+import { logger } from "@utils/logger"
 import { Elysia, t } from "elysia"
 
 export const databaseRoutes = new Elysia({ prefix: "/api/database" })
@@ -46,11 +47,13 @@ export const databaseRoutes = new Elysia({ prefix: "/api/database" })
 					retentionDays: body.retentionDays,
 					maxMessagesPerChat: body.maxMessagesPerChat,
 					cleanMediaBloat: body.cleanMediaBloat,
+					autoCleanLogsEnabled: body.autoCleanLogsEnabled,
+					logRetentionDays: body.logRetentionDays,
 				})
 				return {
 					success: true,
 					data: updated,
-					message: "Database retention settings updated successfully",
+					message: "Database and log retention settings updated successfully",
 				}
 			} catch (error) {
 				set.status = 500
@@ -66,6 +69,55 @@ export const databaseRoutes = new Elysia({ prefix: "/api/database" })
 				retentionDays: t.Optional(t.Number()),
 				maxMessagesPerChat: t.Optional(t.Number()),
 				cleanMediaBloat: t.Optional(t.Boolean()),
+				autoCleanLogsEnabled: t.Optional(t.Boolean()),
+				logRetentionDays: t.Optional(t.Number()),
+			}),
+		},
+	)
+
+	// GET /api/database/logs - Retrieve log storage statistics and active file list
+	.get("/logs", async ({ set }) => {
+		try {
+			const stats = logger.getLogStats()
+			return {
+				success: true,
+				data: stats,
+			}
+		} catch (error) {
+			set.status = 500
+			return {
+				success: false,
+				message: `Failed to fetch log statistics: ${error}`,
+			}
+		}
+	})
+
+	// POST /api/database/logs/flush - Manually prune or flush log files
+	.post(
+		"/logs/flush",
+		async ({ body, set }) => {
+			try {
+				const result = logger.flushLogs({
+					retentionDays: body.retentionDays,
+					flushAll: body.flushAll,
+				})
+				return {
+					success: true,
+					data: result,
+					message: `Flushed ${result.deletedFiles} log file(s), freed ${result.freedSize}`,
+				}
+			} catch (error) {
+				set.status = 500
+				return {
+					success: false,
+					message: `Failed to flush log files: ${error}`,
+				}
+			}
+		},
+		{
+			body: t.Object({
+				retentionDays: t.Optional(t.Number()),
+				flushAll: t.Optional(t.Boolean()),
 			}),
 		},
 	)

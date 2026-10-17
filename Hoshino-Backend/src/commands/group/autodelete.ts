@@ -26,6 +26,20 @@ const command: ICommand = {
 			return
 		}
 
+		const botJid = commandRepository.normalizeJid(
+			ctx.sock.user?.id || ctx.sock.user?.lid || "",
+		)
+		if (targetJid === botJid) {
+			await ctx.reply("❌ Bot cannot add itself to auto-delete list!")
+			return
+		}
+
+		const isOwner = await commandRepository.isOwner(ctx.agentId, targetJid)
+		if (isOwner) {
+			await ctx.reply("❌ Cannot add Bot Owner to auto-delete list!")
+			return
+		}
+
 		await commandRepository.addAutoDelete(ctx.agentId, targetJid, ctx.jid)
 		await ctx.reply(
 			`🗑️ User *@${targetJid.split("@")[0]}* added to Auto-Delete list for *this group*.\nBot will automatically delete all future messages from this user in this group.`,

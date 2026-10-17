@@ -1,5 +1,5 @@
 import { sql } from "@utils/db"
-import { logger } from "@utils/logger"
+import { type LogStats, logger } from "@utils/logger"
 
 export interface DatabaseSettings {
 	id: string
@@ -7,6 +7,8 @@ export interface DatabaseSettings {
 	retentionDays: number
 	maxMessagesPerChat: number
 	cleanMediaBloat: boolean
+	autoCleanLogsEnabled: boolean
+	logRetentionDays: number
 	lastPrunedAt: string | null
 	updatedAt: string
 }
@@ -31,6 +33,7 @@ export interface DatabaseStats {
 	mediaBloatCount: number
 	tables: TableStat[]
 	settings: DatabaseSettings
+	logsStats: LogStats
 }
 
 export interface PruneOptions {
@@ -69,13 +72,31 @@ export class DatabaseRepository {
 				retention_days INT DEFAULT 7,
 				max_messages_per_chat INT DEFAULT 500,
 				clean_media_bloat BOOLEAN DEFAULT true,
+				auto_clean_logs_enabled BOOLEAN DEFAULT true,
+				log_retention_days INT DEFAULT 7,
 				last_pruned_at TIMESTAMPTZ,
 				updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 			);
 		`
 		await sql`
-			INSERT INTO public.database_settings (id, auto_prune_enabled, retention_days, max_messages_per_chat, clean_media_bloat)
-			VALUES ('default', true, 7, 500, true)
+			ALTER TABLE public.database_settings 
+			ADD COLUMN IF NOT EXISTS auto_clean_logs_enabled BOOLEAN DEFAULT true;
+		`
+		await sql`
+			ALTER TABLE public.database_settings 
+			ADD COLUMN IF NOT EXISTS log_retention_days INT DEFAULT 7;
+		`
+		await sql`
+			INSERT INTO public.database_settings (
+				id,
+				auto_prune_enabled,
+				retention_days,
+				max_messages_per_chat,
+				clean_media_bloat,
+				auto_clean_logs_enabled,
+				log_retention_days
+			)
+			VALUES ('default', true, 7, 500, true, true, 7)
 			ON CONFLICT (id) DO NOTHING;
 		`
 	}
@@ -92,6 +113,8 @@ export class DatabaseRepository {
 				retention_days as "retentionDays",
 				max_messages_per_chat as "maxMessagesPerChat",
 				clean_media_bloat as "cleanMediaBloat",
+				COALESCE(auto_clean_logs_enabled, true) as "autoCleanLogsEnabled",
+				COALESCE(log_retention_days, 7) as "logRetentionDays",
 				last_pruned_at as "lastPrunedAt",
 				updated_at as "updatedAt"
 			FROM public.database_settings
@@ -101,8 +124,16 @@ export class DatabaseRepository {
 
 		if (rows.length === 0) {
 			await sql`
-				INSERT INTO public.database_settings (id, auto_prune_enabled, retention_days, max_messages_per_chat, clean_media_bloat)
-				VALUES ('default', true, 7, 500, true)
+				INSERT INTO public.database_settings (
+					id,
+					auto_prune_enabled,
+					retention_days,
+					max_messages_per_chat,
+					clean_media_bloat,
+					auto_clean_logs_enabled,
+					log_retention_days
+				)
+				VALUES ('default', true, 7, 500, true, true, 7)
 				ON CONFLICT (id) DO NOTHING
 			`
 			return {
@@ -111,6 +142,8 @@ export class DatabaseRepository {
 				retentionDays: 7,
 				maxMessagesPerChat: 500,
 				cleanMediaBloat: true,
+				autoCleanLogsEnabled: true,
+				logRetentionDays: 7,
 				lastPrunedAt: null,
 				updatedAt: new Date().toISOString(),
 			}
@@ -119,6 +152,8 @@ export class DatabaseRepository {
 		const r = rows[0] as unknown as DatabaseSettings
 		return {
 			...r,
+			autoCleanLogsEnabled: Boolean(r.autoCleanLogsEnabled ?? true),
+			logRetentionDays: Number(r.logRetentionDays ?? 7),
 			lastPrunedAt: r.lastPrunedAt
 				? new Date(r.lastPrunedAt).toISOString()
 				: null,
@@ -145,6 +180,12 @@ export class DatabaseRepository {
 			partial.maxMessagesPerChat ?? current.maxMessagesPerChat,
 		)
 		const cleanMedia = partial.cleanMediaBloat ?? current.cleanMediaBloat
+		const autoCleanLogs =
+			partial.autoCleanLogsEnabled ?? current.autoCleanLogsEnabled
+		const logRetentionDays = Math.max(
+			1,
+			partial.logRetentionDays ?? current.logRetentionDays,
+		)
 
 		await sql`
 			UPDATE public.database_settings
@@ -153,6 +194,8 @@ export class DatabaseRepository {
 				retention_days = ${retentionDays},
 				max_messages_per_chat = ${maxPerChat},
 				clean_media_bloat = ${cleanMedia},
+				auto_clean_logs_enabled = ${autoCleanLogs},
+				log_retention_days = ${logRetentionDays},
 				updated_at = CURRENT_TIMESTAMP
 			WHERE id = 'default'
 		`
@@ -218,6 +261,7 @@ export class DatabaseRepository {
 		const mediaBloatCount = Number(countRows[0]?.media_bloat_count) || 0
 
 		const settings = await this.getSettings()
+		const logsStats = logger.getLogStats()
 
 		return {
 			databaseName: dbName,
@@ -229,6 +273,7 @@ export class DatabaseRepository {
 			mediaBloatCount,
 			tables,
 			settings,
+			logsStats,
 		}
 	}
 

@@ -35,6 +35,16 @@ const command: ICommand = {
 
 			const isFromMe = quoted.senderJid === ctx.sock.user?.id
 
+			if (!isFromMe) {
+				const { isBotAdmin } = await ctx.getSenderAdminStatus()
+				if (!isBotAdmin) {
+					await ctx.reply(
+						"❌ Bot must be a Group Admin to delete messages sent by other group members.",
+					)
+					return
+				}
+			}
+
 			// Delete target quoted message
 			await ctx.sock.sendMessage(ctx.jid, {
 				delete: {

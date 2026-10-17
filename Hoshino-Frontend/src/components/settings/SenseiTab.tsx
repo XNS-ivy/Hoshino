@@ -17,6 +17,7 @@ import {
 } from "lucide-react"
 import { API_BASE_URL } from "../../services/api"
 import type {
+	ElephSummary,
 	SenseiBondItem,
 	SenseiProfileItem,
 	SenseiStudentItem,
@@ -45,8 +46,10 @@ export const SenseiTab: React.FC<SenseiTabProps> = ({
 		profile: SenseiProfileItem
 		students: SenseiStudentItem[]
 		bonds: SenseiBondItem[]
+		elephSummary?: ElephSummary
 	} | null>(null)
 	const [loadingDetail, setLoadingDetail] = useState(false)
+	const [isClaimingEleph, setIsClaimingEleph] = useState(false)
 
 	// Quick Grant Form States
 	const [targetType, setTargetType] = useState<"existing" | "contact" | "custom">("existing")
@@ -192,6 +195,7 @@ export const SenseiTab: React.FC<SenseiTabProps> = ({
 					profile: json.data,
 					students: json.data.students || [],
 					bonds: json.data.bonds || [],
+					elephSummary: json.data.elephSummary,
 				})
 			} else {
 				onShowToast("error", "Failed to load Sensei details")
@@ -200,6 +204,32 @@ export const SenseiTab: React.FC<SenseiTabProps> = ({
 			onShowToast("error", `Error: ${err}`)
 		} finally {
 			setLoadingDetail(false)
+		}
+	}
+
+	const handleClaimEleph = async (userJid: string, filter?: string) => {
+		setIsClaimingEleph(true)
+		try {
+			const res = await fetch(
+				`${API_BASE_URL}/api/agents/${agentId}/sensei/${encodeURIComponent(userJid)}/claim-eleph`,
+				{
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify(filter ? { filter } : {}),
+				},
+			)
+			const json = await res.json()
+			if (json.success) {
+				onShowToast("success", json.message || "Claimed Elephs successfully!")
+				await inspectSensei(userJid)
+				onRefresh()
+			} else {
+				onShowToast("error", json.message || "Failed to claim Elephs")
+			}
+		} catch (err) {
+			onShowToast("error", `Error claiming Eleph: ${err}`)
+		} finally {
+			setIsClaimingEleph(false)
 		}
 	}
 
@@ -1098,6 +1128,158 @@ export const SenseiTab: React.FC<SenseiTabProps> = ({
 								</div>
 							)}
 
+							{/* Schale Eleph Recycling Banner */}
+							{selectedSensei.elephSummary && selectedSensei.elephSummary.totalEleph > 0 && (
+								<div
+									style={{
+										background: "linear-gradient(135deg, rgba(56, 189, 248, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%)",
+										border: "1px solid rgba(56, 189, 248, 0.3)",
+										borderRadius: "12px",
+										padding: "16px",
+										display: "flex",
+										flexDirection: "column",
+										gap: "12px",
+									}}
+								>
+									<div
+										style={{
+											display: "flex",
+											alignItems: "center",
+											justifyContent: "space-between",
+											flexWrap: "wrap",
+											gap: "8px",
+										}}
+									>
+										<div>
+											<h4
+												style={{
+													fontSize: "0.95rem",
+													fontWeight: 700,
+													color: "#38bdf8",
+													display: "flex",
+													alignItems: "center",
+													gap: "6px",
+													margin: 0,
+												}}
+											>
+												<Sparkles size={16} /> Schale Eleph Exchange Available
+											</h4>
+											<span style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: "2px", display: "block" }}>
+												Convert duplicate student Elephs into Pyroxenes at 20 💎 per Eleph.
+											</span>
+										</div>
+										<button
+											type="button"
+											disabled={isClaimingEleph}
+											onClick={() => handleClaimEleph(selectedSensei.profile.userJid)}
+											style={{
+												padding: "8px 16px",
+												borderRadius: "8px",
+												background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)",
+												border: "none",
+												color: "#040914",
+												fontWeight: 700,
+												fontSize: "0.85rem",
+												cursor: isClaimingEleph ? "not-allowed" : "pointer",
+												display: "flex",
+												alignItems: "center",
+												gap: "6px",
+												boxShadow: "0 4px 12px rgba(79, 172, 254, 0.3)",
+											}}
+										>
+											<Gem size={15} />
+											{isClaimingEleph
+												? "Claiming..."
+												: `Claim All (+${selectedSensei.elephSummary.totalPyroxenes.toLocaleString()} 💎)`}
+										</button>
+									</div>
+
+									<div
+										style={{
+											display: "grid",
+											gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+											gap: "8px",
+										}}
+									>
+										<div
+											style={{
+												background: "rgba(0, 0, 0, 0.2)",
+												border: "1px solid rgba(255, 255, 255, 0.05)",
+												borderRadius: "8px",
+												padding: "8px 10px",
+											}}
+										>
+											<span style={{ fontSize: "0.72rem", color: "var(--text-muted)", display: "block" }}>
+												Total Eleph
+											</span>
+											<strong style={{ fontSize: "0.95rem", color: "#38bdf8" }}>
+												{selectedSensei.elephSummary.totalEleph} Eleph
+											</strong>
+											<span style={{ fontSize: "0.68rem", color: "var(--text-muted)", display: "block" }}>
+												({selectedSensei.elephSummary.totalDuplicates} dupes)
+											</span>
+										</div>
+
+										<div
+											style={{
+												background: "rgba(0, 0, 0, 0.2)",
+												border: "1px solid rgba(234, 179, 8, 0.2)",
+												borderRadius: "8px",
+												padding: "8px 10px",
+											}}
+										>
+											<span style={{ fontSize: "0.72rem", color: "#eab308", display: "block" }}>
+												3★ (+600💎/ea)
+											</span>
+											<strong style={{ fontSize: "0.95rem", color: "#eab308" }}>
+												{selectedSensei.elephSummary.breakdown.threeStar.eleph} Eleph
+											</strong>
+											<span style={{ fontSize: "0.68rem", color: "var(--text-muted)", display: "block" }}>
+												{selectedSensei.elephSummary.breakdown.threeStar.duplicates} dupes • +{selectedSensei.elephSummary.breakdown.threeStar.pyroxenes.toLocaleString()} 💎
+											</span>
+										</div>
+
+										<div
+											style={{
+												background: "rgba(0, 0, 0, 0.2)",
+												border: "1px solid rgba(168, 85, 247, 0.2)",
+												borderRadius: "8px",
+												padding: "8px 10px",
+											}}
+										>
+											<span style={{ fontSize: "0.72rem", color: "#c084fc", display: "block" }}>
+												2★ (+200💎/ea)
+											</span>
+											<strong style={{ fontSize: "0.95rem", color: "#c084fc" }}>
+												{selectedSensei.elephSummary.breakdown.twoStar.eleph} Eleph
+											</strong>
+											<span style={{ fontSize: "0.68rem", color: "var(--text-muted)", display: "block" }}>
+												{selectedSensei.elephSummary.breakdown.twoStar.duplicates} dupes • +{selectedSensei.elephSummary.breakdown.twoStar.pyroxenes.toLocaleString()} 💎
+											</span>
+										</div>
+
+										<div
+											style={{
+												background: "rgba(0, 0, 0, 0.2)",
+												border: "1px solid rgba(148, 163, 184, 0.2)",
+												borderRadius: "8px",
+												padding: "8px 10px",
+											}}
+										>
+											<span style={{ fontSize: "0.72rem", color: "#94a3b8", display: "block" }}>
+												1★ (+20💎/ea)
+											</span>
+											<strong style={{ fontSize: "0.95rem", color: "#cbd5e1" }}>
+												{selectedSensei.elephSummary.breakdown.oneStar.eleph} Eleph
+											</strong>
+											<span style={{ fontSize: "0.68rem", color: "var(--text-muted)", display: "block" }}>
+												{selectedSensei.elephSummary.breakdown.oneStar.duplicates} dupes • +{selectedSensei.elephSummary.breakdown.oneStar.pyroxenes.toLocaleString()} 💎
+											</span>
+										</div>
+									</div>
+								</div>
+							)}
+
 							{/* Recruited Students Grid */}
 							<div>
 								<h4 style={{ fontSize: "0.95rem", fontWeight: 600, marginBottom: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
@@ -1143,9 +1325,33 @@ export const SenseiTab: React.FC<SenseiTabProps> = ({
 													{"★".repeat(s.starGrade)}
 												</span>
 												{s.count > 1 && (
-													<span style={{ fontSize: "0.68rem", color: "var(--primary-cyan)", display: "block", marginTop: "2px" }}>
-														+{(s.count - 1) * (s.starGrade === 3 ? 30 : s.starGrade === 2 ? 10 : 1)} Eleph
-													</span>
+													<div style={{ marginTop: "4px" }}>
+														<span style={{ fontSize: "0.68rem", color: "var(--primary-cyan)", display: "block" }}>
+															+{(s.count - 1) * (s.starGrade === 3 ? 30 : s.starGrade === 2 ? 10 : 1)} Eleph
+														</span>
+														<button
+															type="button"
+															disabled={isClaimingEleph}
+															onClick={(e) => {
+																e.stopPropagation()
+																handleClaimEleph(selectedSensei.profile.userJid, String(s.studentId))
+															}}
+															style={{
+																marginTop: "4px",
+																fontSize: "0.65rem",
+																padding: "3px 6px",
+																borderRadius: "4px",
+																background: "rgba(56, 189, 248, 0.15)",
+																border: "1px solid rgba(56, 189, 248, 0.3)",
+																color: "#38bdf8",
+																cursor: isClaimingEleph ? "not-allowed" : "pointer",
+																display: "inline-block",
+															}}
+															title={`Convert duplicate ${s.studentName} to Pyroxenes`}
+														>
+															Claim +{((s.count - 1) * (s.starGrade === 3 ? 30 : s.starGrade === 2 ? 10 : 1) * 20).toLocaleString()} 💎
+														</button>
+													</div>
 												)}
 											</div>
 										))}
