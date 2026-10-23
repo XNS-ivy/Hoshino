@@ -199,11 +199,10 @@ const command: ICommand = {
 			return orderA - orderB
 		})
 
-		const userRoleStr = isOwnerOrMaster
-			? "👑 Bot Owner"
-			: ctx.isGroup && isGroupAdmin
-				? "🛡️ Group Admin"
-				: "👤 Member"
+		const roles: string[] = []
+		if (isOwnerOrMaster) roles.push("👑 Bot Owner")
+		if (ctx.isGroup && isGroupAdmin) roles.push("🛡️ Group Admin")
+		const userRoleStr = roles.length > 0 ? roles.join(" + ") : "👤 Member"
 
 		const chatLocationStr = ctx.isGroup ? "👥 Group Chat" : "💬 Private Chat"
 
