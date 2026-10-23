@@ -39,7 +39,33 @@ export function buildCommandContext(
 	const key = rawMsg.key
 	const jid = key.remoteJid || ""
 	const isGroup = jid.endsWith("@g.us")
-	const senderJid = commandRepository.normalizeJid(key.participant || jid)
+	const directSender = key.fromMe
+		? sock.user?.id || sock.user?.lid || jid
+		: key.participant || jid
+	const altSender = key.fromMe
+		? undefined
+		: isGroup
+			? key.participantAlt
+			: key.remoteJidAlt
+	const senderJid = commandRepository.normalizeJid(altSender || directSender)
+
+	// All known identities of the sender (WhatsApp may address the same user
+	// by LID `xxx@lid` or by phone `62xxx@s.whatsapp.net`). Used for owner checks.
+	const senderIdentities = Array.from(
+		new Set(
+			(key.fromMe
+				? [sock.user?.id, sock.user?.lid]
+				: [
+						key.participant,
+						key.participantAlt,
+						isGroup ? undefined : jid,
+						isGroup ? undefined : key.remoteJidAlt,
+					]
+			)
+				.filter((j): j is string => !!j)
+				.map((j) => commandRepository.normalizeJid(j)),
+		),
+	)
 	const pushName = rawMsg.pushName || undefined
 
 	// Extract raw message body text & detect message type
@@ -118,8 +144,110 @@ export function buildCommandContext(
 
 	const getOwnerRole = async (): Promise<"master" | "owner" | null> => {
 		if (ownerRoleCache !== undefined) return ownerRoleCache
-		const isOwner = await commandRepository.isOwner(agentId, senderJid)
-		ownerRoleCache = isOwner ? "owner" : null
+		let matchedRole: "master" | "owner" | null = null
+
+		// 1. Direct check with all known sender identities
+		for (const id of senderIdentities) {
+			const role = await commandRepository.getOwnerRole(agentId, id)
+			if (role) {
+				matchedRole = role
+				break
+			}
+		}
+
+		// 2. If not matched, try resolving LID <-> Phone Number via Baileys Signal Store
+		if (!matchedRole && sock.signalRepository?.lidMapping) {
+			const lidMapping = sock.signalRepository.lidMapping
+
+			// 2a. Reverse check: if any sender identity is a LID, resolve to Phone Number (PN)
+			for (const id of senderIdentities) {
+				if (id.endsWith("@lid")) {
+					try {
+						const pn = await lidMapping.getPNForLID(id)
+						if (pn) {
+							const cleanPn = commandRepository.normalizeJid(pn)
+							if (!senderIdentities.includes(cleanPn)) {
+								senderIdentities.push(cleanPn)
+							}
+							const role = await commandRepository.getOwnerRole(agentId, cleanPn)
+							if (role) {
+								matchedRole = role
+								// Auto-persist owner's LID in database for future zero-cost instant checks
+								await commandRepository
+									.addOwner(agentId, id, role)
+									.catch(() => {})
+								break
+							}
+						}
+					} catch {}
+				}
+			}
+
+			// 2b. Forward check: resolve registered owners' phone numbers to LIDs via USync
+			if (!matchedRole) {
+				try {
+					const registeredOwners = await commandRepository.getOwners(agentId)
+					for (const owner of registeredOwners) {
+						const cleanOwnerJid = commandRepository.normalizeJid(owner.userJid)
+						if (cleanOwnerJid.endsWith("@s.whatsapp.net")) {
+							try {
+								const ownerLid = await lidMapping.getLIDForPN(cleanOwnerJid)
+								if (ownerLid) {
+									const cleanOwnerLid = commandRepository.normalizeJid(ownerLid)
+									// Auto-persist owner's LID in database
+									await commandRepository
+										.addOwner(
+											agentId,
+											cleanOwnerLid,
+											(owner.role as "master" | "owner") || "owner",
+										)
+										.catch(() => {})
+
+									if (senderIdentities.includes(cleanOwnerLid)) {
+										matchedRole =
+											(owner.role as string)?.toLowerCase() === "master"
+												? "master"
+												: "owner"
+										if (!senderIdentities.includes(cleanOwnerJid)) {
+											senderIdentities.push(cleanOwnerJid)
+										}
+										break
+									}
+								}
+							} catch {}
+						} else if (cleanOwnerJid.endsWith("@lid")) {
+							try {
+								const ownerPn = await lidMapping.getPNForLID(cleanOwnerJid)
+								if (ownerPn) {
+									const cleanOwnerPn = commandRepository.normalizeJid(ownerPn)
+									// Auto-persist owner's PN in database
+									await commandRepository
+										.addOwner(
+											agentId,
+											cleanOwnerPn,
+											(owner.role as "master" | "owner") || "owner",
+										)
+										.catch(() => {})
+
+									if (senderIdentities.includes(cleanOwnerPn)) {
+										matchedRole =
+											(owner.role as string)?.toLowerCase() === "master"
+												? "master"
+												: "owner"
+										if (!senderIdentities.includes(cleanOwnerJid)) {
+											senderIdentities.push(cleanOwnerJid)
+										}
+										break
+									}
+								}
+							} catch {}
+						}
+					}
+				} catch {}
+			}
+		}
+
+		ownerRoleCache = matchedRole
 		return ownerRoleCache
 	}
 

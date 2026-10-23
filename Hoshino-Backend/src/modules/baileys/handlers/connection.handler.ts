@@ -241,10 +241,75 @@ async function handleConnectionOpen(
 		`Agent [${agentName}] connection opened successfully`,
 	)
 
-	const rawOwnerJid = sock.user?.id || sock.user?.lid
-	if (rawOwnerJid) {
+	for (const rawOwnerJid of [sock.user?.id, sock.user?.lid]) {
+		if (!rawOwnerJid) continue
 		const ownerJid = commandRepository.normalizeJid(rawOwnerJid)
 		await commandRepository.addOwner(safeAgentId, ownerJid, "master")
+	}
+
+	// Proactively synchronize and auto-map LIDs and Phone Numbers for all registered owners
+	syncAgentOwnerLids(safeAgentId, sock).catch((err) => {
+		logger.warn(
+			"/modules/baileys/handlers/connection.handler.ts",
+			`[${safeAgentId}] Error during initial owner LID sync: ${err}`,
+		)
+	})
+}
+
+/**
+ * Automatically maps and synchronizes owner phone numbers to LIDs (and vice versa)
+ * using Baileys Signal Store & USync.
+ */
+export async function syncAgentOwnerLids(
+	agentId: string,
+	sock: WASocket,
+): Promise<void> {
+	const lidMapping = sock.signalRepository?.lidMapping
+	if (!lidMapping) return
+
+	try {
+		const existingOwners = await commandRepository.getOwners(agentId)
+		for (const owner of existingOwners) {
+			const cleanOwnerJid = commandRepository.normalizeJid(owner.userJid)
+			if (cleanOwnerJid.endsWith("@s.whatsapp.net")) {
+				try {
+					const lid = await lidMapping.getLIDForPN(cleanOwnerJid)
+					if (lid) {
+						const cleanLid = commandRepository.normalizeJid(lid)
+						await commandRepository.addOwner(
+							agentId,
+							cleanLid,
+							(owner.role as "master" | "owner") || "owner",
+						)
+						logger.info(
+							"/modules/baileys/handlers/connection.handler.ts",
+							`[${agentId}] Auto-mapped owner PN ${cleanOwnerJid} to LID ${cleanLid}`,
+						)
+					}
+				} catch {}
+			} else if (cleanOwnerJid.endsWith("@lid")) {
+				try {
+					const pn = await lidMapping.getPNForLID(cleanOwnerJid)
+					if (pn) {
+						const cleanPn = commandRepository.normalizeJid(pn)
+						await commandRepository.addOwner(
+							agentId,
+							cleanPn,
+							(owner.role as "master" | "owner") || "owner",
+						)
+						logger.info(
+							"/modules/baileys/handlers/connection.handler.ts",
+							`[${agentId}] Auto-mapped owner LID ${cleanOwnerJid} to PN ${cleanPn}`,
+						)
+					}
+				} catch {}
+			}
+		}
+	} catch (err) {
+		logger.warn(
+			"/modules/baileys/handlers/connection.handler.ts",
+			`[${agentId}] Failed to sync owner LIDs: ${err}`,
+		)
 	}
 }
 

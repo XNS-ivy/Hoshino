@@ -60,23 +60,41 @@ export class CommandRepository {
 	 * Normalizes JID string to prevent comparison mismatches (removes device IDs / port suffixes).
 	 */
 	public normalizeJid(jid: string): string {
-		const clean = jid.trim().split(":")[0] || jid.trim()
-		if (!clean.includes("@")) {
-			return `${clean.replace(/[^0-9]/g, "")}@s.whatsapp.net`
+		const raw = jid.trim()
+		const atIdx = raw.indexOf("@")
+		if (atIdx === -1) {
+			return `${raw.split(":")[0]?.replace(/[^0-9]/g, "")}@s.whatsapp.net`
 		}
-		return clean
+		// Strip device suffix (e.g. "628xx:12@s.whatsapp.net", "1022xx:5@lid") but keep the domain
+		const user = raw.slice(0, atIdx).split(":")[0]
+		const domain = raw.slice(atIdx + 1)
+		return `${user}@${domain}`
+	}
+
+	/**
+	 * Gets the owner role ("master" | "owner" | null) for an agent user JID.
+	 */
+	public async getOwnerRole(
+		agentId: string,
+		userJid: string,
+	): Promise<"master" | "owner" | null> {
+		const cleanJid = this.normalizeJid(userJid)
+		const rows = await sql`
+			SELECT role FROM public.agent_owners
+			WHERE agent_id = ${agentId} AND user_jid = ${cleanJid}
+			LIMIT 1
+		`
+		if (rows.length === 0) return null
+		const role = (rows[0].role as string)?.toLowerCase()
+		return role === "master" ? "master" : "owner"
 	}
 
 	/**
 	 * Checks if a user JID has owner or master role for an agent.
 	 */
 	public async isOwner(agentId: string, userJid: string): Promise<boolean> {
-		const cleanJid = this.normalizeJid(userJid)
-		const rows = await sql`
-			SELECT role FROM public.agent_owners
-			WHERE agent_id = ${agentId} AND user_jid = ${cleanJid}
-		`
-		return rows.length > 0
+		const role = await this.getOwnerRole(agentId, userJid)
+		return role !== null
 	}
 
 	/**

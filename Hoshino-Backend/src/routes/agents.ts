@@ -179,11 +179,37 @@ export const agentRoutes = new Elysia({ prefix: "/api/agents" })
 		async ({ params: { id }, body, set }) => {
 			try {
 				const safeAgentId = socketManager.sanitizeAgentId(id)
+				const role = body.role || "owner"
+				const cleanJid = commandRepository.normalizeJid(body.userJid)
 				await commandRepository.addOwner(
 					safeAgentId,
-					body.userJid,
-					body.role || "owner",
+					cleanJid,
+					role,
 				)
+
+				// Auto-map counterpart (PN -> LID or LID -> PN) if agent socket is online
+				const sock = socketManager.getSock(safeAgentId)
+				const lidMapping = sock?.signalRepository?.lidMapping
+				if (lidMapping) {
+					if (cleanJid.endsWith("@s.whatsapp.net")) {
+						try {
+							const lid = await lidMapping.getLIDForPN(cleanJid)
+							if (lid) {
+								const cleanLid = commandRepository.normalizeJid(lid)
+								await commandRepository.addOwner(safeAgentId, cleanLid, role)
+							}
+						} catch {}
+					} else if (cleanJid.endsWith("@lid")) {
+						try {
+							const pn = await lidMapping.getPNForLID(cleanJid)
+							if (pn) {
+								const cleanPn = commandRepository.normalizeJid(pn)
+								await commandRepository.addOwner(safeAgentId, cleanPn, role)
+							}
+						} catch {}
+					}
+				}
+
 				return { success: true, message: "Owner added successfully" }
 			} catch (error) {
 				set.status = 500
@@ -202,7 +228,36 @@ export const agentRoutes = new Elysia({ prefix: "/api/agents" })
 	.delete("/:id/owners/:userJid", async ({ params: { id, userJid }, set }) => {
 		try {
 			const safeAgentId = socketManager.sanitizeAgentId(id)
-			await commandRepository.removeOwner(safeAgentId, userJid)
+			const cleanJid = commandRepository.normalizeJid(userJid)
+			await commandRepository.removeOwner(safeAgentId, cleanJid)
+
+			// Also remove paired LID or PN if resolvable
+			const sock = socketManager.getSock(safeAgentId)
+			const lidMapping = sock?.signalRepository?.lidMapping
+			if (lidMapping) {
+				if (cleanJid.endsWith("@s.whatsapp.net")) {
+					try {
+						const lid = await lidMapping.getLIDForPN(cleanJid)
+						if (lid) {
+							await commandRepository.removeOwner(
+								safeAgentId,
+								commandRepository.normalizeJid(lid),
+							)
+						}
+					} catch {}
+				} else if (cleanJid.endsWith("@lid")) {
+					try {
+						const pn = await lidMapping.getPNForLID(cleanJid)
+						if (pn) {
+							await commandRepository.removeOwner(
+								safeAgentId,
+								commandRepository.normalizeJid(pn),
+							)
+						}
+					} catch {}
+				}
+			}
+
 			return { success: true, message: "Owner removed successfully" }
 		} catch (error) {
 			set.status = 500

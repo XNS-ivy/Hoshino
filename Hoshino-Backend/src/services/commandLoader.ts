@@ -123,10 +123,15 @@ export class CommandLoader {
 
 		const jid = key.remoteJid
 		const isGroup = jid.endsWith("@g.us")
-		const rawSender = key.fromMe
+		const directSender = key.fromMe
 			? sock.user?.id || sock.user?.lid || jid
 			: key.participant || rawMsg.participant || jid
-		const senderJid = commandRepository.normalizeJid(rawSender)
+		const altSender = key.fromMe
+			? undefined
+			: isGroup
+				? key.participantAlt
+				: key.remoteJidAlt
+		const senderJid = commandRepository.normalizeJid(altSender || directSender)
 
 		const m = rawMsg.message
 		if (!m) return
@@ -141,7 +146,7 @@ export class CommandLoader {
 		// Layer 0: Check User Auto-Delete (scoped per group or global '*')
 		const isAutoDelete = isGroup
 			? (await commandRepository.isAutoDelete(agentId, jid, senderJid)) ||
-				(await commandRepository.isAutoDelete(agentId, jid, rawSender))
+				(await commandRepository.isAutoDelete(agentId, jid, directSender))
 			: false
 
 		if (isAutoDelete) {
