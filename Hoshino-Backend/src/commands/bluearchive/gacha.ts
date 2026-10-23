@@ -206,9 +206,11 @@ const command: ICommand = {
 			text += `💰 *Convertible Value:* ${summary.totalPyroxenes.toLocaleString("en-US")} Pyroxenes 💎\n\n`
 
 			text += `⚖️ *Fair Exchange Rates:*\n`
-			text += `  • ⭐⭐⭐ (3★ Dupe): 30 Eleph ➔ 600 Pyroxenes 💎\n`
-			text += `  • ⭐⭐ (2★ Dupe): 10 Eleph ➔ 200 Pyroxenes 💎\n`
-			text += `  • ⭐ (1★ Dupe): 1 Eleph ➔ 20 Pyroxenes 💎\n\n`
+			for (const [star, stars] of [[3, "⭐⭐⭐"], [2, "⭐⭐"], [1, "⭐"]] as const) {
+				const e = ELEPH_CONFIG.ELEPH_PER_DUPLICATE[star] || 1
+				text += `  • ${stars} (${star}★ Dupe): ${e} Eleph ➔ ${e * ELEPH_CONFIG.PYROXENES_PER_ELEPH} Pyroxenes 💎\n`
+			}
+			text += `\n`
 
 			if (summary.totalDuplicates > 0) {
 				text += `📦 *Claimable Inventory Breakdown:*\n`

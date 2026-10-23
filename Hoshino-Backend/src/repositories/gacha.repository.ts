@@ -24,10 +24,10 @@ export interface SenseiStudentItem {
 export const ELEPH_CONFIG = {
 	ELEPH_PER_DUPLICATE: {
 		1: 1, // 1★ duplicate = 1 Eleph
-		2: 10, // 2★ duplicate = 10 Eleph
-		3: 30, // 3★ duplicate = 30 Eleph
+		2: 2, // 2★ duplicate = 2 Eleph
+		3: 3, // 3★ duplicate = 3 Eleph
 	} as Record<number, number>,
-	PYROXENES_PER_ELEPH: 20, // Fair exchange rate: 1 Eleph = 20 Pyroxenes
+	PYROXENES_PER_ELEPH: 1, // Rebalanced (anti-inflation): 1 Eleph = 1 Pyroxene
 }
 
 export interface ElephSummaryItem {

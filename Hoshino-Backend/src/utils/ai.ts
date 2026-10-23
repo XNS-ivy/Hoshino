@@ -60,7 +60,7 @@ Prefix aktif bot saat ini adalah: "${p}"
 - "${p}daily" -> Klaim 1.200 Pyroxenes gratis setiap hari (reset setiap pukul 06:00 WIB) untuk modal gacha Sensei.
 - "${p}spark" -> Tukar 200 Spark Points dengan jaminan murid bintang 3 pilihan saat gacha mencapai 200 pull.
 - "${p}mystudent [nama/1/2/3]" (alias: ${p}students, ${p}pyroxene) -> Cek profil Sensei & saldo Pyroxene, daftar murid per bintang (1/2/3), atau jika diberi nama murid (contoh: "${p}mystudent Mari") menampilkan detail status perekrutan, jumlah Eleph duplikat, dan progres MomoTalk Bond Level murid tersebut.
-- "${p}eleph" (alias: ${p}claim eleph, ${p}claimeleph) -> Cek rincian dan klaim duplikat Eleph menjadi Pyroxene secara fair (1 Eleph = 20 Pyroxenes).
+- "${p}eleph" (alias: ${p}claim eleph, ${p}claimeleph) -> Cek rincian dan klaim duplikat Eleph menjadi Pyroxene (1★ dupe = 1 Pyroxene, 2★ = 2, 3★ = 3).
 - "${p}momo <nama_murid>" (alias: ${p}momotalk, ${p}bond) -> Chatting interaktif MomoTalk dengan murid yang sudah direkrut (atau Hoshino). Balas opsi 1, 2, atau 3 untuk menaikkan Bond Level & EXP. Pada Rank 5, membuka Memorial Lobby L2D resmi! Ketik "${p}bond" untuk melihat grafik hubungan seluruh murid.
 - "${p}raid <nama_bos>" (alias: ${p}boss, ${p}totalassault) -> Panduan strategi bos Total Assault SchaleDB (Binah, Chesed, Hieronymus, Goz, ShiroKuro, Gregorius, Kurokage, Hovercraft). Menampilkan kelemahan armor (Light/Heavy/Special/Elastic), serangan Insane, terrain, dan striker counter terbaik.
 - "${p}hoshino <pesan>" (alias: ${p}ojisan, ${p}takanashi) -> Ngobrol santai langsung dengan AI Hoshino. Ketik "${p}hoshino reset" untuk mereset memori obrolan.
