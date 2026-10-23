@@ -17,6 +17,10 @@ updated: 2026-10-15
 - **Core Functions**:
   - `buildCommandContext(agentId, sock, rawMsg, prefix, commandName, args): CommandContext`
   - `detectMessageType(m: unknown): MessageKind`
+  - `extractSenderIdentities(sock, rawMsg): { senderJid: string; directSender: string; senderIdentities: string[] }`
+  - `resolveUserIdentities(sock, initialJids, groupMeta?, includeUSyncPnLookup?): Promise<string[]>`
+  - `findGroupParticipant(participants, targetIdentities): GroupParticipant | undefined`
+  - `getParticipantIdentities(p): string[]`
 
 ---
 
@@ -45,13 +49,13 @@ updated: 2026-10-15
 Each resolver contains single-flight memoization per message instance to avoid redundant database or network queries:
 
 ### 1. `getOwnerRole(): Promise<"master" | "owner" | null>`
-- Checks ownership in `public.agent_owners` via `commandRepository.isOwner()`.
+- Checks ownership in `public.agent_owners` across all `senderIdentities` (`@lid` and `@s.whatsapp.net`), falling back to Baileys Signal `lidMapping` resolution (`getPNForLID` / `getLIDForPN`) and auto-persisting mapped identities.
 
 ### 2. `getGroupMetadata(): Promise<GroupMetadata | null>`
 - Fetches group metadata (members, admins, subject) backed by `groupMetadataCache` (5-minute TTL).
 
 ### 3. `getSenderAdminStatus(): Promise<{ isAdmin: boolean; isBotAdmin: boolean }>`
-- Evaluates sender admin status and bot admin status in the group chat.
+- Evaluates sender admin status and bot admin status in the group chat by resolving all sender identities (`key.participant`, `key.participantAlt`, and `lidMapping`) and all bot identities (`sock.user.id`, `sock.user.lid`) against all participant fields (`p.id`, `p.lid`, `p.phoneNumber`). Automatically refreshes cached `GroupMetadata` once if a cached lookup reports non-admin status.
 
 ### 4. `getQuotedMessage(): Promise<ParsedQuotedMessage | null>`
 - Extracts quoted message details (text, sender JID, stanzaId, and `getMediaBuffer()` for quoted media).

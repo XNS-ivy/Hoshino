@@ -1,4 +1,5 @@
 import type { CommandContext, ICommand } from "@customTypes/command"
+import { commandRepository } from "@repositories/command.repository"
 
 const command: ICommand = {
 	name: ["delete", "del", "d"],
@@ -33,7 +34,13 @@ const command: ICommand = {
 				return
 			}
 
-			const isFromMe = quoted.senderJid === ctx.sock.user?.id
+			const botIdentities = commandRepository.normalizeJidList([
+				ctx.sock.user?.id,
+				ctx.sock.user?.lid,
+			])
+			const isFromMe =
+				Boolean(quoted.key?.fromMe) ||
+				botIdentities.includes(commandRepository.normalizeJid(quoted.senderJid))
 
 			if (!isFromMe) {
 				const { isBotAdmin } = await ctx.getSenderAdminStatus()

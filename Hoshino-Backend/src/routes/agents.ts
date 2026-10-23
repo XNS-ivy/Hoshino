@@ -5,6 +5,7 @@ import { gachaRepository } from "@repositories/gacha.repository"
 import { messageRepository } from "@repositories/message.repository"
 import { momoRepository } from "@repositories/momo.repository"
 import { commandLoader } from "@services/commandLoader"
+import { resolveUserIdentities } from "@services/contextBuilder"
 import { Elysia, t } from "elysia"
 
 export const agentRoutes = new Elysia({ prefix: "/api/agents" })
@@ -286,9 +287,16 @@ export const agentRoutes = new Elysia({ prefix: "/api/agents" })
 		async ({ params: { id }, body, set }) => {
 			try {
 				const safeAgentId = socketManager.sanitizeAgentId(id)
+				const sock = socketManager.getSock(safeAgentId)
+				const resolvedIds = await resolveUserIdentities(
+					sock,
+					[body.userJid],
+					null,
+					true,
+				)
 				await commandRepository.addBlacklist(
 					safeAgentId,
-					body.userJid,
+					resolvedIds.length > 0 ? resolvedIds : body.userJid,
 					body.reason,
 				)
 				return { success: true, message: "User blacklisted successfully" }
@@ -314,7 +322,17 @@ export const agentRoutes = new Elysia({ prefix: "/api/agents" })
 		async ({ params: { id, userJid }, set }) => {
 			try {
 				const safeAgentId = socketManager.sanitizeAgentId(id)
-				await commandRepository.removeBlacklist(safeAgentId, userJid)
+				const sock = socketManager.getSock(safeAgentId)
+				const resolvedIds = await resolveUserIdentities(
+					sock,
+					[userJid],
+					null,
+					true,
+				)
+				await commandRepository.removeBlacklist(
+					safeAgentId,
+					resolvedIds.length > 0 ? resolvedIds : userJid,
+				)
 				return {
 					success: true,
 					message: "User removed from blacklist successfully",
@@ -363,9 +381,16 @@ export const agentRoutes = new Elysia({ prefix: "/api/agents" })
 		async ({ params: { id }, body, set }) => {
 			try {
 				const safeAgentId = socketManager.sanitizeAgentId(id)
+				const sock = socketManager.getSock(safeAgentId)
+				const resolvedIds = await resolveUserIdentities(
+					sock,
+					[body.userJid],
+					null,
+					true,
+				)
 				await commandRepository.addAutoDelete(
 					safeAgentId,
-					body.userJid,
+					resolvedIds.length > 0 ? resolvedIds : body.userJid,
 					body.groupJid || "*",
 				)
 				return { success: true, message: "User added to auto-delete list" }
@@ -391,9 +416,16 @@ export const agentRoutes = new Elysia({ prefix: "/api/agents" })
 		async ({ params: { id, userJid }, query, set }) => {
 			try {
 				const safeAgentId = socketManager.sanitizeAgentId(id)
+				const sock = socketManager.getSock(safeAgentId)
+				const resolvedIds = await resolveUserIdentities(
+					sock,
+					[userJid],
+					null,
+					true,
+				)
 				await commandRepository.removeAutoDelete(
 					safeAgentId,
-					userJid,
+					resolvedIds.length > 0 ? resolvedIds : userJid,
 					query?.groupJid,
 				)
 				return {

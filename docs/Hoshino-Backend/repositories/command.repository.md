@@ -20,26 +20,28 @@ updated: 2026-10-15
 
 ## 🛠️ Complete Method Reference
 
-### 1. `normalizeJid(jid: string): string`
-- Strips device IDs and port suffixes from WhatsApp JIDs (e.g., `628123:1@s.whatsapp.net` ➔ `628123@s.whatsapp.net`).
+### 1. `normalizeJid(jid: string): string` & `normalizeJidList(jids): string[]`
+- `normalizeJid(jid: string): string`: Strips device IDs and port suffixes from WhatsApp JIDs while preserving domain (`@s.whatsapp.net` or `@lid`).
+- `normalizeJidList(jids: string | (string | undefined | null)[]): string[]`: Normalizes and deduplicates one or more candidate user JIDs/LIDs, filtering out group (`@g.us`) and broadcast JIDs.
 
 ### 2. Owners (`public.agent_owners`)
-- `isOwner(agentId, userJid): Promise<boolean>`: Checks if sender JID has owner or master role.
+- `getOwnerRole(agentId, userJid: string | string[]): Promise<"master" | "owner" | null>`: Returns highest matched owner role (`"master"` or `"owner"`) across all candidate JIDs/LIDs.
+- `isOwner(agentId, userJid: string | string[]): Promise<boolean>`: Checks if sender JID (or any candidate identity) has owner or master role.
 - `getOwners(agentId): Promise<OwnerRecord[]>`: Retrieves all owners for an agent.
 - `addOwner(agentId, userJid, role = "owner"): Promise<void>`: Adds or updates an owner role.
-- `removeOwner(agentId, userJid): Promise<void>`: Revokes owner privileges.
+- `removeOwner(agentId, userJid: string | string[]): Promise<void>`: Revokes owner privileges across one or more linked identities.
 
 ### 3. Blacklist (`public.agent_blacklists`)
-- `isBlacklisted(agentId, userJid): Promise<boolean>`: Checks if user is blocked from bot interactions.
+- `isBlacklisted(agentId, userJid: string | string[]): Promise<boolean>`: Checks if user (or any of their linked `@lid` / `@s.whatsapp.net` identities) is blocked from bot interactions.
 - `getBlacklist(agentId): Promise<BlacklistRecord[]>`: Retrieves blacklist entries.
-- `addBlacklist(agentId, userJid, reason?): Promise<void>`: Adds a user to the blacklist.
-- `removeBlacklist(agentId, userJid): Promise<void>`: Removes user from blacklist.
+- `addBlacklist(agentId, userJid: string | string[], reason?): Promise<void>`: Adds a user (and all resolved linked identities) to the blacklist.
+- `removeBlacklist(agentId, userJid: string | string[]): Promise<void>`: Removes user (and all resolved linked identities) from blacklist.
 
 ### 4. Auto-Delete Targets (`public.agent_autodeletes`)
-- `isAutoDelete(agentId, groupJid, userJid): Promise<boolean>`: Checks if messages from user should be automatically deleted in a specific group chat or global wildcard (`*`).
+- `isAutoDelete(agentId, groupJid, userJid: string | string[]): Promise<boolean>`: Checks if messages from user (across all candidate `@lid` / `@s.whatsapp.net` identities) should be automatically deleted in a specific group chat or global wildcard (`*`).
 - `getAutoDeleteList(agentId, groupJid?): Promise<AutoDeleteRecord[]>`: Retrieves auto-delete targets for an agent, optionally filtered by group JID.
-- `addAutoDelete(agentId, userJid, groupJid = "*"): Promise<void>`: Adds a user to the auto-delete target list for a specific group or globally.
-- `removeAutoDelete(agentId, userJid, groupJid?): Promise<void>`: Removes a user from the auto-delete target list for a specific group or all groups.
+- `addAutoDelete(agentId, userJid: string | string[], groupJid = "*"): Promise<void>`: Adds a user (and all resolved linked identities) to the auto-delete target list for a specific group or globally.
+- `removeAutoDelete(agentId, userJid: string | string[], groupJid?): Promise<void>`: Removes a user (and all resolved linked identities) from the auto-delete target list for a specific group or all groups.
 
 
 ### 5. Group Settings (`public.agent_group_settings`)

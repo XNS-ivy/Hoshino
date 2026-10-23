@@ -61,8 +61,8 @@ flowchart TD
 ### 4. `executeMessage(agentId: string, sock: WASocket, rawMsg: WAMessage): Promise<void>`
 - **Signature**: `public async executeMessage(agentId: string, sock: WASocket, rawMsg: WAMessage): Promise<void>`
 - **Execution Stages**:
-  1. **Layer 0 - Blacklist**: Verifies if sender JID is blacklisted via `[[Hoshino-Backend/repositories/command.repository#3-blacklist-publicagent_blacklists|commandRepository.isBlacklisted()]]`. Drops message if true.
-  2. **Layer 0 - Auto-Delete**: Checks if sender is marked for auto-delete in this specific group or globally via `[[Hoshino-Backend/repositories/command.repository#4-auto-delete-targets-publicagent_autodeletes|commandRepository.isAutoDelete(agentId, jid, senderJid)]]`. Deletes message and exits if true.
+  1. **Layer 0 - Blacklist**: Resolves all sender identities (`@lid` and `@s.whatsapp.net` via `extractSenderIdentities` & `resolveUserIdentities`) and verifies if any identity is blacklisted via `[[Hoshino-Backend/repositories/command.repository#3-blacklist-publicagent_blacklists|commandRepository.isBlacklisted()]]` (with `lidMapping` cross-sync). Drops message if true.
+  2. **Layer 0 - Auto-Delete**: Checks if any of the sender's resolved identities is marked for auto-delete in this specific group or globally via `[[Hoshino-Backend/repositories/command.repository#4-auto-delete-targets-publicagent_autodeletes|commandRepository.isAutoDelete(agentId, jid, senderIdentities)]]`. Deletes message and exits if true.
   3. **Layer 1 - Group Listening**: If in group, reads settings via `commandRepository.getGroupSettings()`. If `botEnabled: false`, only permits activation commands (`enablebot`, `bot`, `listen`).
   4. **Layer 1 - Prefix Match**: Checks whether body begins with custom or default prefixes (`.`, `!`, `/`, `#`).
   5. **Layer 2 - Command Lookup**: Matches trigger against registered commands.

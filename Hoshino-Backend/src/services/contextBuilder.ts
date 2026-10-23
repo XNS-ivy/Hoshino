@@ -7,6 +7,7 @@ import { commandRepository } from "@repositories/command.repository"
 import type {
 	AnyMessageContent,
 	GroupMetadata,
+	GroupParticipant,
 	WAMessage,
 	WASocket,
 } from "baileys"
@@ -15,6 +16,160 @@ import NodeCache from "node-cache"
 
 // Cache group metadata in-memory for 5 minutes to prevent network spam
 const groupMetadataCache = new NodeCache({ stdTTL: 300, checkperiod: 60 })
+
+/**
+ * Extracts all candidate normalized JIDs for a group participant (`id`, `lid`, `phoneNumber`).
+ */
+export function getParticipantIdentities(p?: GroupParticipant | null): string[] {
+	if (!p) return []
+	const pExt = p as GroupParticipant & { jid?: string }
+	return commandRepository.normalizeJidList([
+		p.id,
+		p.lid,
+		p.phoneNumber,
+		pExt.jid,
+	])
+}
+
+/**
+ * Finds a matching participant in a group's participant list against a set of candidate user JIDs/LIDs.
+ */
+export function findGroupParticipant(
+	participants: GroupParticipant[] | undefined,
+	targetIdentities: (string | undefined | null)[],
+): GroupParticipant | undefined {
+	if (!participants || participants.length === 0) return undefined
+	const cleanTargets = commandRepository.normalizeJidList(targetIdentities)
+	if (cleanTargets.length === 0) return undefined
+
+	const targetSet = new Set(cleanTargets)
+	const targetDigits = new Set(
+		cleanTargets
+			.map((id) => id.split("@")[0]?.replace(/[^0-9]/g, "") || "")
+			.filter((d) => d.length > 5),
+	)
+
+	return participants.find((p) => {
+		const pIds = getParticipantIdentities(p)
+		for (const pId of pIds) {
+			if (targetSet.has(pId)) return true
+			const digits = pId.split("@")[0]?.replace(/[^0-9]/g, "") || ""
+			if (digits.length > 5 && targetDigits.has(digits)) return true
+		}
+		return false
+	})
+}
+
+/**
+ * Extracts direct sender, canonical senderJid, and all immediate sender identities from a raw WAMessage.
+ */
+export function extractSenderIdentities(
+	sock: WASocket,
+	rawMsg: WAMessage,
+): {
+	senderJid: string
+	directSender: string
+	senderIdentities: string[]
+} {
+	const key = rawMsg.key
+	const jid = key.remoteJid || ""
+	const isGroup = jid.endsWith("@g.us")
+	const directSender = key.fromMe
+		? sock.user?.id || sock.user?.lid || jid
+		: key.participant || rawMsg.participant || jid
+	const altSender = key.fromMe
+		? undefined
+		: isGroup
+			? key.participantAlt
+			: key.remoteJidAlt
+	const senderJid = commandRepository.normalizeJid(altSender || directSender)
+
+	const senderIdentities = commandRepository.normalizeJidList(
+		key.fromMe
+			? [sock.user?.id, sock.user?.lid]
+			: [
+					key.participant,
+					key.participantAlt,
+					rawMsg.participant,
+					isGroup ? undefined : jid,
+					isGroup ? undefined : key.remoteJidAlt,
+				],
+	)
+
+	if (senderJid && !senderIdentities.includes(senderJid)) {
+		senderIdentities.push(senderJid)
+	}
+
+	return { senderJid, directSender, senderIdentities }
+}
+
+/**
+ * Resolves all known identities (both `@lid` and `@s.whatsapp.net`) for a user
+ * using GroupMetadata participants and Baileys Signal LID mapping store.
+ */
+export async function resolveUserIdentities(
+	sock: WASocket | undefined,
+	initialJids: (string | undefined | null)[],
+	groupMeta?: GroupMetadata | null,
+	includeUSyncPnLookup = false,
+): Promise<string[]> {
+	const identities = new Set<string>(
+		commandRepository.normalizeJidList(initialJids),
+	)
+	if (identities.size === 0) return []
+
+	// 1. Enrich from GroupMetadata participants if available
+	if (groupMeta?.participants?.length) {
+		const matchedParticipant = findGroupParticipant(
+			groupMeta.participants,
+			Array.from(identities),
+		)
+		if (matchedParticipant) {
+			for (const pId of getParticipantIdentities(matchedParticipant)) {
+				identities.add(pId)
+			}
+		}
+	}
+
+	// 2. Enrich from Baileys Signal Store LID <-> PN mapping
+	const lidMapping = sock?.signalRepository?.lidMapping
+	if (lidMapping) {
+		for (const id of Array.from(identities)) {
+			if (id.endsWith("@lid")) {
+				try {
+					const pn = await lidMapping.getPNForLID(id)
+					if (pn) {
+						const cleanPn = commandRepository.normalizeJid(pn)
+						if (cleanPn) identities.add(cleanPn)
+					}
+				} catch {}
+			} else if (id.endsWith("@s.whatsapp.net") && includeUSyncPnLookup) {
+				try {
+					const lid = await lidMapping.getLIDForPN(id)
+					if (lid) {
+						const cleanLid = commandRepository.normalizeJid(lid)
+						if (cleanLid) identities.add(cleanLid)
+					}
+				} catch {}
+			}
+		}
+	}
+
+	// 3. Re-match GroupMetadata participants in case lidMapping revealed a new PN/LID
+	if (groupMeta?.participants?.length) {
+		const matchedParticipant = findGroupParticipant(
+			groupMeta.participants,
+			Array.from(identities),
+		)
+		if (matchedParticipant) {
+			for (const pId of getParticipantIdentities(matchedParticipant)) {
+				identities.add(pId)
+			}
+		}
+	}
+
+	return Array.from(identities)
+}
 
 export function detectMessageType(m: unknown): MessageKind {
 	if (!m || typeof m !== "object") return "other"
@@ -39,33 +194,7 @@ export function buildCommandContext(
 	const key = rawMsg.key
 	const jid = key.remoteJid || ""
 	const isGroup = jid.endsWith("@g.us")
-	const directSender = key.fromMe
-		? sock.user?.id || sock.user?.lid || jid
-		: key.participant || jid
-	const altSender = key.fromMe
-		? undefined
-		: isGroup
-			? key.participantAlt
-			: key.remoteJidAlt
-	const senderJid = commandRepository.normalizeJid(altSender || directSender)
-
-	// All known identities of the sender (WhatsApp may address the same user
-	// by LID `xxx@lid` or by phone `62xxx@s.whatsapp.net`). Used for owner checks.
-	const senderIdentities = Array.from(
-		new Set(
-			(key.fromMe
-				? [sock.user?.id, sock.user?.lid]
-				: [
-						key.participant,
-						key.participantAlt,
-						isGroup ? undefined : jid,
-						isGroup ? undefined : key.remoteJidAlt,
-					]
-			)
-				.filter((j): j is string => !!j)
-				.map((j) => commandRepository.normalizeJid(j)),
-		),
-	)
+	const { senderJid, senderIdentities } = extractSenderIdentities(sock, rawMsg)
 	const pushName = rawMsg.pushName || undefined
 
 	// Extract raw message body text & detect message type
@@ -147,20 +276,17 @@ export function buildCommandContext(
 		let matchedRole: "master" | "owner" | null = null
 
 		// 1. Direct check with all known sender identities
-		for (const id of senderIdentities) {
-			const role = await commandRepository.getOwnerRole(agentId, id)
-			if (role) {
-				matchedRole = role
-				break
-			}
-		}
+		matchedRole = await commandRepository.getOwnerRole(
+			agentId,
+			senderIdentities,
+		)
 
 		// 2. If not matched, try resolving LID <-> Phone Number via Baileys Signal Store
 		if (!matchedRole && sock.signalRepository?.lidMapping) {
 			const lidMapping = sock.signalRepository.lidMapping
 
 			// 2a. Reverse check: if any sender identity is a LID, resolve to Phone Number (PN)
-			for (const id of senderIdentities) {
+			for (const id of [...senderIdentities]) {
 				if (id.endsWith("@lid")) {
 					try {
 						const pn = await lidMapping.getPNForLID(id)
@@ -169,7 +295,10 @@ export function buildCommandContext(
 							if (!senderIdentities.includes(cleanPn)) {
 								senderIdentities.push(cleanPn)
 							}
-							const role = await commandRepository.getOwnerRole(agentId, cleanPn)
+							const role = await commandRepository.getOwnerRole(
+								agentId,
+								cleanPn,
+							)
 							if (role) {
 								matchedRole = role
 								// Auto-persist owner's LID in database for future zero-cost instant checks
@@ -261,54 +390,70 @@ export function buildCommandContext(
 			return adminStatusCache
 		}
 
-		const meta = await getGroupMetadata()
+		const wasCached = groupMetadataCache.has(jid)
+		let meta = await getGroupMetadata()
 		if (!meta) {
 			adminStatusCache = { isAdmin: false, isBotAdmin: false }
 			return adminStatusCache
 		}
 
-		const senderIdentity = commandRepository.normalizeJid(senderJid)
-		const senderDigits =
-			(senderIdentity || "").split("@")[0]?.replace(/[^0-9]/g, "") || ""
-
-		const participants = meta?.participants || []
-
-		const participant = participants.find((p) => {
-			if (!p?.id) return false
-			const pNorm = commandRepository.normalizeJid(p.id)
-			if (pNorm === senderIdentity) return true
-			if (senderDigits && senderDigits.length > 5) {
-				const pDigits =
-					(pNorm || "").split("@")[0]?.replace(/[^0-9]/g, "") || ""
-				if (pDigits === senderDigits) return true
+		const evaluateAdminRoles = async (currentMeta: GroupMetadata) => {
+			const resolvedSenderIds = await resolveUserIdentities(
+				sock,
+				senderIdentities,
+				currentMeta,
+				false,
+			)
+			for (const id of resolvedSenderIds) {
+				if (!senderIdentities.includes(id)) {
+					senderIdentities.push(id)
+				}
 			}
-			return false
-		})
 
-		const isAdmin =
-			participant?.admin === "admin" || participant?.admin === "superadmin"
+			const resolvedBotIds = await resolveUserIdentities(
+				sock,
+				[sock.user?.id, sock.user?.lid],
+				currentMeta,
+				false,
+			)
 
-		const rawBotId = sock.user?.id || sock.user?.lid || ""
-		const botJid = commandRepository.normalizeJid(rawBotId)
-		const botDigits = (botJid || "").split("@")[0]?.replace(/[^0-9]/g, "") || ""
+			const participants = currentMeta.participants || []
+			const participant = findGroupParticipant(participants, resolvedSenderIds)
+			const botParticipant = findGroupParticipant(participants, resolvedBotIds)
 
-		const botParticipant = participants.find((p) => {
-			if (!p?.id) return false
-			const pNorm = commandRepository.normalizeJid(p.id)
-			if (pNorm === botJid) return true
-			if (botDigits && botDigits.length > 5) {
-				const pDigits =
-					(pNorm || "").split("@")[0]?.replace(/[^0-9]/g, "") || ""
-				if (pDigits === botDigits) return true
+			const isAdmin =
+				Boolean(participant?.isAdmin) ||
+				Boolean(participant?.isSuperAdmin) ||
+				participant?.admin === "admin" ||
+				participant?.admin === "superadmin"
+
+			const isBotAdmin =
+				Boolean(botParticipant?.isAdmin) ||
+				Boolean(botParticipant?.isSuperAdmin) ||
+				botParticipant?.admin === "admin" ||
+				botParticipant?.admin === "superadmin"
+
+			return { isAdmin, isBotAdmin }
+		}
+
+		let status = await evaluateAdminRoles(meta)
+
+		// If group metadata came from cache and caller/bot lacks admin status, refresh once in case of recent promotion
+		if (wasCached && (!status.isAdmin || !status.isBotAdmin)) {
+			try {
+				const freshMeta = await sock.groupMetadata(jid)
+				if (freshMeta) {
+					groupMetadataCache.set(jid, freshMeta)
+					groupMetaCache = freshMeta
+					meta = freshMeta
+					status = await evaluateAdminRoles(freshMeta)
+				}
+			} catch {
+				// Keep cached evaluation if live fetch fails
 			}
-			return false
-		})
+		}
 
-		const isBotAdmin =
-			botParticipant?.admin === "admin" ||
-			botParticipant?.admin === "superadmin"
-
-		adminStatusCache = { isAdmin, isBotAdmin }
+		adminStatusCache = status
 		return adminStatusCache
 	}
 
@@ -318,7 +463,9 @@ export function buildCommandContext(
 			m?.extendedTextMessage?.contextInfo ||
 			m?.imageMessage?.contextInfo ||
 			m?.videoMessage?.contextInfo ||
-			m?.documentMessage?.contextInfo
+			m?.documentMessage?.contextInfo ||
+			m?.stickerMessage?.contextInfo ||
+			m?.audioMessage?.contextInfo
 
 		const quotedMsg = contextInfo?.quotedMessage
 		if (!quotedMsg) {
@@ -326,9 +473,19 @@ export function buildCommandContext(
 			return null
 		}
 
+		const botIds = commandRepository.normalizeJidList([
+			sock.user?.id,
+			sock.user?.lid,
+		])
+		const quotedParticipantNorm = contextInfo?.participant
+			? commandRepository.normalizeJid(contextInfo.participant)
+			: ""
+
 		const quotedKey = {
 			remoteJid: jid,
-			fromMe: contextInfo?.participant === sock.user?.id,
+			fromMe: quotedParticipantNorm
+				? botIds.includes(quotedParticipantNorm)
+				: false,
 			id: contextInfo?.stanzaId,
 			participant: contextInfo?.participant,
 		}

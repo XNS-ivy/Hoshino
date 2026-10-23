@@ -6,7 +6,12 @@ import { commandRepository } from "@repositories/command.repository"
 import { logger } from "@utils/logger"
 import type { WAMessage, WASocket } from "baileys"
 import NodeCache from "node-cache"
-import { buildCommandContext, detectMessageType } from "./contextBuilder"
+import {
+	buildCommandContext,
+	detectMessageType,
+	extractSenderIdentities,
+	resolveUserIdentities,
+} from "./contextBuilder"
 
 export class CommandLoader {
 	private static instance: CommandLoader
@@ -123,30 +128,79 @@ export class CommandLoader {
 
 		const jid = key.remoteJid
 		const isGroup = jid.endsWith("@g.us")
-		const directSender = key.fromMe
-			? sock.user?.id || sock.user?.lid || jid
-			: key.participant || rawMsg.participant || jid
-		const altSender = key.fromMe
-			? undefined
-			: isGroup
-				? key.participantAlt
-				: key.remoteJidAlt
-		const senderJid = commandRepository.normalizeJid(altSender || directSender)
+		const { senderJid, senderIdentities: initialIdentities } =
+			extractSenderIdentities(sock, rawMsg)
+		const senderIdentities = await resolveUserIdentities(
+			sock,
+			initialIdentities,
+			null,
+			false,
+		)
 
 		const m = rawMsg.message
 		if (!m) return
 
-		// Layer 0: Check User Blacklist
-		const isBlacklisted = await commandRepository.isBlacklisted(
+		// Layer 0: Check User Blacklist across all known sender identities (LID & Phone Number)
+		let isBlacklisted = await commandRepository.isBlacklisted(
 			agentId,
-			senderJid,
+			senderIdentities,
 		)
-		if (isBlacklisted) return
 
-		// Layer 0: Check User Auto-Delete (scoped per group or global '*')
+		// If not directly matched and Signal LID mapping store is available, check if any blacklisted LID maps to this sender's PN (or vice versa)
+		if (!isBlacklisted && sock.signalRepository?.lidMapping) {
+			const lidMapping = sock.signalRepository.lidMapping
+			try {
+				const blacklistEntries = await commandRepository.getBlacklist(agentId)
+				for (const entry of blacklistEntries) {
+					const cleanEntryJid = commandRepository.normalizeJid(entry.userJid)
+					if (cleanEntryJid.endsWith("@lid")) {
+						const mappedPn = await lidMapping
+							.getPNForLID(cleanEntryJid)
+							.catch(() => null)
+						if (mappedPn) {
+							const cleanPn = commandRepository.normalizeJid(mappedPn)
+							await commandRepository
+								.addBlacklist(agentId, cleanPn, entry.reason || undefined)
+								.catch(() => {})
+							if (senderIdentities.includes(cleanPn)) {
+								isBlacklisted = true
+								break
+							}
+						}
+					} else if (
+						cleanEntryJid.endsWith("@s.whatsapp.net") &&
+						!senderIdentities.some((id) => id.endsWith("@s.whatsapp.net"))
+					) {
+						const mappedLid = await lidMapping
+							.getLIDForPN(cleanEntryJid)
+							.catch(() => null)
+						if (mappedLid) {
+							const cleanLid = commandRepository.normalizeJid(mappedLid)
+							await commandRepository
+								.addBlacklist(agentId, cleanLid, entry.reason || undefined)
+								.catch(() => {})
+							if (senderIdentities.includes(cleanLid)) {
+								isBlacklisted = true
+								break
+							}
+						}
+					}
+				}
+			} catch {}
+		}
+
+		if (isBlacklisted) {
+			if (senderIdentities.length > 1) {
+				await commandRepository
+					.addBlacklist(agentId, senderIdentities)
+					.catch(() => {})
+			}
+			return
+		}
+
+		// Layer 0: Check User Auto-Delete (scoped per group or global '*') across all sender identities
 		const isAutoDelete = isGroup
-			? (await commandRepository.isAutoDelete(agentId, jid, senderJid)) ||
-				(await commandRepository.isAutoDelete(agentId, jid, directSender))
+			? await commandRepository.isAutoDelete(agentId, jid, senderIdentities)
 			: false
 
 		if (isAutoDelete) {

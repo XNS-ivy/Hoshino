@@ -72,27 +72,56 @@ export class CommandRepository {
 	}
 
 	/**
-	 * Gets the owner role ("master" | "owner" | null) for an agent user JID.
+	 * Normalizes one or more JID strings into a deduplicated array of clean user JIDs.
 	 */
-	public async getOwnerRole(
-		agentId: string,
-		userJid: string,
-	): Promise<"master" | "owner" | null> {
-		const cleanJid = this.normalizeJid(userJid)
-		const rows = await sql`
-			SELECT role FROM public.agent_owners
-			WHERE agent_id = ${agentId} AND user_jid = ${cleanJid}
-			LIMIT 1
-		`
-		if (rows.length === 0) return null
-		const role = (rows[0].role as string)?.toLowerCase()
-		return role === "master" ? "master" : "owner"
+	public normalizeJidList(
+		jids: string | (string | undefined | null)[],
+	): string[] {
+		const rawList = Array.isArray(jids) ? jids : [jids]
+		return Array.from(
+			new Set(
+				rawList
+					.filter(
+						(j): j is string => typeof j === "string" && j.trim().length > 0,
+					)
+					.map((j) => this.normalizeJid(j))
+					.filter(
+						(j) =>
+							j.length > 0 &&
+							!j.endsWith("@g.us") &&
+							j !== "status@broadcast",
+					),
+			),
+		)
 	}
 
 	/**
-	 * Checks if a user JID has owner or master role for an agent.
+	 * Gets the owner role ("master" | "owner" | null) for an agent user JID (or list of candidate JIDs).
 	 */
-	public async isOwner(agentId: string, userJid: string): Promise<boolean> {
+	public async getOwnerRole(
+		agentId: string,
+		userJid: string | string[],
+	): Promise<"master" | "owner" | null> {
+		const cleanJids = this.normalizeJidList(userJid)
+		if (cleanJids.length === 0) return null
+		const rows = await sql`
+			SELECT role FROM public.agent_owners
+			WHERE agent_id = ${agentId} AND user_jid IN ${sql(cleanJids)}
+		`
+		if (rows.length === 0) return null
+		const hasMaster = (rows as { role: string }[]).some(
+			(r) => r.role?.toLowerCase() === "master",
+		)
+		return hasMaster ? "master" : "owner"
+	}
+
+	/**
+	 * Checks if a user JID (or any candidate JID) has owner or master role for an agent.
+	 */
+	public async isOwner(
+		agentId: string,
+		userJid: string | string[],
+	): Promise<boolean> {
 		const role = await this.getOwnerRole(agentId, userJid)
 		return role !== null
 	}
@@ -129,25 +158,31 @@ export class CommandRepository {
 	/**
 	 * Removes an owner for an agent.
 	 */
-	public async removeOwner(agentId: string, userJid: string): Promise<void> {
-		const cleanJid = this.normalizeJid(userJid)
+	public async removeOwner(
+		agentId: string,
+		userJid: string | string[],
+	): Promise<void> {
+		const cleanJids = this.normalizeJidList(userJid)
+		if (cleanJids.length === 0) return
 		await sql`
 			DELETE FROM public.agent_owners
-			WHERE agent_id = ${agentId} AND user_jid = ${cleanJid};
+			WHERE agent_id = ${agentId} AND user_jid IN ${sql(cleanJids)};
 		`
 	}
 
 	/**
-	 * Checks if a user JID is blacklisted for an agent.
+	 * Checks if a user JID (or any candidate JID in a list) is blacklisted for an agent.
 	 */
 	public async isBlacklisted(
 		agentId: string,
-		userJid: string,
+		userJid: string | string[],
 	): Promise<boolean> {
-		const cleanJid = this.normalizeJid(userJid)
+		const cleanJids = this.normalizeJidList(userJid)
+		if (cleanJids.length === 0) return false
 		const rows = await sql`
 			SELECT user_jid FROM public.agent_blacklists
-			WHERE agent_id = ${agentId} AND user_jid = ${cleanJid}
+			WHERE agent_id = ${agentId} AND user_jid IN ${sql(cleanJids)}
+			LIMIT 1
 		`
 		return rows.length > 0
 	}
@@ -166,50 +201,55 @@ export class CommandRepository {
 	}
 
 	/**
-	 * Adds a user to the blacklist for an agent.
+	 * Adds a user (or multiple linked identities of a user) to the blacklist for an agent.
 	 */
 	public async addBlacklist(
 		agentId: string,
-		userJid: string,
+		userJid: string | string[],
 		reason?: string,
 	): Promise<void> {
-		const cleanJid = this.normalizeJid(userJid)
-		await sql`
-			INSERT INTO public.agent_blacklists (agent_id, user_jid, reason)
-			VALUES (${agentId}, ${cleanJid}, ${reason || null})
-			ON CONFLICT (agent_id, user_jid) DO UPDATE SET reason = EXCLUDED.reason;
-		`
+		const cleanJids = this.normalizeJidList(userJid)
+		for (const cleanJid of cleanJids) {
+			await sql`
+				INSERT INTO public.agent_blacklists (agent_id, user_jid, reason)
+				VALUES (${agentId}, ${cleanJid}, ${reason || null})
+				ON CONFLICT (agent_id, user_jid) DO UPDATE SET reason = COALESCE(EXCLUDED.reason, public.agent_blacklists.reason);
+			`
+		}
 	}
 
 	/**
-	 * Removes a user from the blacklist for an agent.
+	 * Removes a user (or multiple linked identities of a user) from the blacklist for an agent.
 	 */
 	public async removeBlacklist(
 		agentId: string,
-		userJid: string,
+		userJid: string | string[],
 	): Promise<void> {
-		const cleanJid = this.normalizeJid(userJid)
+		const cleanJids = this.normalizeJidList(userJid)
+		if (cleanJids.length === 0) return
 		await sql`
 			DELETE FROM public.agent_blacklists
-			WHERE agent_id = ${agentId} AND user_jid = ${cleanJid};
+			WHERE agent_id = ${agentId} AND user_jid IN ${sql(cleanJids)};
 		`
 	}
 
 	/**
-	 * Checks if a user JID is marked for auto-delete in a group chat for an agent.
+	 * Checks if a user JID (or any candidate JID in a list) is marked for auto-delete in a group chat for an agent.
 	 * Matches specific groupJid or global wildcard ('*').
 	 */
 	public async isAutoDelete(
 		agentId: string,
 		groupJid: string,
-		userJid: string,
+		userJid: string | string[],
 	): Promise<boolean> {
-		const cleanJid = this.normalizeJid(userJid)
+		const cleanJids = this.normalizeJidList(userJid)
+		if (cleanJids.length === 0) return false
 		const rows = await sql`
 			SELECT user_jid FROM public.agent_autodeletes
 			WHERE agent_id = ${agentId}
-			  AND user_jid = ${cleanJid}
+			  AND user_jid IN ${sql(cleanJids)}
 			  AND (jid = ${groupJid} OR jid = '*')
+			LIMIT 1
 		`
 		return rows.length > 0
 	}
@@ -243,39 +283,42 @@ export class CommandRepository {
 	}
 
 	/**
-	 * Adds a user to auto-delete list for an agent in a specific group (or global wildcard '*').
+	 * Adds a user (or multiple linked identities of a user) to auto-delete list for an agent in a specific group (or global wildcard '*').
 	 */
 	public async addAutoDelete(
 		agentId: string,
-		userJid: string,
+		userJid: string | string[],
 		groupJid = "*",
 	): Promise<void> {
-		const cleanJid = this.normalizeJid(userJid)
-		await sql`
-			INSERT INTO public.agent_autodeletes (agent_id, jid, user_jid)
-			VALUES (${agentId}, ${groupJid}, ${cleanJid})
-			ON CONFLICT (agent_id, jid, user_jid) DO NOTHING;
-		`
+		const cleanJids = this.normalizeJidList(userJid)
+		for (const cleanJid of cleanJids) {
+			await sql`
+				INSERT INTO public.agent_autodeletes (agent_id, jid, user_jid)
+				VALUES (${agentId}, ${groupJid}, ${cleanJid})
+				ON CONFLICT (agent_id, jid, user_jid) DO NOTHING;
+			`
+		}
 	}
 
 	/**
-	 * Removes a user from auto-delete list for an agent in a specific group (or all groups if groupJid omitted).
+	 * Removes a user (or multiple linked identities of a user) from auto-delete list for an agent in a specific group (or all groups if groupJid omitted).
 	 */
 	public async removeAutoDelete(
 		agentId: string,
-		userJid: string,
+		userJid: string | string[],
 		groupJid?: string,
 	): Promise<void> {
-		const cleanJid = this.normalizeJid(userJid)
+		const cleanJids = this.normalizeJidList(userJid)
+		if (cleanJids.length === 0) return
 		if (groupJid) {
 			await sql`
 				DELETE FROM public.agent_autodeletes
-				WHERE agent_id = ${agentId} AND jid = ${groupJid} AND user_jid = ${cleanJid};
+				WHERE agent_id = ${agentId} AND jid = ${groupJid} AND user_jid IN ${sql(cleanJids)};
 			`
 		} else {
 			await sql`
 				DELETE FROM public.agent_autodeletes
-				WHERE agent_id = ${agentId} AND user_jid = ${cleanJid};
+				WHERE agent_id = ${agentId} AND user_jid IN ${sql(cleanJids)};
 			`
 		}
 	}

@@ -305,6 +305,35 @@ export async function syncAgentOwnerLids(
 				} catch {}
 			}
 		}
+		const existingBlacklist = await commandRepository.getBlacklist(agentId)
+		for (const item of existingBlacklist) {
+			const cleanJid = commandRepository.normalizeJid(item.userJid)
+			if (cleanJid.endsWith("@s.whatsapp.net")) {
+				try {
+					const lid = await lidMapping.getLIDForPN(cleanJid)
+					if (lid) {
+						const cleanLid = commandRepository.normalizeJid(lid)
+						await commandRepository.addBlacklist(
+							agentId,
+							cleanLid,
+							item.reason || undefined,
+						)
+					}
+				} catch {}
+			} else if (cleanJid.endsWith("@lid")) {
+				try {
+					const pn = await lidMapping.getPNForLID(cleanJid)
+					if (pn) {
+						const cleanPn = commandRepository.normalizeJid(pn)
+						await commandRepository.addBlacklist(
+							agentId,
+							cleanPn,
+							item.reason || undefined,
+						)
+					}
+				} catch {}
+			}
+		}
 	} catch (err) {
 		logger.warn(
 			"/modules/baileys/handlers/connection.handler.ts",

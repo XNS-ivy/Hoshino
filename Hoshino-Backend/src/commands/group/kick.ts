@@ -1,5 +1,9 @@
 import type { CommandContext, ICommand } from "@customTypes/command"
 import { commandRepository } from "@repositories/command.repository"
+import {
+	findGroupParticipant,
+	resolveUserIdentities,
+} from "@services/contextBuilder"
 
 const command: ICommand = {
 	name: ["kick"],
@@ -26,26 +30,44 @@ const command: ICommand = {
 			return
 		}
 
-		const botJid = commandRepository.normalizeJid(
-			ctx.sock.user?.id || ctx.sock.user?.lid || "",
+		const groupMeta = await ctx.getGroupMetadata()
+		const targetIdentities = await resolveUserIdentities(
+			ctx.sock,
+			[targetJid],
+			groupMeta,
+			true,
+		)
+		const botIdentities = await resolveUserIdentities(
+			ctx.sock,
+			[ctx.sock.user?.id, ctx.sock.user?.lid],
+			groupMeta,
+			false,
 		)
 
-		if (targetJid === botJid) {
+		if (targetIdentities.some((id) => botIdentities.includes(id))) {
 			await ctx.reply("❌ Bot cannot kick itself!")
 			return
 		}
 
 		const isTargetOwner = await commandRepository.isOwner(
 			ctx.agentId,
-			targetJid,
+			targetIdentities,
 		)
 		if (isTargetOwner) {
 			await ctx.reply("❌ Cannot kick Bot Owner!")
 			return
 		}
 
+		const matchedParticipant = findGroupParticipant(
+			groupMeta?.participants,
+			targetIdentities,
+		)
+		const removeJid = matchedParticipant?.id
+			? commandRepository.normalizeJid(matchedParticipant.id)
+			: targetJid
+
 		try {
-			await ctx.sock.groupParticipantsUpdate(ctx.jid, [targetJid], "remove")
+			await ctx.sock.groupParticipantsUpdate(ctx.jid, [removeJid], "remove")
 			await ctx.reply(
 				`✅ Successfully kicked *@${targetJid.split("@")[0]}* from group.`,
 			)
