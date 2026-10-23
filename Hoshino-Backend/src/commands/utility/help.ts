@@ -1,4 +1,5 @@
 import type { CommandContext, ICommand } from "@customTypes/command"
+import { commandRepository } from "@repositories/command.repository"
 import { commandLoader } from "@services/commandLoader"
 import { logger } from "@utils/logger"
 
@@ -121,11 +122,58 @@ const command: ICommand = {
 			}
 		}
 
+		// Resolve sender role & chat context once (shared by both modes)
+		const isOwnerOrMaster = Boolean(await ctx.getOwnerRole())
+		const adminStatus = ctx.isGroup
+			? await ctx.getSenderAdminStatus()
+			: { isAdmin: false, isBotAdmin: false }
+		const isGroupAdmin = adminStatus.isAdmin
+
+		// Visibility rules mirror commandLoader execution layers exactly
+		const canSee = async (cmd: ICommand): Promise<boolean> => {
+			// 1. Bot Master / Owner Access Control
+			if ((cmd.access === "owner" || cmd.access === "master") && !isOwnerOrMaster)
+				return false
+
+			// 2. Chat Location (hide group-only commands in Private Chat)
+			if (cmd.inGroup && !ctx.isGroup) return false
+
+			// 3. Group Role Access Control (hide admin commands from members)
+			if (
+				ctx.isGroup &&
+				cmd.inGroupAccess === "admin" &&
+				!isGroupAdmin &&
+				!isOwnerOrMaster
+			)
+				return false
+
+			const names = Array.isArray(cmd.name) ? cmd.name : [cmd.name]
+
+			// 4. Global agent toggle
+			if (!(await commandRepository.isCommandEnabledGlobally(ctx.agentId, names)))
+				return false
+
+			// 5. Group policy (disablecmd / registration), same exemptions as loader
+			const primary = getPrimaryName(cmd)
+			if (ctx.isGroup && primary !== "enablecmd" && primary !== "disablecmd") {
+				const allowed = await commandRepository.isCommandAllowedInGroup(
+					ctx.agentId,
+					ctx.jid,
+					names,
+					!!cmd.needAdminRegisterThisCommand,
+				)
+				if (!allowed) return false
+			}
+
+			return true
+		}
+
 		// Mode B: Detail View (!help <command_name>)
 		const targetArg = (args[0] || "").toLowerCase().replace(/^[.!/#]/, "")
 		if (targetArg) {
 			const targetCmd = cmdMap.get(targetArg)
-			if (!targetCmd) {
+			// Treat inaccessible commands as non-existent to avoid leaking them
+			if (!targetCmd || !(await canSee(targetCmd))) {
 				await ctx.reply(`❌ Command *"${targetArg}"* not found in system menu.`)
 				return
 			}
@@ -135,38 +183,8 @@ const command: ICommand = {
 		}
 
 		// Mode A: Context & Role Aware Menu View
-		const isOwnerOrMaster = Boolean(await ctx.getOwnerRole())
-		const adminStatus = ctx.isGroup
-			? await ctx.getSenderAdminStatus()
-			: { isAdmin: false, isBotAdmin: false }
-		const isGroupAdmin = adminStatus.isAdmin
-
-		// Filter commands strictly based on chat location and user role
-		const visibleCommands = allCommands.filter((cmd) => {
-			// 1. Bot Master / Owner Access Control
-			if (cmd.access === "owner" || cmd.access === "master") {
-				if (!isOwnerOrMaster) return false
-			}
-
-			// 2. Chat Location (Private DM vs Group)
-			if (cmd.inGroup && !ctx.isGroup) {
-				// Hide group-only commands when in Private Chat
-				return false
-			}
-
-			// 3. Group Role Access Control
-			if (
-				ctx.isGroup &&
-				cmd.inGroupAccess === "admin" &&
-				!isGroupAdmin &&
-				!isOwnerOrMaster
-			) {
-				// Hide admin commands from regular group members
-				return false
-			}
-
-			return true
-		})
+		const visibility = await Promise.all(allCommands.map(canSee))
+		const visibleCommands = allCommands.filter((_, i) => visibility[i])
 
 		const categoryMap = new Map<string, ICommand[]>()
 		for (const cmd of visibleCommands) {
