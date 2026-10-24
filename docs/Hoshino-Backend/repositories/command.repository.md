@@ -1,7 +1,7 @@
 ---
 tags: [memory, backend, repositories, settings, permissions]
 aliases: [CommandRepository, command.repository.ts]
-updated: 2026-10-15
+updated: 2026-10-24
 ---
 
 # 🛡️ Command & Security Repository (`src/repositories/command.repository.ts`)
@@ -21,7 +21,7 @@ updated: 2026-10-15
 ## 🛠️ Complete Method Reference
 
 ### 1. `normalizeJid(jid: string): string` & `normalizeJidList(jids): string[]`
-- `normalizeJid(jid: string): string`: Strips device IDs and port suffixes from WhatsApp JIDs while preserving domain (`@s.whatsapp.net` or `@lid`).
+- `normalizeJid(jid: string): string`: Strips device IDs (`:device`), companion agent suffixes (`_agent`), and port suffixes from WhatsApp user JIDs while normalizing domains (`@c.us` / `@hosted` -> `@s.whatsapp.net`, `@hosted.lid` -> `@lid`, and preserving `@g.us`, `@broadcast`, `@newsletter`).
 - `normalizeJidList(jids: string | (string | undefined | null)[]): string[]`: Normalizes and deduplicates one or more candidate user JIDs/LIDs, filtering out group (`@g.us`) and broadcast JIDs.
 
 ### 2. Owners (`public.agent_owners`)

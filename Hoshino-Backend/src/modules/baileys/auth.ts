@@ -1,6 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { sql } from "@utils/db"
+import { logger } from "@utils/logger"
 import type {
 	AuthenticationCreds,
 	AuthenticationState,

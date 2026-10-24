@@ -1,4 +1,8 @@
 import type NodeCache from "@cacheable/node-cache"
+import {
+	invalidateCachedGroupMetadata,
+	setCachedGroupMetadata,
+} from "@services/contextBuilder"
 import type { GroupMetadata, WASocket } from "baileys"
 
 /**
@@ -15,6 +19,7 @@ export async function getOrFetchGroupMetadata(
 
 	const cached = groupCache.get(jid) as GroupMetadata | undefined
 	if (cached) {
+		setCachedGroupMetadata(jid, cached, sock)
 		return cached
 	}
 
@@ -22,6 +27,7 @@ export async function getOrFetchGroupMetadata(
 		const meta = await sock.groupMetadata(jid)
 		if (meta) {
 			groupCache.set(jid, meta)
+			setCachedGroupMetadata(jid, meta, sock)
 		}
 		return meta
 	} catch {
@@ -57,10 +63,12 @@ export async function refreshGroupCache(
 		return undefined
 	}
 
+	invalidateCachedGroupMetadata(groupId)
 	try {
 		const meta = await sock.groupMetadata(groupId)
 		if (meta) {
 			groupCache.set(groupId, meta)
+			setCachedGroupMetadata(groupId, meta, sock)
 		}
 		return meta
 	} catch {

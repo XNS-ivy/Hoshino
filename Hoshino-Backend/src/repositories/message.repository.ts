@@ -1,4 +1,5 @@
 import { sql } from "@utils/db"
+import { logger } from "@utils/logger"
 
 export type MessageType =
 	| "text"

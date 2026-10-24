@@ -57,17 +57,34 @@ export class CommandRepository {
 	}
 
 	/**
-	 * Normalizes JID string to prevent comparison mismatches (removes device IDs / port suffixes).
+	 * Normalizes JID string to prevent comparison mismatches (removes device IDs, agent suffixes, and normalizes domain).
 	 */
 	public normalizeJid(jid: string): string {
 		const raw = jid.trim()
+		if (!raw) return ""
 		const atIdx = raw.indexOf("@")
 		if (atIdx === -1) {
-			return `${raw.split(":")[0]?.replace(/[^0-9]/g, "")}@s.whatsapp.net`
+			const digits =
+				raw.split(":")[0]?.split("_")[0]?.replace(/[^0-9]/g, "") || ""
+			return digits ? `${digits}@s.whatsapp.net` : ""
 		}
-		// Strip device suffix (e.g. "628xx:12@s.whatsapp.net", "1022xx:5@lid") but keep the domain
-		const user = raw.slice(0, atIdx).split(":")[0]
-		const domain = raw.slice(atIdx + 1)
+		const rawDomain = raw.slice(atIdx + 1).toLowerCase().trim()
+		if (
+			rawDomain === "g.us" ||
+			rawDomain === "broadcast" ||
+			rawDomain === "newsletter"
+		) {
+			return `${raw.slice(0, atIdx)}@${rawDomain}`
+		}
+		// Strip device suffix (e.g. "628xx:12@s.whatsapp.net") and companion agent suffix (e.g. "1022xx_1:5@lid")
+		const user = raw.slice(0, atIdx).split(":")[0]?.split("_")[0]?.trim() || ""
+		if (!user || !rawDomain) return ""
+		const domain =
+			rawDomain === "c.us" || rawDomain === "hosted"
+				? "s.whatsapp.net"
+				: rawDomain === "hosted.lid"
+					? "lid"
+					: rawDomain
 		return `${user}@${domain}`
 	}
 

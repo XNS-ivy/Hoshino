@@ -31,6 +31,7 @@ const command: ICommand = {
 		}
 
 		const groupMeta = await ctx.getGroupMetadata()
+		const credsMe = ctx.sock.authState?.creds?.me
 		const targetIdentities = await resolveUserIdentities(
 			ctx.sock,
 			[targetJid],
@@ -39,9 +40,9 @@ const command: ICommand = {
 		)
 		const botIdentities = await resolveUserIdentities(
 			ctx.sock,
-			[ctx.sock.user?.id, ctx.sock.user?.lid],
+			[ctx.sock.user?.id, ctx.sock.user?.lid, credsMe?.id, credsMe?.lid],
 			groupMeta,
-			false,
+			true,
 		)
 
 		if (targetIdentities.some((id) => botIdentities.includes(id))) {

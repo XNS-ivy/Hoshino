@@ -117,7 +117,10 @@ export class CommandLoader {
 		const key = rawMsg.key
 		if (!key.remoteJid || key.remoteJid === "status@broadcast") return
 
-		// Security Shield 1: Deduplication (Ignore processed message IDs)
+		const m = rawMsg.message
+		if (!m) return
+
+		// Security Shield 1: Deduplication (Ignore processed message IDs once decrypted message payload is present)
 		if (key.id) {
 			const msgDedupeKey = `${agentId}:${key.id}`
 			if (this.processedMsgCache.has(msgDedupeKey)) {
@@ -136,9 +139,6 @@ export class CommandLoader {
 			null,
 			false,
 		)
-
-		const m = rawMsg.message
-		if (!m) return
 
 		// Layer 0: Check User Blacklist across all known sender identities (LID & Phone Number)
 		let isBlacklisted = await commandRepository.isBlacklisted(
@@ -199,11 +199,60 @@ export class CommandLoader {
 		}
 
 		// Layer 0: Check User Auto-Delete (scoped per group or global '*') across all sender identities
-		const isAutoDelete = isGroup
+		let isAutoDelete = isGroup
 			? await commandRepository.isAutoDelete(agentId, jid, senderIdentities)
 			: false
 
+		if (isGroup && !isAutoDelete && sock.signalRepository?.lidMapping) {
+			const lidMapping = sock.signalRepository.lidMapping
+			try {
+				const autoDeleteEntries =
+					await commandRepository.getAutoDeleteList(agentId)
+				for (const entry of autoDeleteEntries) {
+					if (entry.jid !== jid && entry.jid !== "*") continue
+					const cleanEntryJid = commandRepository.normalizeJid(entry.userJid)
+					if (cleanEntryJid.endsWith("@lid")) {
+						const mappedPn = await lidMapping
+							.getPNForLID(cleanEntryJid)
+							.catch(() => null)
+						if (mappedPn) {
+							const cleanPn = commandRepository.normalizeJid(mappedPn)
+							await commandRepository
+								.addAutoDelete(agentId, cleanPn, entry.jid)
+								.catch(() => {})
+							if (senderIdentities.includes(cleanPn)) {
+								isAutoDelete = true
+								break
+							}
+						}
+					} else if (
+						cleanEntryJid.endsWith("@s.whatsapp.net") &&
+						!senderIdentities.some((id) => id.endsWith("@s.whatsapp.net"))
+					) {
+						const mappedLid = await lidMapping
+							.getLIDForPN(cleanEntryJid)
+							.catch(() => null)
+						if (mappedLid) {
+							const cleanLid = commandRepository.normalizeJid(mappedLid)
+							await commandRepository
+								.addAutoDelete(agentId, cleanLid, entry.jid)
+								.catch(() => {})
+							if (senderIdentities.includes(cleanLid)) {
+								isAutoDelete = true
+								break
+							}
+						}
+					}
+				}
+			} catch {}
+		}
+
 		if (isAutoDelete) {
+			if (senderIdentities.length > 1) {
+				await commandRepository
+					.addAutoDelete(agentId, senderIdentities, jid)
+					.catch(() => {})
+			}
 			try {
 				await sock.sendMessage(jid, { delete: key })
 				logger.info(
@@ -342,6 +391,7 @@ export class CommandLoader {
 		// Layer 3: Check Group Command Permission & Registration (Inspecting all aliases to prevent bypass)
 		if (isGroup) {
 			const isExempt =
+				isGroupToggleCommand ||
 				primaryName === "enablecmd" ||
 				primaryName === "disablecmd" ||
 				commandName === "enablecmd" ||

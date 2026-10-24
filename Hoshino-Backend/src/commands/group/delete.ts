@@ -1,5 +1,6 @@
 import type { CommandContext, ICommand } from "@customTypes/command"
 import { commandRepository } from "@repositories/command.repository"
+import { resolveUserIdentities } from "@services/contextBuilder"
 
 const command: ICommand = {
 	name: ["delete", "del", "d"],
@@ -34,22 +35,24 @@ const command: ICommand = {
 				return
 			}
 
-			const botIdentities = commandRepository.normalizeJidList([
-				ctx.sock.user?.id,
-				ctx.sock.user?.lid,
-			])
+			const credsMe = ctx.sock.authState?.creds?.me
+			const groupMeta = await ctx.getGroupMetadata()
+			const botIdentities = await resolveUserIdentities(
+				ctx.sock,
+				[ctx.sock.user?.id, ctx.sock.user?.lid, credsMe?.id, credsMe?.lid],
+				groupMeta,
+				true,
+			)
 			const isFromMe =
 				Boolean(quoted.key?.fromMe) ||
 				botIdentities.includes(commandRepository.normalizeJid(quoted.senderJid))
 
-			if (!isFromMe) {
-				const { isBotAdmin } = await ctx.getSenderAdminStatus()
-				if (!isBotAdmin) {
-					await ctx.reply(
-						"❌ Bot must be a Group Admin to delete messages sent by other group members.",
-					)
-					return
-				}
+			const { isBotAdmin } = await ctx.getSenderAdminStatus()
+			if (!isFromMe && !isBotAdmin) {
+				await ctx.reply(
+					"❌ Bot must be a Group Admin to delete messages sent by other group members.",
+				)
+				return
 			}
 
 			// Delete target quoted message
@@ -62,10 +65,12 @@ const command: ICommand = {
 				},
 			})
 
-			// Delete command trigger message
-			await ctx.sock.sendMessage(ctx.jid, {
-				delete: ctx.rawMsg.key,
-			})
+			// Delete command trigger message if bot has admin rights or sender is bot itself
+			if (isBotAdmin || ctx.rawMsg.key.fromMe) {
+				await ctx.sock.sendMessage(ctx.jid, {
+					delete: ctx.rawMsg.key,
+				})
+			}
 		} catch (error) {
 			await ctx.reply(`❌ Failed to delete message: ${error}`)
 		}
