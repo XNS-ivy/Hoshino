@@ -40,7 +40,7 @@ flowchart TD
 3. **Shield 4 (Input Overflow & ReDoS Guard)**:
    - Truncates body length to 4000 characters (`body.slice(0, 4000)`).
    - Limits argument count to 50 (`args.slice(0, 50)`).
-4. **Shield 5 (30s Execution Timeout)**: Uses `Promise.race()` to enforce a hard 30-second cancellation threshold on deadlocked command promises.
+4. **Shield 5 (Execution Timeout Guard)**: Uses `Promise.race()` to enforce a cancellation threshold on deadlocked command promises (defaults to 60s for `downloaders`, 30s for standard commands, or custom `command.executionTimeout`).
 
 ---
 

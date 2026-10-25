@@ -69,5 +69,6 @@ export interface ICommand {
 	allowedMediaTypes?: MessageKind[]
 	usage?: string[]
 	cooldown?: number
+	executionTimeout?: number
 	execute: (args: string[], ctx: CommandContext) => Promise<void> | void
 }

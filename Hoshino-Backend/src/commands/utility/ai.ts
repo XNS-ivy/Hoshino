@@ -62,6 +62,7 @@ const command: ICommand = {
 		"ai reset",
 	],
 	textOnly: true,
+	executionTimeout: 45000,
 	execute: async (args: string[], ctx: CommandContext) => {
 		const prompt = args.join(" ").trim()
 

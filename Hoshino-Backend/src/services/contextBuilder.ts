@@ -641,8 +641,10 @@ export function buildCommandContext(
 			let isAdmin = senderMatches.some((p) => isParticipantAdmin(p))
 			let isBotAdmin = botMatches.some((p) => isParticipantAdmin(p))
 
-			// If sender or bot admin status is still unresolved, proactively resolve LID <-> PN for group admins in currentMeta
-			if ((!isAdmin || !isBotAdmin) && sock.signalRepository?.lidMapping) {
+			// If sender or bot could NOT be matched in participants at all (e.g. unlinked LID), resolve LID <-> PN
+			const senderFound = senderMatches.length > 0
+			const botFound = botMatches.length > 0
+			if ((!senderFound || !botFound) && sock.signalRepository?.lidMapping) {
 				const lidMapping = sock.signalRepository.lidMapping
 				const adminParticipants = participants.filter((p) =>
 					isParticipantAdmin(p),
@@ -762,22 +764,7 @@ export function buildCommandContext(
 			return { isAdmin, isBotAdmin }
 		}
 
-		let status = await evaluateAdminRoles(meta)
-
-		// If group metadata came from cache and caller/bot lacks admin status, refresh once in case of recent promotion
-		if (usedCachedMeta && (!status.isAdmin || !status.isBotAdmin)) {
-			try {
-				const freshMeta = await sock.groupMetadata(jid)
-				if (freshMeta) {
-					setCachedGroupMetadata(jid, freshMeta, sock)
-					groupMetaCache = freshMeta
-					meta = freshMeta
-					status = await evaluateAdminRoles(freshMeta)
-				}
-			} catch {
-				// Keep cached evaluation if live fetch fails
-			}
-		}
+		const status = await evaluateAdminRoles(meta)
 
 		adminStatusCache = status
 		return adminStatusCache

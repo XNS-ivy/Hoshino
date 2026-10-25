@@ -470,8 +470,9 @@ export class CommandLoader {
 			this.cooldownCache.set(cooldownKey, now + cooldownSec * 1000)
 		}
 
-		// Security Shield 5: Execution Timeout Guard (Max 30s timeout per command)
-		const timeoutMs = 30000
+		// Security Shield 5: Execution Timeout Guard (Configurable per command, default 60s for downloaders, 30s for standard)
+		const defaultTimeout = command.category === "downloaders" ? 60000 : 30000
+		const timeoutMs = command.executionTimeout ?? defaultTimeout
 		let timeoutTimer: ReturnType<typeof setTimeout> | undefined
 		const timeoutPromise = new Promise<never>((_, reject) => {
 			timeoutTimer = setTimeout(() => {
@@ -491,12 +492,13 @@ export class CommandLoader {
 		} catch (error: unknown) {
 			const err = error as Error
 			if (err?.message === "EXECUTION_TIMEOUT") {
+				const timeoutSec = Math.round(timeoutMs / 1000)
 				logger.error(
 					"/services/commandLoader.ts",
-					`[${agentId}] Command "${commandName}" timed out after 30s for ${senderJid} in ${jid}`,
+					`[${agentId}] Command "${commandName}" timed out after ${timeoutSec}s for ${senderJid} in ${jid}`,
 				)
 				await ctx.reply(
-					"⏱️ *Command execution timed out after 30 seconds (Timeout).*",
+					`⏱️ *Command execution timed out after ${timeoutSec} seconds (Timeout).*`,
 				)
 			} else {
 				logger.error(

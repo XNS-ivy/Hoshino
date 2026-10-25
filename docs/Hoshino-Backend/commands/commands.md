@@ -67,7 +67,7 @@ updated: 2026-10-15
 | `math.ts` | `math`, `calc` | `user` | Evaluates scientific mathematical expressions |
 | `ai.ts` | `ai`, `ask`, `gemini` | `user` | General AI assistant powered by Google Gemini |
 | `ping.ts` | `ping` | `user` | Tests bot response latency and uptime |
-| `help.ts` | `help`, `menu` | `user` | Renders a dynamic command menu filtered by caller permissions |
+| `help.ts` | `help`, `menu` | `user` | Renders a dynamic command menu filtered by caller permissions using 2 parallel bulk SQL queries and O(1) in-memory toggle checks |
 
 ---
 

@@ -129,8 +129,31 @@ const command: ICommand = {
 			: { isAdmin: false, isBotAdmin: false }
 		const isGroupAdmin = adminStatus.isAdmin
 
-		// Visibility rules mirror commandLoader execution layers exactly
-		const canSee = async (cmd: ICommand): Promise<boolean> => {
+		// Bulk fetch global toggles and group commands in parallel (max 2 queries instead of 70!)
+		const [globalToggles, groupCommands] = await Promise.all([
+			commandRepository.getAllCommandToggles(ctx.agentId),
+			ctx.isGroup
+				? commandRepository.getGroupCommands(ctx.agentId, ctx.jid)
+				: Promise.resolve([]),
+		])
+
+		const globalDisabledSet = new Set<string>()
+		for (const t of globalToggles) {
+			if (t.status === "disabled") {
+				globalDisabledSet.add(t.commandName.toLowerCase())
+			}
+		}
+
+		const groupStatusMap = new Map<string, "enabled" | "disabled">()
+		for (const g of groupCommands) {
+			groupStatusMap.set(
+				g.commandName.toLowerCase(),
+				g.status as "enabled" | "disabled",
+			)
+		}
+
+		// Visibility rules mirror commandLoader execution layers exactly (100% in-memory O(1))
+		const canSee = (cmd: ICommand): boolean => {
 			// 1. Bot Master / Owner Access Control
 			if ((cmd.access === "owner" || cmd.access === "master") && !isOwnerOrMaster)
 				return false
@@ -147,22 +170,26 @@ const command: ICommand = {
 			)
 				return false
 
-			const names = Array.isArray(cmd.name) ? cmd.name : [cmd.name]
+			const rawNames = Array.isArray(cmd.name) ? cmd.name : [cmd.name]
+			const names = rawNames.map((n) => n.toLowerCase()).filter(Boolean)
 
 			// 4. Global agent toggle
-			if (!(await commandRepository.isCommandEnabledGlobally(ctx.agentId, names)))
-				return false
+			const isGloballyDisabled = names.some((n) => globalDisabledSet.has(n))
+			if (isGloballyDisabled) return false
 
 			// 5. Group policy (disablecmd / registration), same exemptions as loader
 			const primary = getPrimaryName(cmd)
 			if (ctx.isGroup && primary !== "enablecmd" && primary !== "disablecmd") {
-				const allowed = await commandRepository.isCommandAllowedInGroup(
-					ctx.agentId,
-					ctx.jid,
-					names,
-					!!cmd.needAdminRegisterThisCommand,
-				)
-				if (!allowed) return false
+				let hasDisabled = false
+				let hasEnabled = false
+				for (const n of names) {
+					const s = groupStatusMap.get(n)
+					if (s === "disabled") hasDisabled = true
+					if (s === "enabled") hasEnabled = true
+				}
+				if (hasDisabled) return false
+				if (hasEnabled) return true
+				if (cmd.needAdminRegisterThisCommand) return false
 			}
 
 			return true
@@ -173,7 +200,7 @@ const command: ICommand = {
 		if (targetArg) {
 			const targetCmd = cmdMap.get(targetArg)
 			// Treat inaccessible commands as non-existent to avoid leaking them
-			if (!targetCmd || !(await canSee(targetCmd))) {
+			if (!targetCmd || !canSee(targetCmd)) {
 				await ctx.reply(`❌ Command *"${targetArg}"* not found in system menu.`)
 				return
 			}
@@ -183,8 +210,7 @@ const command: ICommand = {
 		}
 
 		// Mode A: Context & Role Aware Menu View
-		const visibility = await Promise.all(allCommands.map(canSee))
-		const visibleCommands = allCommands.filter((_, i) => visibility[i])
+		const visibleCommands = allCommands.filter(canSee)
 
 		const categoryMap = new Map<string, ICommand[]>()
 		for (const cmd of visibleCommands) {
