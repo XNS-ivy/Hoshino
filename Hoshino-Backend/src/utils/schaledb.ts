@@ -2,10 +2,18 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { logger } from "@utils/logger"
 
+export interface SchaleStudentSkillEntry {
+	Name?: string
+	Desc?: string
+	Parameters?: string[][]
+	Cost?: number[]
+}
+
 export interface SchaleStudent {
 	Id: number
 	Name: string
 	DevName: string
+	PathName?: string
 	FamilyName?: string
 	PersonalName?: string
 	School: string
@@ -18,11 +26,84 @@ export interface SchaleStudent {
 	WeaponType: string
 	Position?: string
 	ProfileIntroduction?: string
+	Hobby?: string
+	CharacterSSRNew?: string
 	CharacterAge?: string
 	BirthDay?: string
 	CharacterVoice?: string
 	Designer?: string
 	Illustrator?: string
+	StreetBattleAdaptation?: number
+	OutdoorBattleAdaptation?: number
+	IndoorBattleAdaptation?: number
+	AttackPower1?: number
+	AttackPower100?: number
+	MaxHP1?: number
+	MaxHP100?: number
+	DefensePower1?: number
+	DefensePower100?: number
+	HealPower1?: number
+	HealPower100?: number
+	CriticalPoint?: number
+	AccuracyPoint?: number
+	DodgePoint?: number
+	Equipment?: string[]
+	SkillExMaterial?: number[][]
+	SkillExMaterialAmount?: number[][]
+	SkillMaterial?: number[][]
+	SkillMaterialAmount?: number[][]
+	Skills?: {
+		Ex?: SchaleStudentSkillEntry
+		Public?: SchaleStudentSkillEntry
+		Passive?: SchaleStudentSkillEntry
+		ExtraPassive?: SchaleStudentSkillEntry
+	}
+	Weapon?: {
+		Name?: string
+		Desc?: string
+		AttackPower1?: number
+		AttackPower100?: number
+		MaxHP1?: number
+		MaxHP100?: number
+		HealPower1?: number
+		HealPower100?: number
+	}
+	Gear?: {
+		Name?: string
+		Desc?: string
+		TierUpMaterial?: number[][]
+		TierUpMaterialAmount?: number[][]
+	}
+	MemoryLobby?: number[]
+	FavorStatType?: string[]
+	FavorStatValue?: number[][]
+}
+
+export interface SchaleItem {
+	Id: number
+	Name: string
+	Desc?: string
+	Category: string
+	SubCategory?: string
+	Rarity: "N" | "R" | "SR" | "SSR" | string
+	Quality?: number
+	ExpValue?: number
+	Icon?: string
+}
+
+export interface SchaleEquipment {
+	Id: number
+	Category: string
+	Rarity: string
+	Tier: number
+	Icon?: string
+	Name: string
+	Desc?: string
+	MaxLevel?: number
+	StatType?: string[]
+	StatValue?: number[][]
+	Recipe?: number[][]
+	RecipeCost?: number
 }
 
 export interface GachaPullItem {
@@ -422,4 +503,459 @@ export function formatArmorType(type: string): string {
  */
 export function formatSquadType(type: string): string {
 	return type === "Main" ? "⚔️ Striker (Main)" : "🛡️ Special (Support)"
+}
+
+const ITEMS_FILE = join(CACHE_DIR, "items.json")
+const EQUIPMENT_FILE = join(CACHE_DIR, "equipment.json")
+
+let cachedItemsMap: Record<number, SchaleItem> | null = null
+let lastItemsFetchedAt = 0
+
+let cachedEquipmentList: SchaleEquipment[] | null = null
+let lastEquipmentFetchedAt = 0
+
+/**
+ * Fetches and caches all SchaleDB items (Skill Blu-rays, Tech Notes, Oopart Artifacts, Activity Reports).
+ */
+export async function getSchaleItems(): Promise<Record<number, SchaleItem>> {
+	const now = Date.now()
+	if (cachedItemsMap && now - lastItemsFetchedAt < CACHE_TTL_MS) {
+		return cachedItemsMap
+	}
+
+	ensureCacheDir()
+
+	if (existsSync(ITEMS_FILE)) {
+		try {
+			const raw = readFileSync(ITEMS_FILE, "utf-8")
+			const parsed = JSON.parse(raw) as Record<string, SchaleItem> | SchaleItem[]
+			const map: Record<number, SchaleItem> = {}
+			const list = Array.isArray(parsed) ? parsed : Object.values(parsed)
+			for (const item of list) {
+				if (item?.Id) map[item.Id] = item
+			}
+			if (Object.keys(map).length > 0) {
+				cachedItemsMap = map
+				lastItemsFetchedAt = now
+				return cachedItemsMap
+			}
+		} catch (err) {
+			logger.warn("/utils/schaledb.ts", `Failed to read local items cache: ${err}`)
+		}
+	}
+
+	try {
+		logger.info("/utils/schaledb.ts", "Fetching fresh items database from SchaleDB...")
+		const res = await fetch("https://schaledb.com/data/en/items.json", {
+			headers: { "User-Agent": "HoshinoBot/1.0 (Blue Archive WhatsApp Assistant)" },
+		})
+		if (!res.ok) throw new Error(`SchaleDB items HTTP ${res.status}`)
+		const data = (await res.json()) as Record<string, SchaleItem> | SchaleItem[]
+		const list = Array.isArray(data) ? data : Object.values(data)
+		const map: Record<number, SchaleItem> = {}
+		for (const item of list) {
+			if (item?.Id && item.Name) {
+				map[item.Id] = item
+			}
+		}
+		cachedItemsMap = map
+		lastItemsFetchedAt = now
+
+		try {
+			writeFileSync(ITEMS_FILE, JSON.stringify(map, null, 2), "utf-8")
+		} catch {}
+		return map
+	} catch (error) {
+		if (cachedItemsMap) return cachedItemsMap
+		throw error
+	}
+}
+
+/**
+ * Looks up a specific SchaleDB material or item by ID.
+ */
+export async function getSchaleItemById(itemId: number): Promise<SchaleItem | undefined> {
+	const items = await getSchaleItems()
+	return items[itemId]
+}
+
+/**
+ * Fetches and caches all SchaleDB equipment definitions (Hat, Gloves, Shoes, Bag, Badge, Hairpin, Amulet, Watch, Necklace T1-T9).
+ */
+export async function getSchaleEquipment(): Promise<SchaleEquipment[]> {
+	const now = Date.now()
+	if (cachedEquipmentList && now - lastEquipmentFetchedAt < CACHE_TTL_MS) {
+		return cachedEquipmentList
+	}
+
+	ensureCacheDir()
+
+	if (existsSync(EQUIPMENT_FILE)) {
+		try {
+			const raw = readFileSync(EQUIPMENT_FILE, "utf-8")
+			const parsed = JSON.parse(raw) as SchaleEquipment[] | Record<string, SchaleEquipment>
+			const list = Array.isArray(parsed) ? parsed : Object.values(parsed)
+			if (list.length > 0) {
+				cachedEquipmentList = list
+				lastEquipmentFetchedAt = now
+				return cachedEquipmentList
+			}
+		} catch (err) {
+			logger.warn("/utils/schaledb.ts", `Failed to read local equipment cache: ${err}`)
+		}
+	}
+
+	try {
+		logger.info("/utils/schaledb.ts", "Fetching fresh equipment database from SchaleDB...")
+		const res = await fetch("https://schaledb.com/data/en/equipment.json", {
+			headers: { "User-Agent": "HoshinoBot/1.0 (Blue Archive WhatsApp Assistant)" },
+		})
+		if (!res.ok) throw new Error(`SchaleDB equipment HTTP ${res.status}`)
+		const data = (await res.json()) as Record<string, SchaleEquipment> | SchaleEquipment[]
+		const list = (Array.isArray(data) ? data : Object.values(data)).filter(
+			(e) => e?.Id && e.Name && e.Category,
+		)
+		cachedEquipmentList = list
+		lastEquipmentFetchedAt = now
+
+		try {
+			writeFileSync(EQUIPMENT_FILE, JSON.stringify(list, null, 2), "utf-8")
+		} catch {}
+		return list
+	} catch (error) {
+		if (cachedEquipmentList) return cachedEquipmentList
+		throw error
+	}
+}
+
+/**
+ * Finds the exact SchaleDB equipment piece by category (e.g. "Hat") and tier (1..9).
+ */
+export async function getEquipmentByCategoryAndTier(
+	category: string,
+	tier: number,
+): Promise<SchaleEquipment | undefined> {
+	const eqList = await getSchaleEquipment()
+	return eqList.find(
+		(e) => e.Category.toLowerCase() === category.toLowerCase() && e.Tier === tier,
+	)
+}
+
+export interface MaterialRequirement {
+	itemId: number
+	itemName: string
+	category: string
+	rarity: string
+	requiredCount: number
+}
+
+/**
+ * Resolves the exact SchaleDB material requirements for upgrading a student's EX Skill (Lv 1 -> 5) or Basic/Passive/Sub Skill (Lv 1 -> 10).
+ */
+export async function getSkillUpgradeRecipe(
+	student: SchaleStudent,
+	skillType: "ex" | "normal" | "passive" | "sub",
+	currentLevel: number,
+): Promise<{
+	canUpgrade: boolean
+	targetLevel: number
+	creditCost: number
+	materials: MaterialRequirement[]
+	reason?: string
+}> {
+	const itemsMap = await getSchaleItems()
+
+	if (skillType === "ex") {
+		if (currentLevel >= 5) {
+			return {
+				canUpgrade: false,
+				targetLevel: 5,
+				creditCost: 0,
+				materials: [],
+				reason: "MAX_LEVEL",
+			}
+		}
+		const idx = currentLevel - 1 // 0..3 for Lv 1->2, 2->3, 3->4, 4->5
+		const matIds = student.SkillExMaterial?.[idx] || []
+		const matAmounts = student.SkillExMaterialAmount?.[idx] || []
+		const exCreditCosts = [80000, 500000, 3000000, 10000000]
+		const creditCost = exCreditCosts[idx] || 500000
+
+		const materials: MaterialRequirement[] = []
+		for (let i = 0; i < matIds.length; i++) {
+			const id = matIds[i]!
+			const amt = matAmounts[i] || 1
+			const itemInfo = itemsMap[id]
+			materials.push({
+				itemId: id,
+				itemName: itemInfo?.Name || `Schale Material #${id}`,
+				category: itemInfo?.SubCategory || itemInfo?.Category || "Material",
+				rarity: itemInfo?.Rarity || "N",
+				requiredCount: amt,
+			})
+		}
+
+		return {
+			canUpgrade: true,
+			targetLevel: currentLevel + 1,
+			creditCost,
+			materials,
+		}
+	}
+
+	// Normal / Passive / Sub Skill (Lv 1 -> 10)
+	if (currentLevel >= 10) {
+		return {
+			canUpgrade: false,
+			targetLevel: 10,
+			creditCost: 0,
+			materials: [],
+			reason: "MAX_LEVEL",
+		}
+	}
+
+	const idx = currentLevel - 1 // 0..8
+	const matIds = student.SkillMaterial?.[idx] || []
+	const matAmounts = student.SkillMaterialAmount?.[idx] || []
+	const subCreditCosts = [
+		5000, 7500, 60000, 90000, 300000, 450000, 1500000, 2400000, 4000000,
+	]
+	const creditCost = subCreditCosts[idx] || 100000
+
+	const materials: MaterialRequirement[] = []
+	for (let i = 0; i < matIds.length; i++) {
+		const id = matIds[i]!
+		const amt = matAmounts[i] || 1
+		const itemInfo = itemsMap[id]
+		materials.push({
+			itemId: id,
+			itemName: itemInfo?.Name || `Schale Material #${id}`,
+			category: itemInfo?.SubCategory || itemInfo?.Category || "Material",
+			rarity: itemInfo?.Rarity || "N",
+			requiredCount: amt,
+		})
+	}
+
+	return {
+		canUpgrade: true,
+		targetLevel: currentLevel + 1,
+		creditCost,
+		materials,
+	}
+}
+
+export interface StudentProgressionState {
+	starGrade: number
+	level: number
+	exSkillLevel: number
+	normalSkillLevel: number
+	passiveSkillLevel: number
+	subSkillLevel: number
+	equipSlot1Tier: number
+	equipSlot2Tier: number
+	equipSlot3Tier: number
+	weaponStar: number
+	bondLevel?: number
+}
+
+export interface ComputedCombatStats {
+	level: number
+	starGrade: number
+	weaponStar: number
+	atk: number
+	maxHp: number
+	def: number
+	heal: number
+	crit: number
+	accuracy: number
+	dodge: number
+	exMultiplier: number
+	skillMultiplier: number
+	combatPower: number
+}
+
+/**
+ * Calculates a student's authentic combat stats and Combat Power based on SchaleDB Lv1-Lv100 growth curves,
+ * Star Grade liberation (1★-5★), Unique Weapon (UE), Skill Levels, Equipment Tiers (T1-T9), and Bond Rank.
+ */
+export function calculateStudentCombatStats(
+	student: SchaleStudent,
+	prog: Partial<StudentProgressionState> = {},
+): ComputedCombatStats {
+	const level = Math.max(1, Math.min(90, prog.level || 1))
+	const starGrade = Math.max(student.StarGrade || 1, prog.starGrade || student.StarGrade || 1)
+	const weaponStar = Math.max(0, prog.weaponStar || 0)
+	const exLv = Math.max(1, Math.min(5, prog.exSkillLevel || 1))
+	const normalLv = Math.max(1, Math.min(10, prog.normalSkillLevel || 1))
+	const passiveLv = Math.max(1, Math.min(10, prog.passiveSkillLevel || 1))
+	const subLv = Math.max(1, Math.min(10, prog.subSkillLevel || 1))
+	const eq1 = Math.max(1, Math.min(9, prog.equipSlot1Tier || 1))
+	const eq2 = Math.max(1, Math.min(9, prog.equipSlot2Tier || 1))
+	const eq3 = Math.max(1, Math.min(9, prog.equipSlot3Tier || 1))
+	const bondLv = Math.max(1, Math.min(50, prog.bondLevel || 1))
+
+	const ratio = (level - 1) / 99
+	const baseAtk =
+		(student.AttackPower1 || 250) +
+		((student.AttackPower100 || 2800) - (student.AttackPower1 || 250)) * ratio
+	const baseHp =
+		(student.MaxHP1 || 2200) +
+		((student.MaxHP100 || 22000) - (student.MaxHP1 || 2200)) * ratio
+	const baseDef =
+		(student.DefensePower1 || 20) +
+		((student.DefensePower100 || 160) - (student.DefensePower1 || 20)) * ratio
+	const baseHeal =
+		(student.HealPower1 || 1200) +
+		((student.HealPower100 || 4200) - (student.HealPower1 || 1200)) * ratio
+
+	// Star Grade Multiplier (Official BA: 1★ = 1.0x, 2★ = 1.05x, 3★ = 1.12x, 4★ = 1.22x, 5★ = 1.35x)
+	const starMultipliers: Record<number, number> = {
+		1: 1.0,
+		2: 1.06,
+		3: 1.14,
+		4: 1.25,
+		5: 1.38,
+	}
+	const starMult = starMultipliers[starGrade] || 1.14
+
+	// Unique Weapon (UE1★/2★/3★) bonus stats
+	let weaponAtk = 0
+	let weaponHp = 0
+	let weaponHeal = 0
+	if (weaponStar > 0 && student.Weapon) {
+		const wRatio = (weaponStar * 15) / 50
+		weaponAtk =
+			(student.Weapon.AttackPower1 || 100) +
+			((student.Weapon.AttackPower100 || 1200) - (student.Weapon.AttackPower1 || 100)) * wRatio
+		weaponHp =
+			(student.Weapon.MaxHP1 || 500) +
+			((student.Weapon.MaxHP100 || 5000) - (student.Weapon.MaxHP1 || 500)) * wRatio
+		weaponHeal =
+			(student.Weapon.HealPower1 || 0) +
+			((student.Weapon.HealPower100 || 1500) - (student.Weapon.HealPower1 || 0)) * wRatio
+	}
+
+	// Equipment Tier multipliers (Slot 1: Offensive, Slot 2: Defensive/HP, Slot 3: Utility/Crit/Heal)
+	const eq1Bonus = 1 + (eq1 - 1) * 0.045 // Up to +36% ATK at T9
+	const eq2Bonus = 1 + (eq2 - 1) * 0.045 // Up to +36% HP/DEF at T9
+	const eq3Bonus = 1 + (eq3 - 1) * 0.035 // Up to +28% Secondary stats at T9
+
+	// Bond Rank bonus (+1% per bond level up to +35%)
+	const bondBonus = 1 + Math.min(35, bondLv - 1) * 0.01
+
+	// Passive Skill Lv bonus (1..10 -> +14% to +26.6%)
+	const passiveBonus = 1 + 0.08 + passiveLv * 0.015
+
+	const atk = Math.round((baseAtk * starMult + weaponAtk) * eq1Bonus * bondBonus * passiveBonus)
+	const maxHp = Math.round((baseHp * starMult + weaponHp) * eq2Bonus * bondBonus)
+	const def = Math.round(baseDef * starMult * eq2Bonus)
+	const heal = Math.round((baseHeal * starMult + weaponHeal) * eq3Bonus * bondBonus)
+	const crit = Math.round((student.CriticalPoint || 200) * eq3Bonus)
+	const accuracy = Math.round((student.AccuracyPoint || 700) * eq1Bonus)
+	const dodge = Math.round((student.DodgePoint || 200) * eq2Bonus)
+
+	// Skill Damage Multipliers
+	const exMultiplier = 1.6 + (exLv - 1) * 0.32 // Lv1: 1.6x -> Lv5: 2.88x
+	const skillMultiplier = 1.0 + (normalLv - 1) * 0.05 + (subLv - 1) * 0.05
+
+	const combatPower = Math.round(
+		atk * 2.2 +
+			maxHp * 0.18 +
+			def * 3.5 +
+			heal * 0.65 +
+			exLv * 420 +
+			(normalLv + passiveLv + subLv) * 140 +
+			(eq1 + eq2 + eq3) * 180 +
+			starGrade * 500 +
+			weaponStar * 850 +
+			bondLv * 45,
+	)
+
+	return {
+		level,
+		starGrade,
+		weaponStar,
+		atk,
+		maxHp,
+		def,
+		heal,
+		crit,
+		accuracy,
+		dodge,
+		exMultiplier,
+		skillMultiplier,
+		combatPower,
+	}
+}
+
+/**
+ * Blue Archive Official Type Affinity Matrix (BulletType vs ArmorType):
+ * - Weak (Effective): 2.0x
+ * - Normal: 1.0x
+ * - Resisted: 0.5x
+ */
+export function calculateArmorMultiplier(
+	bulletType: string,
+	armorType: string,
+): { multiplier: number; label: string } {
+	const matrix: Record<string, Record<string, number>> = {
+		Explosion: {
+			LightArmor: 2.0,
+			HeavyArmor: 0.5,
+			Unarmed: 1.0,
+			ElasticArmor: 0.5,
+		},
+		Pierce: {
+			LightArmor: 0.5,
+			HeavyArmor: 2.0,
+			Unarmed: 0.5,
+			ElasticArmor: 1.0,
+		},
+		Mystic: {
+			LightArmor: 1.0,
+			HeavyArmor: 0.5,
+			Unarmed: 2.0,
+			ElasticArmor: 1.0,
+		},
+		Sonic: {
+			LightArmor: 1.0,
+			HeavyArmor: 0.5,
+			Unarmed: 1.5,
+			ElasticArmor: 2.0,
+		},
+	}
+
+	const mult = matrix[bulletType]?.[armorType] ?? 1.0
+	if (mult >= 2.0) return { multiplier: 2.0, label: "💥 WEAK (2.0x)" }
+	if (mult > 1.0) return { multiplier: mult, label: `✨ EFFECTIVE (${mult}x)` }
+	if (mult < 1.0) return { multiplier: 0.5, label: "🛡️ RESIST (0.5x)" }
+	return { multiplier: 1.0, label: "⚪ NORMAL (1.0x)" }
+}
+
+/**
+ * Calculates Terrain Mood Adaptation multiplier (D=0.8x, C=0.9x, B=1.0x, A=1.1x, S=1.2x, SS=1.3x).
+ */
+export function calculateTerrainMultiplier(
+	student: SchaleStudent,
+	terrain: string = "Outdoor",
+): { multiplier: number; grade: string } {
+	let adapt = 2
+	const t = terrain.toLowerCase()
+	if (t.includes("street") || t.includes("urban")) {
+		adapt = student.StreetBattleAdaptation ?? 2
+	} else if (t.includes("indoor")) {
+		adapt = student.IndoorBattleAdaptation ?? 2
+	} else {
+		adapt = student.OutdoorBattleAdaptation ?? 2
+	}
+
+	const grades: Record<number, { multiplier: number; grade: string }> = {
+		0: { multiplier: 0.8, grade: "😫 D (0.8x)" },
+		1: { multiplier: 0.9, grade: "😟 C (0.9x)" },
+		2: { multiplier: 1.0, grade: "😐 B (1.0x)" },
+		3: { multiplier: 1.1, grade: "😊 A (1.1x)" },
+		4: { multiplier: 1.2, grade: "😆 S (1.2x)" },
+		5: { multiplier: 1.3, grade: "👑 SS (1.3x)" },
+	}
+	return grades[adapt] || { multiplier: 1.0, grade: "😐 B (1.0x)" }
 }

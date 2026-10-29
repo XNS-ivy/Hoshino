@@ -184,22 +184,38 @@ export async function initAuthDatabase(): Promise<void> {
 			);
 		`
 
-		// 15. Create public.sensei_profiles table (Gacha Economy)
+		// 15. Create public.sensei_profiles table (Gacha, Credits, Squad & PvP Economy)
 		await sql`
 			CREATE TABLE IF NOT EXISTS public.sensei_profiles (
 				agent_id VARCHAR(255) NOT NULL,
 				user_jid VARCHAR(255) NOT NULL,
 				pyroxenes INT DEFAULT 1200,
+				credits BIGINT DEFAULT 500000,
 				spark_points INT DEFAULT 0,
 				total_pulls INT DEFAULT 0,
 				last_daily TIMESTAMPTZ,
+				raid_tickets INT DEFAULT 3,
+				bounty_tickets INT DEFAULT 3,
+				last_ticket_reset TIMESTAMPTZ,
+				pvp_wins INT DEFAULT 0,
+				pvp_losses INT DEFAULT 0,
+				squad_strikers INT[] DEFAULT '{}',
+				squad_specials INT[] DEFAULT '{}',
 				created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
 				updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
 				PRIMARY KEY (agent_id, user_jid)
 			);
 		`
+		await sql`ALTER TABLE public.sensei_profiles ADD COLUMN IF NOT EXISTS credits BIGINT DEFAULT 500000;`
+		await sql`ALTER TABLE public.sensei_profiles ADD COLUMN IF NOT EXISTS raid_tickets INT DEFAULT 3;`
+		await sql`ALTER TABLE public.sensei_profiles ADD COLUMN IF NOT EXISTS bounty_tickets INT DEFAULT 3;`
+		await sql`ALTER TABLE public.sensei_profiles ADD COLUMN IF NOT EXISTS last_ticket_reset TIMESTAMPTZ;`
+		await sql`ALTER TABLE public.sensei_profiles ADD COLUMN IF NOT EXISTS pvp_wins INT DEFAULT 0;`
+		await sql`ALTER TABLE public.sensei_profiles ADD COLUMN IF NOT EXISTS pvp_losses INT DEFAULT 0;`
+		await sql`ALTER TABLE public.sensei_profiles ADD COLUMN IF NOT EXISTS squad_strikers INT[] DEFAULT '{}';`
+		await sql`ALTER TABLE public.sensei_profiles ADD COLUMN IF NOT EXISTS squad_specials INT[] DEFAULT '{}';`
 
-		// 16. Create public.sensei_students table (Sensei Student Collection)
+		// 16. Create public.sensei_students table (Sensei Student Collection & Progression)
 		await sql`
 			CREATE TABLE IF NOT EXISTS public.sensei_students (
 				agent_id VARCHAR(255) NOT NULL,
@@ -208,8 +224,59 @@ export async function initAuthDatabase(): Promise<void> {
 				student_name VARCHAR(255) NOT NULL,
 				star_grade INT NOT NULL,
 				count INT DEFAULT 1,
+				level INT DEFAULT 1,
+				exp INT DEFAULT 0,
+				ex_skill_level INT DEFAULT 1,
+				normal_skill_level INT DEFAULT 1,
+				passive_skill_level INT DEFAULT 1,
+				sub_skill_level INT DEFAULT 1,
+				equip_slot1_tier INT DEFAULT 1,
+				equip_slot2_tier INT DEFAULT 1,
+				equip_slot3_tier INT DEFAULT 1,
+				weapon_star INT DEFAULT 0,
 				first_obtained_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
 				PRIMARY KEY (agent_id, user_jid, student_id)
+			);
+		`
+		await sql`ALTER TABLE public.sensei_students ADD COLUMN IF NOT EXISTS level INT DEFAULT 1;`
+		await sql`ALTER TABLE public.sensei_students ADD COLUMN IF NOT EXISTS exp INT DEFAULT 0;`
+		await sql`ALTER TABLE public.sensei_students ADD COLUMN IF NOT EXISTS ex_skill_level INT DEFAULT 1;`
+		await sql`ALTER TABLE public.sensei_students ADD COLUMN IF NOT EXISTS normal_skill_level INT DEFAULT 1;`
+		await sql`ALTER TABLE public.sensei_students ADD COLUMN IF NOT EXISTS passive_skill_level INT DEFAULT 1;`
+		await sql`ALTER TABLE public.sensei_students ADD COLUMN IF NOT EXISTS sub_skill_level INT DEFAULT 1;`
+		await sql`ALTER TABLE public.sensei_students ADD COLUMN IF NOT EXISTS equip_slot1_tier INT DEFAULT 1;`
+		await sql`ALTER TABLE public.sensei_students ADD COLUMN IF NOT EXISTS equip_slot2_tier INT DEFAULT 1;`
+		await sql`ALTER TABLE public.sensei_students ADD COLUMN IF NOT EXISTS equip_slot3_tier INT DEFAULT 1;`
+		await sql`ALTER TABLE public.sensei_students ADD COLUMN IF NOT EXISTS weapon_star INT DEFAULT 0;`
+
+		// 16b. Create public.sensei_inventory table (SchaleDB Upgrade Materials & Blueprints)
+		await sql`
+			CREATE TABLE IF NOT EXISTS public.sensei_inventory (
+				agent_id VARCHAR(255) NOT NULL,
+				user_jid VARCHAR(255) NOT NULL,
+				item_id INT NOT NULL,
+				item_name VARCHAR(255) NOT NULL,
+				category VARCHAR(100) NOT NULL DEFAULT 'Material',
+				rarity VARCHAR(20) DEFAULT 'N',
+				count INT DEFAULT 0,
+				updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+				PRIMARY KEY (agent_id, user_jid, item_id)
+			);
+		`
+
+		// 16c. Create public.sensei_raid_records table (Total Assault & Weekly Boss Progress)
+		await sql`
+			CREATE TABLE IF NOT EXISTS public.sensei_raid_records (
+				agent_id VARCHAR(255) NOT NULL,
+				user_jid VARCHAR(255) NOT NULL,
+				boss_id INT NOT NULL,
+				boss_name VARCHAR(255) NOT NULL,
+				difficulty VARCHAR(50) NOT NULL,
+				best_score BIGINT DEFAULT 0,
+				total_damage BIGINT DEFAULT 0,
+				clears INT DEFAULT 0,
+				updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+				PRIMARY KEY (agent_id, user_jid, boss_id, difficulty)
 			);
 		`
 

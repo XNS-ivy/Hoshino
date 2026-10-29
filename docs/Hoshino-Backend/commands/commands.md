@@ -1,7 +1,7 @@
 ---
 tags: [memory, backend, commands, matrix]
 aliases: [Commands Index, src/commands/, Command Matrix]
-updated: 2026-10-15
+updated: 2026-10-29
 ---
 
 # 📜 Bot Command Matrix (`src/commands/`)
@@ -15,10 +15,12 @@ updated: 2026-10-15
 
 | File Script | Trigger Name(s) | Access | Description & Execution Logic |
 | :--- | :--- | :--- | :--- |
-| `gacha.ts` | `gacha`, `pull`, `daily`, `spark`, `mystudent`, `students`, `pyroxene`, `eleph`, `claim`, `claimeleph` | `user` | Official 3% rate Blue Archive gacha simulation, 1,200 daily Pyroxenes claim, 200 spark points pity redemption, student roster viewing, specific student status & MomoTalk bond inspection (`.mystudent [name/star]`, e.g. `.mystudent "Mari"`), and fair duplicate Eleph-to-Pyroxene exchange (`.eleph`, `.claim eleph [filter]`, `.claimeleph`) |
+| `gacha.ts` | `gacha`, `pull`, `daily`, `spark`, `mystudent`, `students`, `pyroxene`, `eleph`, `claim`, `claimeleph` | `user` | Official 3% rate Blue Archive gacha simulation, daily claim (`+1,200 Pyroxenes`, `+250,000 Credits`, `Activity Reports`, & Raid/Bounty ticket refresh), 200 spark points pity redemption, student roster viewing, specific student status & MomoTalk bond inspection (`.mystudent [name/star]`), and duplicate Eleph-to-Pyroxene exchange |
+| `upgrade.ts` | `upgrade`, `levelup`, `skillup`, `gearup`, `mystic`, `inventory`, `bag`, `materials`, `squad`, `party` | `user` | Full student RPG progression system using authentic SchaleDB materials (`items.json` & `equipment.json`): upgrade student Level (`1➔90`), EX Skill (`1➔5`), Basic/Passive/Sub Skills (`1➔10`), Equipment Slots 1-3 (`T1➔T9`), and Mystic Star Liberation (`1★➔5★ + UE 1★-3★`), plus material inventory viewer (`.inventory`) and `4 Striker + 2 Special` squad formation manager (`.squad`) |
+| `raid.ts` | `raid`, `boss`, `totalassault`, `weeklyboss`, `bounty`, `grandassault` | `user` | Playable PvE Total Assault Raid Boss & Weekly Boss combat (`Normal` through `Insane` & `Torment`) using SchaleDB `raids.json`. Simulates squad combat using student stats, EX skills, Bullet vs Armor counters (`2.0x Weak`), and Terrain mood, dropping smart SchaleDB upgrade materials (Blu-rays, Tech Notes, Oopart Artifacts, Activity Reports, Blueprints), Credits, and Pyroxenes, with server leaderboards (`.raid rank`) |
+| `momotalk.ts` | `momo`, `momotalk`, `bond` | `user` | Game-accurate interactive MomoTalk messenger that scrapes authentic student MomoTalk episodes & dialogue trees from `bluearchive.wiki/w/api.php` (cached in `data/schaledb/momotalk/`), renders visual **MomoTalk UI Chat Cards** via `sharp` SVG-to-PNG (pink header, circular student avatar, chat bubbles, blue Sensei reply box, pink `♥ Relationship Event` banner), grants Bond Stat bonuses (`+ATK/HP%`), and unlocks Live2D Memorial Lobby artwork |
+| `duel.ts` | `duel`, `pvp`, `tactical`, `bet`, `taruhan` | `user` | Sensei-vs-Sensei Tactical Challenge PvP Duel with Pyroxene or Credit wagering (`.duel @sensei <bet> [pyroxene\|credit]`, `.duel accept`, `.duel decline`, `.duel rank`). Simulates 3-phase `4 Striker + 2 Special` squad combat with armor counters, terrain adaptation, EX skill clashes, MVP selection, and atomic pot payout |
 | `hoshino.ts` | `hoshino`, `ojisan`, `takanashi` | `user` | Multi-turn conversational AI persona for Takanashi Hoshino |
-| `momotalk.ts` | `momo`, `momotalk`, `bond` | `user` | Interactive MomoTalk conversations with bond EXP progression and Live2D Memorial Lobby unlock at Level 5. Features multi-tier deterministic student name resolution with anti-hijack guard (e.g., prevents "Himari" from intercepting "Mari" searches), and authentic dialogue sets for Hoshino, Shiroko, Serika, Nonomi, Ayane, Mika, Mari, and Himari |
-| `raid.ts` | `raid`, `boss`, `totalassault` | `user` | Total Assault raid boss guide from SchaleDB (armor weaknesses, insane attacks, best striker counters) |
 | `student.ts` | `student`, `ba`, `murid`, `schale` | `user` | Full student wiki profiles from SchaleDB with relevance scoring (combat roles, armor types, VAs, HD art) |
 
 ---

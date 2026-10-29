@@ -17,6 +17,8 @@ export interface SenseiBond {
 export interface MomoDialogueChoice {
 	text: string
 	reply: string
+	replyBubbles?: string[]
+	triggersRelationshipEvent?: boolean
 	exp: number
 }
 
@@ -24,6 +26,9 @@ export interface MomoDialogue {
 	id: string
 	speaker: string
 	studentId: number
+	episodeNumber?: number
+	favorRequired?: number
+	openingBubbles?: string[]
 	message: string
 	choices: [MomoDialogueChoice, MomoDialogueChoice, MomoDialogueChoice]
 }

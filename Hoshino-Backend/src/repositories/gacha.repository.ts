@@ -4,9 +4,17 @@ export interface SenseiProfile {
 	agentId: string
 	userJid: string
 	pyroxenes: number
+	credits: number
 	sparkPoints: number
 	totalPulls: number
 	lastDaily: Date | null
+	raidTickets: number
+	bountyTickets: number
+	lastTicketReset: Date | null
+	pvpWins: number
+	pvpLosses: number
+	squadStrikers: number[]
+	squadSpecials: number[]
 	createdAt: Date
 	updatedAt: Date
 }
@@ -18,7 +26,40 @@ export interface SenseiStudentItem {
 	studentName: string
 	starGrade: number
 	count: number
+	level: number
+	exp: number
+	exSkillLevel: number
+	normalSkillLevel: number
+	passiveSkillLevel: number
+	subSkillLevel: number
+	equipSlot1Tier: number
+	equipSlot2Tier: number
+	equipSlot3Tier: number
+	weaponStar: number
 	firstObtainedAt: Date
+}
+
+export interface SenseiInventoryItem {
+	agentId: string
+	userJid: string
+	itemId: number
+	itemName: string
+	category: string
+	rarity: string
+	count: number
+	updatedAt: Date
+}
+
+export interface SenseiRaidRecord {
+	agentId: string
+	userJid: string
+	bossId: number
+	bossName: string
+	difficulty: string
+	bestScore: number
+	totalDamage: number
+	clears: number
+	updatedAt: Date
 }
 
 export const ELEPH_CONFIG = {
@@ -26,6 +67,8 @@ export const ELEPH_CONFIG = {
 		1: 1, // 1★ duplicate = 1 Eleph
 		2: 2, // 2★ duplicate = 2 Eleph
 		3: 3, // 3★ duplicate = 3 Eleph
+		4: 3,
+		5: 3,
 	} as Record<number, number>,
 	PYROXENES_PER_ELEPH: 1, // Rebalanced (anti-inflation): 1 Eleph = 1 Pyroxene
 }
@@ -194,7 +237,6 @@ export class GachaRepository {
 
 			for (const group of Object.values(groups)) {
 				if (group && group.length > 1) {
-					// Choose canonical profile: prefer JID ending with @lid or @s.whatsapp.net, or highest total pulls
 					const canonical =
 						group.find((g) => g.user_jid.includes("@lid")) ||
 						group.find((g) => g.user_jid.includes("@s.whatsapp.net")) ||
@@ -234,7 +276,6 @@ export class GachaRepository {
 
 					for (const p of group) {
 						if (p.user_jid !== canonical.user_jid) {
-							// Migrate student records
 							const studentsToMove = await sql`
 								SELECT * FROM public.sensei_students
 								WHERE agent_id = ${p.agent_id} AND user_jid = ${p.user_jid}
@@ -249,7 +290,6 @@ export class GachaRepository {
 							}
 							await sql`DELETE FROM public.sensei_students WHERE agent_id = ${p.agent_id} AND user_jid = ${p.user_jid}`
 
-							// Migrate bonds
 							const bondsToMove = await sql`
 								SELECT * FROM public.sensei_bonds
 								WHERE agent_id = ${p.agent_id} AND user_jid = ${p.user_jid}
@@ -267,7 +307,6 @@ export class GachaRepository {
 							}
 							await sql`DELETE FROM public.sensei_bonds WHERE agent_id = ${p.agent_id} AND user_jid = ${p.user_jid}`
 
-							// Delete duplicate profile
 							await sql`
 								DELETE FROM public.sensei_profiles
 								WHERE agent_id = ${p.agent_id} AND user_jid = ${p.user_jid}
@@ -281,8 +320,28 @@ export class GachaRepository {
 		}
 	}
 
+	private mapProfileRow(raw: Record<string, unknown>): SenseiProfile {
+		return {
+			...(raw as unknown as SenseiProfile),
+			pyroxenes: Number(raw?.pyroxenes ?? 1200),
+			credits: Number(raw?.credits ?? 500000),
+			sparkPoints: Number(raw?.sparkPoints ?? 0),
+			totalPulls: Number(raw?.totalPulls ?? 0),
+			raidTickets: Number(raw?.raidTickets ?? 3),
+			bountyTickets: Number(raw?.bountyTickets ?? 3),
+			pvpWins: Number(raw?.pvpWins ?? 0),
+			pvpLosses: Number(raw?.pvpLosses ?? 0),
+			squadStrikers: Array.isArray(raw?.squadStrikers)
+				? (raw.squadStrikers as number[]).map(Number)
+				: [],
+			squadSpecials: Array.isArray(raw?.squadSpecials)
+				? (raw.squadSpecials as number[]).map(Number)
+				: [],
+		}
+	}
+
 	/**
-	 * Fetches or creates a Sensei profile. New Sensei starts with 1,200 Pyroxenes (10-pull gift!).
+	 * Fetches or creates a Sensei profile. New Sensei starts with 1,200 Pyroxenes and 500,000 Credits.
 	 */
 	public async getOrCreateProfile(
 		agentId: string,
@@ -290,25 +349,35 @@ export class GachaRepository {
 	): Promise<SenseiProfile> {
 		const safeJid = await this.resolveUserJid(agentId, userJid)
 		const rows = await sql`
-			INSERT INTO public.sensei_profiles (agent_id, user_jid, pyroxenes, spark_points, total_pulls)
-			VALUES (${agentId}, ${safeJid}, 1200, 0, 0)
+			INSERT INTO public.sensei_profiles (
+				agent_id, user_jid, pyroxenes, credits, spark_points, total_pulls, raid_tickets, bounty_tickets
+			)
+			VALUES (${agentId}, ${safeJid}, 1200, 500000, 0, 0, 3, 3)
 			ON CONFLICT (agent_id, user_jid)
 			DO UPDATE SET updated_at = CURRENT_TIMESTAMP
 			RETURNING 
 				agent_id as "agentId",
 				user_jid as "userJid",
 				pyroxenes,
+				COALESCE(credits, 500000)::bigint as "credits",
 				spark_points as "sparkPoints",
 				total_pulls as "totalPulls",
 				last_daily as "lastDaily",
+				COALESCE(raid_tickets, 3) as "raidTickets",
+				COALESCE(bounty_tickets, 3) as "bountyTickets",
+				last_ticket_reset as "lastTicketReset",
+				COALESCE(pvp_wins, 0) as "pvpWins",
+				COALESCE(pvp_losses, 0) as "pvpLosses",
+				COALESCE(squad_strikers, '{}') as "squadStrikers",
+				COALESCE(squad_specials, '{}') as "squadSpecials",
 				created_at as "createdAt",
 				updated_at as "updatedAt"
 		`
-		return rows[0] as unknown as SenseiProfile
+		return this.mapProfileRow(rows[0] as Record<string, unknown>)
 	}
 
 	/**
-	 * Claims daily Pyroxenes (1,200 Pyroxenes / daily reset at 06:00 WIB).
+	 * Claims daily Pyroxenes (1,200 Pyroxenes + 250,000 Credits + Activity Reports / daily reset at 06:00 WIB).
 	 */
 	public async claimDaily(
 		agentId: string,
@@ -316,7 +385,9 @@ export class GachaRepository {
 	): Promise<{
 		success: boolean
 		pyroxenes: number
+		credits?: number
 		claimedAmount: number
+		claimedCredits?: number
 		remainingHours?: number
 		remainingMinutes?: number
 	}> {
@@ -347,7 +418,6 @@ export class GachaRepository {
 		if (profile.lastDaily) {
 			const lastDailyMs = new Date(profile.lastDaily).getTime()
 
-			// If claimed at or after the last 06:00 WIB reset boundary, it's already claimed for today
 			if (lastDailyMs >= lastResetUtcMs) {
 				const remainingMs = Math.max(0, nextResetUtcMs - now)
 				const remainingHours = Math.floor(remainingMs / (60 * 60 * 1000))
@@ -357,7 +427,9 @@ export class GachaRepository {
 				return {
 					success: false,
 					pyroxenes: profile.pyroxenes,
+					credits: profile.credits,
 					claimedAmount: 0,
+					claimedCredits: 0,
 					remainingHours,
 					remainingMinutes,
 				}
@@ -365,21 +437,89 @@ export class GachaRepository {
 		}
 
 		const DAILY_REWARD = 1200
+		const DAILY_CREDITS = 250000
 		const updated = await sql`
 			UPDATE public.sensei_profiles
 			SET 
 				pyroxenes = pyroxenes + ${DAILY_REWARD},
+				credits = COALESCE(credits, 500000) + ${DAILY_CREDITS},
+				raid_tickets = GREATEST(COALESCE(raid_tickets, 0), 3),
+				bounty_tickets = GREATEST(COALESCE(bounty_tickets, 0), 3),
 				last_daily = CURRENT_TIMESTAMP,
+				last_ticket_reset = CURRENT_TIMESTAMP,
 				updated_at = CURRENT_TIMESTAMP
 			WHERE agent_id = ${agentId} AND user_jid = ${profile.userJid}
-			RETURNING pyroxenes
+			RETURNING pyroxenes, credits
 		`
+
+		// Grant daily starter Activity Reports
+		await this.addInventoryItems(agentId, profile.userJid, [
+			{
+				itemId: 11,
+				itemName: "Normal Activity Report",
+				category: "CharacterExpGrowth",
+				rarity: "R",
+				count: 10,
+			},
+			{
+				itemId: 12,
+				itemName: "Advanced Activity Report",
+				category: "CharacterExpGrowth",
+				rarity: "SR",
+				count: 5,
+			},
+		])
 
 		return {
 			success: true,
 			pyroxenes: Number(updated[0]?.pyroxenes || 0),
+			credits: Number(updated[0]?.credits || 0),
 			claimedAmount: DAILY_REWARD,
+			claimedCredits: DAILY_CREDITS,
 		}
+	}
+
+	/**
+	 * Refreshes daily Raid & Weekly Boss Bounty tickets if past 06:00 WIB reset.
+	 */
+	public async refreshTicketsIfNeeded(
+		agentId: string,
+		userJid: string,
+	): Promise<SenseiProfile> {
+		const profile = await this.getOrCreateProfile(agentId, userJid)
+		const now = Date.now()
+		const WIB_OFFSET_MS = 7 * 60 * 60 * 1000
+		const nowWib = new Date(now + WIB_OFFSET_MS)
+
+		const year = nowWib.getUTCFullYear()
+		const month = nowWib.getUTCMonth()
+		const date = nowWib.getUTCDate()
+		const hour = nowWib.getUTCHours()
+
+		const lastResetWibMs =
+			hour < 6
+				? Date.UTC(year, month, date - 1, 6, 0, 0, 0)
+				: Date.UTC(year, month, date, 6, 0, 0, 0)
+		const lastResetUtcMs = lastResetWibMs - WIB_OFFSET_MS
+
+		const lastTicketMs = profile.lastTicketReset
+			? new Date(profile.lastTicketReset).getTime()
+			: 0
+
+		if (lastTicketMs < lastResetUtcMs) {
+			await sql`
+				UPDATE public.sensei_profiles
+				SET 
+					raid_tickets = GREATEST(COALESCE(raid_tickets, 0), 3),
+					bounty_tickets = GREATEST(COALESCE(bounty_tickets, 0), 3),
+					last_ticket_reset = CURRENT_TIMESTAMP,
+					updated_at = CURRENT_TIMESTAMP
+				WHERE agent_id = ${agentId} AND user_jid = ${profile.userJid}
+			`
+			return this.getOrCreateProfile(agentId, profile.userJid)
+		}
+
+		return profile
 	}
 
 	/**
@@ -469,7 +609,7 @@ export class GachaRepository {
 	}
 
 	/**
-	 * Fetches Sensei's entire student collection.
+	 * Fetches Sensei's entire student collection with progression fields.
 	 */
 	public async getCollection(
 		agentId: string,
@@ -484,12 +624,57 @@ export class GachaRepository {
 				student_name as "studentName",
 				star_grade as "starGrade",
 				count,
+				COALESCE(level, 1) as "level",
+				COALESCE(exp, 0) as "exp",
+				COALESCE(ex_skill_level, 1) as "exSkillLevel",
+				COALESCE(normal_skill_level, 1) as "normalSkillLevel",
+				COALESCE(passive_skill_level, 1) as "passiveSkillLevel",
+				COALESCE(sub_skill_level, 1) as "subSkillLevel",
+				COALESCE(equip_slot1_tier, 1) as "equipSlot1Tier",
+				COALESCE(equip_slot2_tier, 1) as "equipSlot2Tier",
+				COALESCE(equip_slot3_tier, 1) as "equipSlot3Tier",
+				COALESCE(weapon_star, 0) as "weaponStar",
 				first_obtained_at as "firstObtainedAt"
 			FROM public.sensei_students
 			WHERE agent_id = ${agentId} AND user_jid = ${safeJid}
-			ORDER BY star_grade DESC, count DESC, first_obtained_at ASC
+			ORDER BY star_grade DESC, level DESC, count DESC, first_obtained_at ASC
 		`
 		return rows as unknown as SenseiStudentItem[]
+	}
+
+	/**
+	 * Fetches a single owned student record for a Sensei.
+	 */
+	public async getOwnedStudent(
+		agentId: string,
+		userJid: string,
+		studentId: number,
+	): Promise<SenseiStudentItem | null> {
+		const safeJid = await this.resolveUserJid(agentId, userJid)
+		const rows = await sql`
+			SELECT 
+				agent_id as "agentId",
+				user_jid as "userJid",
+				student_id as "studentId",
+				student_name as "studentName",
+				star_grade as "starGrade",
+				count,
+				COALESCE(level, 1) as "level",
+				COALESCE(exp, 0) as "exp",
+				COALESCE(ex_skill_level, 1) as "exSkillLevel",
+				COALESCE(normal_skill_level, 1) as "normalSkillLevel",
+				COALESCE(passive_skill_level, 1) as "passiveSkillLevel",
+				COALESCE(sub_skill_level, 1) as "subSkillLevel",
+				COALESCE(equip_slot1_tier, 1) as "equipSlot1Tier",
+				COALESCE(equip_slot2_tier, 1) as "equipSlot2Tier",
+				COALESCE(equip_slot3_tier, 1) as "equipSlot3Tier",
+				COALESCE(weapon_star, 0) as "weaponStar",
+				first_obtained_at as "firstObtainedAt"
+			FROM public.sensei_students
+			WHERE agent_id = ${agentId} AND user_jid = ${safeJid} AND student_id = ${studentId}
+			LIMIT 1
+		`
+		return (rows[0] as unknown as SenseiStudentItem) || null
 	}
 
 	/**
@@ -502,16 +687,26 @@ export class GachaRepository {
 				agent_id as "agentId",
 				user_jid as "userJid",
 				pyroxenes,
+				COALESCE(credits, 500000)::bigint as "credits",
 				spark_points as "sparkPoints",
 				total_pulls as "totalPulls",
 				last_daily as "lastDaily",
+				COALESCE(raid_tickets, 3) as "raidTickets",
+				COALESCE(bounty_tickets, 3) as "bountyTickets",
+				last_ticket_reset as "lastTicketReset",
+				COALESCE(pvp_wins, 0) as "pvpWins",
+				COALESCE(pvp_losses, 0) as "pvpLosses",
+				COALESCE(squad_strikers, '{}') as "squadStrikers",
+				COALESCE(squad_specials, '{}') as "squadSpecials",
 				created_at as "createdAt",
 				updated_at as "updatedAt"
 			FROM public.sensei_profiles
 			WHERE agent_id = ${agentId}
 			ORDER BY pyroxenes DESC, total_pulls DESC
 		`
-		return rows as unknown as SenseiProfile[]
+		return (rows as unknown as Array<Record<string, unknown>>).map((r) =>
+			this.mapProfileRow(r),
+		)
 	}
 
 	/**
@@ -523,24 +718,15 @@ export class GachaRepository {
 		pyroxenes: number,
 	): Promise<SenseiProfile> {
 		const safeJid = await this.resolveUserJid(agentId, userJid)
-		const rows = await sql`
+		await sql`
 			INSERT INTO public.sensei_profiles (agent_id, user_jid, pyroxenes, spark_points, total_pulls)
 			VALUES (${agentId}, ${safeJid}, ${pyroxenes}, 0, 0)
 			ON CONFLICT (agent_id, user_jid)
 			DO UPDATE SET 
 				pyroxenes = ${pyroxenes},
 				updated_at = CURRENT_TIMESTAMP
-			RETURNING 
-				agent_id as "agentId",
-				user_jid as "userJid",
-				pyroxenes,
-				spark_points as "sparkPoints",
-				total_pulls as "totalPulls",
-				last_daily as "lastDaily",
-				created_at as "createdAt",
-				updated_at as "updatedAt"
 		`
-		return rows[0] as unknown as SenseiProfile
+		return this.getOrCreateProfile(agentId, safeJid)
 	}
 
 	/**
@@ -557,13 +743,426 @@ export class GachaRepository {
 	}
 
 	/**
-	 * Deletes a Sensei profile, roster, and bonds from database.
+	 * Adds/adjusts credits amount for a Sensei.
+	 */
+	public async addCredits(
+		agentId: string,
+		userJid: string,
+		amount: number,
+	): Promise<SenseiProfile> {
+		const profile = await this.getOrCreateProfile(agentId, userJid)
+		const newCredits = Math.max(0, profile.credits + amount)
+		await sql`
+			UPDATE public.sensei_profiles
+			SET credits = ${newCredits}, updated_at = CURRENT_TIMESTAMP
+			WHERE agent_id = ${agentId} AND user_jid = ${profile.userJid}
+		`
+		return this.getOrCreateProfile(agentId, profile.userJid)
+	}
+
+	/**
+	 * Deletes a Sensei profile, roster, inventory, raid records, and bonds from database.
 	 */
 	public async deleteProfile(agentId: string, userJid: string): Promise<void> {
 		const safeJid = await this.resolveUserJid(agentId, userJid)
 		await sql`DELETE FROM public.sensei_profiles WHERE agent_id = ${agentId} AND (user_jid = ${safeJid} OR user_jid = ${userJid})`
 		await sql`DELETE FROM public.sensei_students WHERE agent_id = ${agentId} AND (user_jid = ${safeJid} OR user_jid = ${userJid})`
 		await sql`DELETE FROM public.sensei_bonds WHERE agent_id = ${agentId} AND (user_jid = ${safeJid} OR user_jid = ${userJid})`
+		await sql`DELETE FROM public.sensei_inventory WHERE agent_id = ${agentId} AND (user_jid = ${safeJid} OR user_jid = ${userJid})`
+		await sql`DELETE FROM public.sensei_raid_records WHERE agent_id = ${agentId} AND (user_jid = ${safeJid} OR user_jid = ${userJid})`
+	}
+
+	/**
+	 * Fetches all SchaleDB materials and items owned by a Sensei.
+	 */
+	public async getInventory(
+		agentId: string,
+		userJid: string,
+	): Promise<SenseiInventoryItem[]> {
+		const safeJid = await this.resolveUserJid(agentId, userJid)
+		const rows = await sql`
+			SELECT 
+				agent_id as "agentId",
+				user_jid as "userJid",
+				item_id as "itemId",
+				item_name as "itemName",
+				category,
+				rarity,
+				count,
+				updated_at as "updatedAt"
+			FROM public.sensei_inventory
+			WHERE agent_id = ${agentId} AND user_jid = ${safeJid} AND count > 0
+			ORDER BY category ASC, item_id ASC
+		`
+		return rows as unknown as SenseiInventoryItem[]
+	}
+
+	/**
+	 * Adds multiple SchaleDB items/materials to a Sensei's inventory.
+	 */
+	public async addInventoryItems(
+		agentId: string,
+		userJid: string,
+		items: Array<{
+			itemId: number
+			itemName: string
+			category: string
+			rarity: string
+			count: number
+		}>,
+	): Promise<void> {
+		const safeJid = await this.resolveUserJid(agentId, userJid)
+		for (const item of items) {
+			if (item.count <= 0) continue
+			await sql`
+				INSERT INTO public.sensei_inventory (agent_id, user_jid, item_id, item_name, category, rarity, count, updated_at)
+				VALUES (${agentId}, ${safeJid}, ${item.itemId}, ${item.itemName}, ${item.category}, ${item.rarity}, ${item.count}, CURRENT_TIMESTAMP)
+				ON CONFLICT (agent_id, user_jid, item_id)
+				DO UPDATE SET 
+					count = public.sensei_inventory.count + EXCLUDED.count,
+					item_name = EXCLUDED.item_name,
+					updated_at = CURRENT_TIMESTAMP
+			`
+		}
+	}
+
+	/**
+	 * Atomically checks and consumes required SchaleDB items and Credits from a Sensei.
+	 */
+	public async consumeMaterialsAndCredits(
+		agentId: string,
+		userJid: string,
+		requirements: Array<{ itemId: number; itemName: string; requiredCount: number }>,
+		creditCost: number,
+	): Promise<{
+		success: boolean
+		missingItems?: Array<{ itemId: number; itemName: string; owned: number; required: number }>
+		missingCredits?: number
+	}> {
+		const profile = await this.getOrCreateProfile(agentId, userJid)
+		const inv = await this.getInventory(agentId, profile.userJid)
+		const invMap = new Map<number, number>()
+		for (const i of inv) {
+			invMap.set(Number(i.itemId), Number(i.count))
+		}
+
+		const missingItems: Array<{
+			itemId: number
+			itemName: string
+			owned: number
+			required: number
+		}> = []
+
+		for (const req of requirements) {
+			const owned = invMap.get(req.itemId) || 0
+			if (owned < req.requiredCount) {
+				missingItems.push({
+					itemId: req.itemId,
+					itemName: req.itemName,
+					owned,
+					required: req.requiredCount,
+				})
+			}
+		}
+
+		const missingCredits =
+			profile.credits < creditCost ? creditCost - profile.credits : 0
+
+		if (missingItems.length > 0 || missingCredits > 0) {
+			return {
+				success: false,
+				missingItems: missingItems.length > 0 ? missingItems : undefined,
+				missingCredits: missingCredits > 0 ? missingCredits : undefined,
+			}
+		}
+
+		// Deduct credits
+		if (creditCost > 0) {
+			await sql`
+				UPDATE public.sensei_profiles
+				SET credits = credits - ${creditCost}, updated_at = CURRENT_TIMESTAMP
+				WHERE agent_id = ${agentId} AND user_jid = ${profile.userJid}
+			`
+		}
+
+		// Deduct materials
+		for (const req of requirements) {
+			await sql`
+				UPDATE public.sensei_inventory
+				SET count = GREATEST(0, count - ${req.requiredCount}), updated_at = CURRENT_TIMESTAMP
+				WHERE agent_id = ${agentId} AND user_jid = ${profile.userJid} AND item_id = ${req.itemId}
+			`
+		}
+
+		return { success: true }
+	}
+
+	/**
+	 * Updates a student's progression columns in public.sensei_students.
+	 */
+	public async updateStudentProgression(
+		agentId: string,
+		userJid: string,
+		studentId: number,
+		updates: Partial<{
+			starGrade: number
+			count: number
+			level: number
+			exSkillLevel: number
+			normalSkillLevel: number
+			passiveSkillLevel: number
+			subSkillLevel: number
+			equipSlot1Tier: number
+			equipSlot2Tier: number
+			equipSlot3Tier: number
+			weaponStar: number
+		}>,
+	): Promise<SenseiStudentItem | null> {
+		const current = await this.getOwnedStudent(agentId, userJid, studentId)
+		if (!current) return null
+
+		const starGrade = updates.starGrade ?? current.starGrade
+		const count = updates.count ?? current.count
+		const level = updates.level ?? current.level
+		const exSkillLevel = updates.exSkillLevel ?? current.exSkillLevel
+		const normalSkillLevel = updates.normalSkillLevel ?? current.normalSkillLevel
+		const passiveSkillLevel =
+			updates.passiveSkillLevel ?? current.passiveSkillLevel
+		const subSkillLevel = updates.subSkillLevel ?? current.subSkillLevel
+		const equipSlot1Tier = updates.equipSlot1Tier ?? current.equipSlot1Tier
+		const equipSlot2Tier = updates.equipSlot2Tier ?? current.equipSlot2Tier
+		const equipSlot3Tier = updates.equipSlot3Tier ?? current.equipSlot3Tier
+		const weaponStar = updates.weaponStar ?? current.weaponStar
+
+		await sql`
+			UPDATE public.sensei_students
+			SET 
+				star_grade = ${starGrade},
+				count = ${count},
+				level = ${level},
+				ex_skill_level = ${exSkillLevel},
+				normal_skill_level = ${normalSkillLevel},
+				passive_skill_level = ${passiveSkillLevel},
+				sub_skill_level = ${subSkillLevel},
+				equip_slot1_tier = ${equipSlot1Tier},
+				equip_slot2_tier = ${equipSlot2Tier},
+				equip_slot3_tier = ${equipSlot3Tier},
+				weapon_star = ${weaponStar}
+			WHERE agent_id = ${agentId} AND user_jid = ${current.userJid} AND student_id = ${studentId}
+		`
+
+		return this.getOwnedStudent(agentId, current.userJid, studentId)
+	}
+
+	/**
+	 * Saves Sensei's custom 4 Striker + 2 Special squad formation.
+	 */
+	public async setSquad(
+		agentId: string,
+		userJid: string,
+		strikers: number[],
+		specials: number[],
+	): Promise<void> {
+		const profile = await this.getOrCreateProfile(agentId, userJid)
+		const cleanStrikers = strikers.slice(0, 4).map(Number)
+		const cleanSpecials = specials.slice(0, 2).map(Number)
+		await sql`
+			UPDATE public.sensei_profiles
+			SET 
+				squad_strikers = ${sql.array(cleanStrikers, 23)},
+				squad_specials = ${sql.array(cleanSpecials, 23)},
+				updated_at = CURRENT_TIMESTAMP
+			WHERE agent_id = ${agentId} AND user_jid = ${profile.userJid}
+		`
+	}
+
+	/**
+	 * Consumes 1 Raid or Bounty ticket.
+	 */
+	public async consumeTicket(
+		agentId: string,
+		userJid: string,
+		type: "raid" | "bounty",
+	): Promise<{ success: boolean; remaining: number }> {
+		const profile = await this.refreshTicketsIfNeeded(agentId, userJid)
+		if (type === "raid") {
+			if (profile.raidTickets <= 0) {
+				return { success: false, remaining: 0 }
+			}
+			const rows = await sql`
+				UPDATE public.sensei_profiles
+				SET raid_tickets = GREATEST(0, raid_tickets - 1), updated_at = CURRENT_TIMESTAMP
+				WHERE agent_id = ${agentId} AND user_jid = ${profile.userJid}
+				RETURNING raid_tickets as "raidTickets"
+			`
+			return {
+				success: true,
+				remaining: Number(rows[0]?.raidTickets ?? profile.raidTickets - 1),
+			}
+		}
+
+		if (profile.bountyTickets <= 0) {
+			return { success: false, remaining: 0 }
+		}
+		const rows = await sql`
+			UPDATE public.sensei_profiles
+			SET bounty_tickets = GREATEST(0, bounty_tickets - 1), updated_at = CURRENT_TIMESTAMP
+			WHERE agent_id = ${agentId} AND user_jid = ${profile.userJid}
+			RETURNING bounty_tickets as "bountyTickets"
+		`
+		return {
+			success: true,
+			remaining: Number(rows[0]?.bountyTickets ?? profile.bountyTickets - 1),
+		}
+	}
+
+	/**
+	 * Records a Raid Boss or Weekly Boss battle result.
+	 */
+	public async recordRaidBattle(
+		agentId: string,
+		userJid: string,
+		bossId: number,
+		bossName: string,
+		difficulty: string,
+		score: number,
+		damage: number,
+		cleared: boolean,
+	): Promise<void> {
+		const safeJid = await this.resolveUserJid(agentId, userJid)
+		const clearInc = cleared ? 1 : 0
+		await sql`
+			INSERT INTO public.sensei_raid_records (agent_id, user_jid, boss_id, boss_name, difficulty, best_score, total_damage, clears, updated_at)
+			VALUES (${agentId}, ${safeJid}, ${bossId}, ${bossName}, ${difficulty}, ${score}, ${damage}, ${clearInc}, CURRENT_TIMESTAMP)
+			ON CONFLICT (agent_id, user_jid, boss_id, difficulty)
+			DO UPDATE SET 
+				best_score = GREATEST(public.sensei_raid_records.best_score, EXCLUDED.best_score),
+				total_damage = public.sensei_raid_records.total_damage + EXCLUDED.total_damage,
+				clears = public.sensei_raid_records.clears + EXCLUDED.clears,
+				updated_at = CURRENT_TIMESTAMP
+		`
+	}
+
+	/**
+	 * Fetches Top Raid Leaderboard for an agent.
+	 */
+	public async getRaidLeaderboard(
+		agentId: string,
+		bossId?: number,
+	): Promise<SenseiRaidRecord[]> {
+		const rows = bossId
+			? await sql`
+					SELECT 
+						agent_id as "agentId",
+						user_jid as "userJid",
+						boss_id as "bossId",
+						boss_name as "bossName",
+						difficulty,
+						best_score::bigint as "bestScore",
+						total_damage::bigint as "totalDamage",
+						clears,
+						updated_at as "updatedAt"
+					FROM public.sensei_raid_records
+					WHERE agent_id = ${agentId} AND boss_id = ${bossId}
+					ORDER BY best_score DESC, total_damage DESC
+					LIMIT 10
+				`
+			: await sql`
+					SELECT 
+						agent_id as "agentId",
+						user_jid as "userJid",
+						boss_id as "bossId",
+						boss_name as "bossName",
+						difficulty,
+						best_score::bigint as "bestScore",
+						total_damage::bigint as "totalDamage",
+						clears,
+						updated_at as "updatedAt"
+					FROM public.sensei_raid_records
+					WHERE agent_id = ${agentId}
+					ORDER BY best_score DESC, total_damage DESC
+					LIMIT 10
+				`
+		return rows as unknown as SenseiRaidRecord[]
+	}
+
+	/**
+	 * Atomically settles a PvP Duel bet between Winner and Loser Senseis.
+	 */
+	public async settlePvpDuel(
+		agentId: string,
+		winnerJid: string,
+		loserJid: string,
+		betAmount: number,
+		currency: "pyroxene" | "credit" = "pyroxene",
+	): Promise<{
+		success: boolean
+		winnerProfile: SenseiProfile
+		loserProfile: SenseiProfile
+		reason?: string
+	}> {
+		const winner = await this.getOrCreateProfile(agentId, winnerJid)
+		const loser = await this.getOrCreateProfile(agentId, loserJid)
+
+		if (currency === "pyroxene") {
+			if (winner.pyroxenes < betAmount || loser.pyroxenes < betAmount) {
+				return {
+					success: false,
+					winnerProfile: winner,
+					loserProfile: loser,
+					reason: "INSUFFICIENT_BALANCE",
+				}
+			}
+
+			await sql`
+				UPDATE public.sensei_profiles
+				SET 
+					pyroxenes = pyroxenes + ${betAmount},
+					pvp_wins = COALESCE(pvp_wins, 0) + 1,
+					updated_at = CURRENT_TIMESTAMP
+				WHERE agent_id = ${agentId} AND user_jid = ${winner.userJid}
+			`
+			await sql`
+				UPDATE public.sensei_profiles
+				SET 
+					pyroxenes = GREATEST(0, pyroxenes - ${betAmount}),
+					pvp_losses = COALESCE(pvp_losses, 0) + 1,
+					updated_at = CURRENT_TIMESTAMP
+				WHERE agent_id = ${agentId} AND user_jid = ${loser.userJid}
+			`
+		} else {
+			if (winner.credits < betAmount || loser.credits < betAmount) {
+				return {
+					success: false,
+					winnerProfile: winner,
+					loserProfile: loser,
+					reason: "INSUFFICIENT_BALANCE",
+				}
+			}
+
+			await sql`
+				UPDATE public.sensei_profiles
+				SET 
+					credits = COALESCE(credits, 500000) + ${betAmount},
+					pvp_wins = COALESCE(pvp_wins, 0) + 1,
+					updated_at = CURRENT_TIMESTAMP
+				WHERE agent_id = ${agentId} AND user_jid = ${winner.userJid}
+			`
+			await sql`
+				UPDATE public.sensei_profiles
+				SET 
+					credits = GREATEST(0, COALESCE(credits, 500000) - ${betAmount}),
+					pvp_losses = COALESCE(pvp_losses, 0) + 1,
+					updated_at = CURRENT_TIMESTAMP
+				WHERE agent_id = ${agentId} AND user_jid = ${loser.userJid}
+			`
+		}
+
+		return {
+			success: true,
+			winnerProfile: await this.getOrCreateProfile(agentId, winner.userJid),
+			loserProfile: await this.getOrCreateProfile(agentId, loser.userJid),
+		}
 	}
 
 	/**
@@ -624,7 +1223,7 @@ export class GachaRepository {
 				pyroxeneValue: pyroxenes,
 			})
 
-			if (s.starGrade === 3) {
+			if (s.starGrade >= 3) {
 				breakdown.threeStar.duplicates += dupes
 				breakdown.threeStar.eleph += elephs
 				breakdown.threeStar.pyroxenes += pyroxenes
@@ -661,7 +1260,6 @@ export class GachaRepository {
 		const safeJid = await this.resolveUserJid(agentId, userJid)
 		const profile = await this.getOrCreateProfile(agentId, safeJid)
 
-		// Fetch all students with duplicates (count > 1)
 		const rows = await sql`
 			SELECT 
 				student_id as "studentId",
@@ -750,7 +1348,7 @@ export class GachaRepository {
 			totalPyroxenes += pyroxenes
 			studentIdsToReset.push(s.studentId)
 
-			if (s.starGrade === 3) {
+			if (s.starGrade >= 3) {
 				breakdown.threeStar.duplicates += dupes
 				breakdown.threeStar.eleph += elephs
 				breakdown.threeStar.pyroxenes += pyroxenes
@@ -778,14 +1376,12 @@ export class GachaRepository {
 			}
 		}
 
-		// Reset count to 1 for all converted students (retaining base student in collection)
 		await sql`
 			UPDATE public.sensei_students
 			SET count = 1
 			WHERE agent_id = ${agentId} AND user_jid = ${safeJid} AND student_id IN ${sql(studentIdsToReset)}
 		`
 
-		// Credit pyroxenes to Sensei profile
 		const updatedProfile = await sql`
 			UPDATE public.sensei_profiles
 			SET 

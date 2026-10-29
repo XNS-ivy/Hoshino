@@ -1,26 +1,29 @@
 ---
-tags: [memory, backend, utils, helpers, database, logger, ffmpeg, ai]
+tags: [memory, backend, utils, helpers, database, logger, ffmpeg, ai, schaledb, momotalk]
 aliases: [Utilities Index, src/utils/]
-updated: 2026-10-15
+updated: 2026-10-29
 ---
 
 # 🧰 Backend Utilities (`src/utils/`)
 
 > [!NOTE]
-> Collection of independent utility modules: native Bun PostgreSQL client, ANSI color logger with automatic caller tracking, 6-tier compression WebP sticker engine, ffmpeg transcoder, Gemini AI persona, and cookie-free media scrapers.
+> Collection of independent utility modules: native Bun PostgreSQL client, ANSI color logger with automatic caller tracking, 6-tier compression WebP sticker engine, ffmpeg transcoder, Gemini AI persona, SchaleDB progression/combat calculator, MomoTalk MediaWiki scraper & SVG UI card renderer, and cookie-free media scrapers.
 
 ---
 
 ## 1. Database Client (`db.ts`)
 - **Primary Export**: `sql` (Native Bun PostgreSQL instance `new SQL(...)`)
 - **Function `initAuthDatabase(): Promise<void>`**:
-  - Creates `auth` schema
-  - Creates `auth.credentials` & `auth.keys`
-  - Creates `public.agents`, `public.chats`, `public.messages`
-  - Creates `public.agent_owners`, `public.agent_blacklists`, `public.agent_autodeletes`
-  - Creates `public.agent_group_settings`, `public.agent_command_toggles`, `public.agent_group_commands`
-  - Creates `public.sensei_profiles`, `public.sensei_students`, `public.sensei_bonds`
-  - Creates `public.database_settings` (automated retention, message pruning, and media bloat rules)
+  - Creates `auth` schema (`auth.credentials` & `auth.keys`).
+  - Creates `public.agents`, `public.chats`, `public.messages`.
+  - Creates `public.agent_owners`, `public.agent_blacklists`, `public.agent_autodeletes`.
+  - Creates `public.agent_group_settings`, `public.agent_command_toggles`, `public.agent_group_commands`.
+  - Creates & migrates `public.sensei_profiles` (with `pyroxenes`, `credits`, `spark_points`, `total_pulls`, `raid_tickets`, `bounty_tickets`, `pvp_wins`, `pvp_losses`, `squad_strikers`, `squad_specials`).
+  - Creates & migrates `public.sensei_students` (with `level`, `exp`, `ex_skill_level`, `normal_skill_level`, `passive_skill_level`, `sub_skill_level`, `equip_slot1_tier`, `equip_slot2_tier`, `equip_slot3_tier`, `weapon_star`).
+  - Creates `public.sensei_inventory` (stores authentic SchaleDB `item_id`, `item_name`, `category`, `rarity`, `count`).
+  - Creates `public.sensei_raid_records` (stores Total Assault & Weekly Boss clear records, scores, and total damage).
+  - Creates `public.sensei_bonds` (MomoTalk bond ranks & EXP).
+  - Creates `public.database_settings` (automated retention, message pruning, and media bloat rules).
   - Creates query performance indexes: `idx_auth_keys_agent_id`, `idx_messages_agent_jid`.
 
 ---
@@ -77,24 +80,38 @@ updated: 2026-10-15
 
 ---
 
-## 6. SchaleDB Blue Archive Wiki (`schaledb.ts`)
-- Fetches character stats, EX skill details, armor types, voice actors, and HD artwork directly from the SchaleDB public dataset with in-memory caching.
+## 6. SchaleDB Blue Archive Engine (`schaledb.ts`)
+- Fetches and caches character stats, skill material arrays (`SkillExMaterial`, `SkillMaterial`), equipment recipes, armor/bullet types, voice actors, and HD artwork directly from SchaleDB (`students.json`, `items.json`, `equipment.json`).
 - **Function `getStudentMatchScore(candidateName: string, query: string, devName?: string, familyName?: string, personalName?: string): number`**:
-  Calculates a deterministic relevance score to guarantee high search precision:
-  - `10000`: Exact raw match on student full name.
-  - `9800`: Cleaned name match (ignoring punctuation, brackets, parentheses, and quotes `""`, `“”`, `''`).
-  - `8500`: Base name match (e.g. query `"mari"` correctly matching `"Mari (Track)"`).
-  - `7000-7800`: Multi-token match across all words in any order (e.g. `"track mari"` matching `"Mari (Track)"`).
-  - `5000-6500`: Whole-word boundary token match (strictly requires token word boundaries; prevents `"Mari"` from matching inside `"Himari"`).
-  - `3000-4500`: Prefix match on full name or base name (e.g. `"mari"` matching `"Marina"`).
-  - `2000-4000`: Exact or partial matches on `PersonalName`, `FamilyName` (e.g. `"Iochi"`, `"Akeboshi"`), or `DevName`.
-  - Strictly disallows arbitrary inside-word substring matches without word boundaries, preventing student hijacking bugs where querying `"Mari"` incorrectly selected `"Himari"`.
+  Calculates a deterministic relevance score (`0` to `10000`) preventing substring hijacking bugs.
 - **Function `searchSchaleStudent(query: string): Promise<SchaleStudent[]>`**:
-  Searches students by ID or multi-tier relevance scoring with automatic quotation stripping, sorting the results descending by score so exact/base-name matches always precede substring candidates.
+  Searches students by ID or multi-tier relevance scoring with automatic quotation stripping.
+- **Function `getSchaleItems(): Promise<Record<number, SchaleItem>>` & `getSchaleItemById(itemId: number)`**:
+  Fetches and caches all 1,096+ SchaleDB items (`https://schaledb.com/data/en/items.json` ➔ `data/schaledb/items.json`), mapping item IDs to Activity Reports, Tactical Blu-rays (`CDItem`), Tech Notes (`BookItem`), and Oopart Artifacts (`Artifact`).
+- **Function `getSchaleEquipment(): Promise<SchaleEquipment[]>` & `getEquipmentByCategoryAndTier(category: string, tier: number)`**:
+  Fetches and caches all SchaleDB equipment pieces (`https://schaledb.com/data/en/equipment.json` ➔ `data/schaledb/equipment.json`) across `T1` through `T9`.
+- **Function `getSkillUpgradeRecipe(student: SchaleStudent, skillType: "ex" | "normal" | "passive" | "sub", currentLevel: number)`**:
+  Resolves the exact per-student SchaleDB material IDs, item names, quantities, and Credit costs required for the next EX Skill (`Lv.1 ➔ 5`) or Basic/Passive/Sub Skill (`Lv.1 ➔ 10`) upgrade.
+- **Function `calculateStudentCombatStats(student: SchaleStudent, prog: Partial<StudentProgressionState>): ComputedCombatStats`**:
+  Computes interpolated `ATK`, `MaxHP`, `DEF`, `HEAL`, `CRIT`, `ACC`, `EVA`, `exMultiplier`, `skillMultiplier`, and `combatPower` based on student Level (`1..90`), Star Grade (`1★..5★`), Unique Weapon (`UE 1★..3★`), Equipment Tiers (`T1..T9`), Skill Levels, and MomoTalk Bond Rank.
+- **Function `calculateArmorMultiplier(bulletType: string, armorType: string)`**:
+  Official Blue Archive type affinity matrix (`2.0x` Weak, `1.0x` Normal, `0.5x` Resisted).
+- **Function `calculateTerrainMultiplier(student: SchaleStudent, terrain: string)`**:
+  Calculates terrain mood adaptation (`D=0.8x` to `SS=1.3x`).
 
 ---
 
-## 7. Media Scrapers (100% Cookie-Free)
+## 7. MomoTalk Wiki Scraper & Visual Card Renderer (`momotalkScraper.ts`)
+- **Function `parseWikiMomoTalkWikitext(wikitext: string, student: SchaleStudent): ScrapedMomoEpisode[]`**:
+  Parses raw MediaWiki `{{MomoTalk ... }}` templates from `bluearchive.wiki` into structured MomoTalk episodes (`openingBubbles`, `choices`, `replyBubbles`, `triggersRelationshipEvent`, `favorRequired`).
+- **Function `getOrScrapeStudentMomoTalks(student: SchaleStudent): Promise<MomoDialogue[]>`**:
+  Scrapes authentic in-game MomoTalk scripts from `https://bluearchive.wiki/w/api.php` (`<Student>/MomoTalk`) and caches them locally in `data/schaledb/momotalk/{studentId}.json`.
+- **Function `renderMomoTalkCard(options): Promise<Buffer | null>`**:
+  Renders an authentic Blue Archive MomoTalk Messenger UI image card (`PNG` via `sharp` SVG rendering) complete with the pink MomoTalk header bar, Bond Rank badge, circular student icon from SchaleDB, student message bubbles, Sensei blue reply box, and the pink `♥ Relationship Event` story banner.
+
+---
+
+## 8. Media Scrapers (100% Cookie-Free)
 - `youtube.ts`: YouTube MP4 video and MP3 audio download.
 - `tiktok.ts`: TikTok HD video without watermark, audio MP3, and photo slide download.
 - `facebook.ts`: Public Facebook video and Reels scraper.

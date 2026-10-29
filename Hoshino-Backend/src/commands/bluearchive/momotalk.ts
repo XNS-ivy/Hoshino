@@ -6,6 +6,10 @@ import {
 } from "@repositories/momo.repository"
 import { logger } from "@utils/logger"
 import {
+	getOrScrapeStudentMomoTalks,
+	renderMomoTalkCard,
+} from "@utils/momotalkScraper"
+import {
 	getSchaleStudents,
 	getStudentImageUrl,
 	getStudentMatchScore,
@@ -420,22 +424,28 @@ const command: ICommand = {
 
 			const hearts = "❤️".repeat(Math.min(result.newLevel, 5))
 			const progress = renderProgressBar(result.currentExp, result.requiredExp)
+			const statBonusPct = Math.min(35, result.newLevel - 1)
 
 			let replyText = `📱 *MOMOTALK — ${activeSession.studentName}*\n`
 			replyText += `───────────────────────────\n\n`
+			replyText += `🧑‍🏫 *Sensei:* "${selectedChoice.text}"\n\n`
 			replyText += `💬 *${activeSession.dialogue.speaker}:*\n`
 			replyText += `"${selectedChoice.reply}"\n\n`
+			if (selectedChoice.triggersRelationshipEvent) {
+				replyText += `🌸 *Relationship Event Triggered!* — _You spent quality time with ${activeSession.studentName} in Kivotos!_\n\n`
+			}
 			replyText += `───────────────────────────\n`
 			replyText += `💖 *Bond EXP:* +${selectedChoice.exp} EXP\n`
 			replyText += `📊 *Progress:* [${progress}] ${result.currentExp}/${result.requiredExp} EXP\n`
+			replyText += `⚔️ *Bond Stat Bonus:* +${statBonusPct}% ATK & HP in Raids/PvP\n`
 
 			if (result.leveledUp) {
 				replyText += `\n🎉 *BOND LEVEL UP! (Rank ${result.oldLevel} ➔ Rank ${result.newLevel})* ${hearts}\n`
 				replyText += `🎁 *Reward:* +${result.pyroxeneReward} Pyroxenes 💎 added to your balance!\n`
 			}
 
-			// If Memorial Lobby unlocked (or Rank >= 5), send Memorial Lobby image!
-			if (result.unlockedMemorialLobby || result.newLevel >= 5) {
+			// If Memorial Lobby newly unlocked at Rank 5, prioritize sending the L2D Lobby Artwork
+			if (result.unlockedMemorialLobby) {
 				const lobbyUrl = getStudentImageUrl(activeSession.studentId, "lobby")
 				const collectionUrl = getStudentImageUrl(
 					activeSession.studentId,
@@ -450,9 +460,7 @@ const command: ICommand = {
 
 					if (imgRes.ok) {
 						const imgBuf = Buffer.from(await imgRes.arrayBuffer())
-						if (result.unlockedMemorialLobby) {
-							replyText += `\n🖼️ *NEW MEMORIAL LOBBY ARTWORK UNLOCKED!*`
-						}
+						replyText += `\n🖼️ *NEW MEMORIAL LOBBY ARTWORK UNLOCKED!*`
 
 						await ctx.sock.sendMessage(
 							ctx.jid,
@@ -463,6 +471,40 @@ const command: ICommand = {
 					}
 				} catch {}
 			}
+
+			// Render Authentic In-Game MomoTalk Chat Card with Sensei's blue bubble & Student follow-up bubbles!
+			try {
+				const allSchale = await getSchaleStudents()
+				const schaleStudent = allSchale.find(
+					(s) => s.Id === activeSession.studentId,
+				)
+				if (schaleStudent) {
+					const openingBubbles = activeSession.dialogue.openingBubbles || [
+						activeSession.dialogue.message,
+					]
+					const followUpBubbles = selectedChoice.replyBubbles || [
+						selectedChoice.reply,
+					]
+					const cardBuf = await renderMomoTalkCard({
+						student: schaleStudent,
+						bondLevel: result.newLevel,
+						episodeNumber: activeSession.dialogue.episodeNumber,
+						studentBubbles: openingBubbles,
+						senseiChosenText: selectedChoice.text,
+						followUpBubbles,
+						triggersRelationshipEvent:
+							selectedChoice.triggersRelationshipEvent ?? true,
+					})
+					if (cardBuf) {
+						await ctx.sock.sendMessage(
+							ctx.jid,
+							{ image: cardBuf, caption: replyText },
+							{ quoted: ctx.rawMsg },
+						)
+						return
+					}
+				}
+			} catch {}
 
 			await ctx.reply(replyText)
 			return
@@ -553,7 +595,27 @@ const command: ICommand = {
 			targetStudentId = picked.studentId
 		}
 
-		// Find dialogue template
+		const allSchaleStudents = await getSchaleStudents()
+		const targetSchale =
+			allSchaleStudents.find((s) => s.Id === targetStudentId) ||
+			allSchaleStudents.find(
+				(s) => s.Name.toLowerCase() === targetStudentName.toLowerCase(),
+			)
+
+		const currentBond = await momoRepository.getBond(
+			ctx.agentId,
+			ctx.senderJid,
+			targetStudentId,
+			targetStudentName,
+		)
+
+		// 1. Primary Source: Scrape authentic in-game MomoTalk episodes from bluearchive.wiki (cached locally)
+		let scrapedEpisodes: MomoDialogue[] = []
+		if (targetSchale) {
+			scrapedEpisodes = await getOrScrapeStudentMomoTalks(targetSchale)
+		}
+
+		// 2. Secondary Fallback: Curated local dialogues or procedural character-accurate dialogue
 		const baseKey = targetStudentName
 			.toLowerCase()
 			.replace(/\s*[(*[].*?[)*\]]/g, "")
@@ -565,35 +627,61 @@ const command: ICommand = {
 			nameTokens[nameTokens.length - 1] ||
 			nameTokens[0] ||
 			"hoshino"
-		const dialogues = MOMO_DIALOGUES[matchedKey]
+		const localDialogues = MOMO_DIALOGUES[matchedKey]
 
 		let dialogue: MomoDialogue
-		if (dialogues && dialogues.length > 0) {
-			dialogue = dialogues[Math.floor(Math.random() * dialogues.length)]!
+		if (scrapedEpisodes.length > 0) {
+			// Pick episode based on totalTalks progression so Sensei experiences episodes sequentially!
+			const epIdx = currentBond.totalTalks % scrapedEpisodes.length
+			dialogue = scrapedEpisodes[epIdx]!
+		} else if (localDialogues && localDialogues.length > 0) {
+			dialogue =
+				localDialogues[Math.floor(Math.random() * localDialogues.length)]!
 		} else {
-			// Procedural dialogue for any other recruited student!
+			const introHint = targetSchale?.Hobby
+				? `Aku baru saja selesai ${targetSchale.Hobby.toLowerCase()} di ${targetSchale.School}.`
+				: `Terima kasih sudah selalu menjaga kami di ${targetSchale?.School || "Schale"}.`
 			dialogue = {
 				id: `gen_${targetStudentId}`,
 				speaker: targetStudentName,
 				studentId: targetStudentId,
-				message: `Sensei, halo! Terima kasih sudah selalu menjaga kami di Schale.\nKira-kira Sensei punya waktu sebentar untuk ngobrol denganku?`,
+				openingBubbles: [
+					`Sensei, halo! ${introHint}`,
+					`Kira-kira Sensei punya waktu sebentar untuk ngobrol denganku hari ini?`,
+				],
+				message: `Sensei, halo! ${introHint}\nKira-kira Sensei punya waktu sebentar untuk ngobrol denganku hari ini?`,
 				choices: [
 					{
 						text: "Tentu saja, aku selalu ada waktu untukmu.",
 						reply:
 							"Ehehe, terima kasih Sensei! Aku senang sekali bisa berbincang denganmu hari ini.",
+						replyBubbles: [
+							"Ehehe, terima kasih Sensei!",
+							"Aku senang sekali bisa berbincang denganmu hari ini.",
+						],
+						triggersRelationshipEvent: true,
 						exp: 90,
 					},
 					{
-						text: "Ayo kita istirahat sambil minum teh hangat.",
+						text: "Ayo kita istirahat sambil minum teh hangat di Schale.",
 						reply:
 							"Wah ide bagus, Sensei! Teh hangat bersama Sensei rasanya menenangkan sekali.",
-						exp: 80,
+						replyBubbles: [
+							"Wah ide bagus, Sensei!",
+							"Teh hangat bersama Sensei rasanya menenangkan sekali.",
+						],
+						triggersRelationshipEvent: true,
+						exp: 85,
 					},
 					{
-						text: "Aku bawakan camilan manis untukmu!",
+						text: "Aku bawakan camilan favoritmu!",
 						reply:
-							"Kyaa! Sensei baik banget deh! Terima kasih banyak ya Sensei~",
+							"Kyaa! Sensei peka banget deh! Terima kasih banyak ya Sensei~",
+						replyBubbles: [
+							"Kyaa! Sensei peka banget deh!",
+							"Terima kasih banyak ya Sensei~",
+						],
+						triggersRelationshipEvent: true,
 						exp: 100,
 					},
 				],
@@ -608,27 +696,47 @@ const command: ICommand = {
 			startedAt: Date.now(),
 		})
 
-		const currentBond = await momoRepository.getBond(
-			ctx.agentId,
-			ctx.senderJid,
-			targetStudentId,
-			targetStudentName,
-		)
 		const hearts = "❤️".repeat(Math.min(currentBond.bondLevel, 5))
+		const epBadge = dialogue.episodeNumber
+			? ` • Episode #${dialogue.episodeNumber}`
+			: ""
 
 		let promptText = `📱 ══════════════════════════\n`
-		promptText += `💬 *MOMOTALK — ${targetStudentName}* [Rank ${currentBond.bondLevel} ${hearts}]\n`
+		promptText += `💬 *MOMOTALK — ${targetStudentName}* [Rank ${currentBond.bondLevel} ${hearts}${epBadge}]\n`
 		promptText += `══════════════════════════════\n\n`
 		promptText += `${dialogue.speaker}:\n`
 		promptText += `"${dialogue.message}"\n\n`
 		promptText += `──────────────────────────────\n`
-		promptText += `👉 *PILIHAN BALASAN SENSEI:*\n`
+		promptText += `👉 *SENSEI REPLY OPTIONS:*\n`
 		promptText += `[1] "${dialogue.choices[0].text}"\n`
 		promptText += `[2] "${dialogue.choices[1].text}"\n`
 		promptText += `[3] "${dialogue.choices[2].text}"\n\n`
-		promptText += `💡 *Ketik angka balasan:* *1*, *2*, atau *3* (atau ketik *${ctx.prefix}momo 1*)`
+		promptText += `💡 *Reply with:* *${ctx.prefix}momo 1*, *${ctx.prefix}momo 2*, or *${ctx.prefix}momo 3*`
 
-		// Attach portrait / collection image if available
+		// Render Authentic MomoTalk UI Card Image first!
+		if (targetSchale) {
+			const cardBuf = await renderMomoTalkCard({
+				student: targetSchale,
+				bondLevel: currentBond.bondLevel,
+				episodeNumber: dialogue.episodeNumber,
+				studentBubbles: dialogue.openingBubbles || [dialogue.message],
+				choices: [
+					dialogue.choices[0].text,
+					dialogue.choices[1].text,
+					dialogue.choices[2].text,
+				],
+			})
+			if (cardBuf) {
+				await ctx.sock.sendMessage(
+					ctx.jid,
+					{ image: cardBuf, caption: promptText },
+					{ quoted: ctx.rawMsg },
+				)
+				return
+			}
+		}
+
+		// Fallback to portrait / collection image if SVG rendering fails
 		const portraitUrl = getStudentImageUrl(targetStudentId, "collection")
 		try {
 			const imgRes = await fetch(portraitUrl)
