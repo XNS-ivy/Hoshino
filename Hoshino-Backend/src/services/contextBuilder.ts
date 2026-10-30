@@ -772,7 +772,14 @@ export function buildCommandContext(
 
 	const getQuotedMessage = async (): Promise<ParsedQuotedMessage | null> => {
 		if (quotedCache !== undefined) return quotedCache
+		const unwrapped = rawContent || m
 		const contextInfo =
+			unwrapped?.extendedTextMessage?.contextInfo ||
+			unwrapped?.imageMessage?.contextInfo ||
+			unwrapped?.videoMessage?.contextInfo ||
+			unwrapped?.documentMessage?.contextInfo ||
+			unwrapped?.stickerMessage?.contextInfo ||
+			unwrapped?.audioMessage?.contextInfo ||
 			m?.extendedTextMessage?.contextInfo ||
 			m?.imageMessage?.contextInfo ||
 			m?.videoMessage?.contextInfo ||
@@ -786,6 +793,15 @@ export function buildCommandContext(
 			return null
 		}
 
+		const extContextInfo = contextInfo as typeof contextInfo & {
+			participantAlt?: string
+			remoteJidAlt?: string
+		}
+		const rawParticipant =
+			extContextInfo?.participantAlt ||
+			contextInfo?.participant ||
+			(!isGroup ? jid : "")
+
 		const credsMe = sock.authState?.creds?.me
 		const botIds = await resolveUserIdentities(
 			sock,
@@ -795,17 +811,45 @@ export function buildCommandContext(
 				: null,
 			false,
 		)
-		const quotedParticipantNorm = contextInfo?.participant
-			? commandRepository.normalizeJid(contextInfo.participant)
+		const quotedParticipantNorm = rawParticipant
+			? commandRepository.normalizeJid(rawParticipant)
 			: ""
+
+		// If in a group and quoted participant is an @lid, try enriching via cached/live group metadata or lidMapping
+		let resolvedQuotedSender = quotedParticipantNorm
+		if (
+			resolvedQuotedSender &&
+			resolvedQuotedSender.endsWith("@lid")
+		) {
+			const meta = isGroup
+				? (groupMetaCache ??
+					groupMetadataCache.get<GroupMetadata>(jid) ??
+					(await getGroupMetadata()))
+				: null
+			const allQuotedIds = await resolveUserIdentities(
+				sock,
+				[
+					extContextInfo?.participantAlt,
+					contextInfo?.participant,
+					resolvedQuotedSender,
+				],
+				meta,
+				true,
+			)
+			const pnMatch = allQuotedIds.find((id) => id.endsWith("@s.whatsapp.net"))
+			if (pnMatch) {
+				resolvedQuotedSender = pnMatch
+			}
+		}
 
 		const quotedKey = {
 			remoteJid: jid,
 			fromMe: quotedParticipantNorm
-				? botIds.includes(quotedParticipantNorm)
+				? botIds.includes(quotedParticipantNorm) ||
+					botIds.includes(resolvedQuotedSender)
 				: false,
 			id: contextInfo?.stanzaId,
-			participant: contextInfo?.participant,
+			participant: contextInfo?.participant || resolvedQuotedSender,
 		}
 
 		const text =
@@ -819,9 +863,7 @@ export function buildCommandContext(
 			key: quotedKey,
 			message: quotedMsg,
 			rawQuoted: quotedMsg,
-			senderJid: commandRepository.normalizeJid(
-				contextInfo?.participant || jid,
-			),
+			senderJid: resolvedQuotedSender,
 			text,
 			caption: text,
 			getMediaBuffer: async () => {
@@ -901,12 +943,18 @@ export function buildCommandContext(
 	}
 
 	const getMentions = async (): Promise<string[]> => {
+		const unwrapped = rawContent || m
 		const contextInfo =
+			unwrapped?.extendedTextMessage?.contextInfo ||
+			unwrapped?.imageMessage?.contextInfo ||
+			unwrapped?.videoMessage?.contextInfo ||
 			m?.extendedTextMessage?.contextInfo ||
 			m?.imageMessage?.contextInfo ||
 			m?.videoMessage?.contextInfo
 		const list = contextInfo?.mentionedJid || []
-		return list.map((item) => commandRepository.normalizeJid(item))
+		return list
+			.map((item) => commandRepository.normalizeJid(item))
+			.filter((jidItem) => Boolean(jidItem) && !jidItem.endsWith("@g.us"))
 	}
 
 	const getBusinessProfile = async (

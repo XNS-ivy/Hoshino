@@ -6,13 +6,15 @@ import { logger } from "@utils/logger"
 import {
 	calculateArmorMultiplier,
 	calculateTerrainMultiplier,
+	fetchSchaleImageBuffer,
 	formatArmorType,
 	formatBulletType,
+	getRaidBossImageUrls,
 	getSchaleItems,
 	getSkillUpgradeRecipe,
 	type SchaleStudent,
 } from "@utils/schaledb"
-import { resolveSenseiSquad } from "./upgrade"
+import { resolveCanonicalSensei, resolveSenseiSquad } from "./upgrade"
 
 interface SchaleRaidBoss {
 	Id: number
@@ -321,10 +323,7 @@ const command: ICommand = {
 		try {
 			const bosses = await getRaidBosses()
 			const activeBoss = getActiveWeeklyBoss(bosses)
-			const canonicalJid = await gachaRepository.resolveUserJid(
-				ctx.agentId,
-				ctx.senderJid,
-			)
+			const { canonicalJid } = await resolveCanonicalSensei(ctx)
 			const profile = await gachaRepository.refreshTicketsIfNeeded(
 				ctx.agentId,
 				canonicalJid,
@@ -444,6 +443,18 @@ const command: ICommand = {
 					text += `  • _...and ${drops.length - 10} more SchaleDB materials added to ${ctx.prefix}inventory!_\n`
 				}
 				text += `\n💡 Use *${ctx.prefix}upgrade <student>* to spend your new materials!`
+
+				const bossImgBuf = await fetchSchaleImageBuffer(
+					getRaidBossImageUrls(targetBoss),
+				)
+				if (bossImgBuf) {
+					await ctx.sock.sendMessage(
+						ctx.jid,
+						{ image: bossImgBuf, caption: text },
+						{ quoted: ctx.rawMsg },
+					)
+					return
+				}
 
 				await ctx.reply(text)
 				return
@@ -699,21 +710,17 @@ const command: ICommand = {
 					caption += `\n💡 *Tip:* Upgrade your students with *${ctx.prefix}upgrade <student>* or deploy ${getRecommendedCounter(targetBoss.ArmorType)} to one-shot *${chosenDiff.name}*!`
 				}
 
-				const imgName =
-					targetBoss.PathName || targetBoss.DevName || targetBoss.Name
-				const imgUrl = `https://schaledb.com/images/raid/Boss_Portrait_${imgName}.png`
-				try {
-					const imgRes = await fetch(imgUrl)
-					if (imgRes.ok) {
-						const imgBuf = Buffer.from(await imgRes.arrayBuffer())
-						await ctx.sock.sendMessage(
-							ctx.jid,
-							{ image: imgBuf, caption },
-							{ quoted: ctx.rawMsg },
-						)
-						return
-					}
-				} catch {}
+				const imgBuf = await fetchSchaleImageBuffer(
+					getRaidBossImageUrls(targetBoss),
+				)
+				if (imgBuf) {
+					await ctx.sock.sendMessage(
+						ctx.jid,
+						{ image: imgBuf, caption },
+						{ quoted: ctx.rawMsg },
+					)
+					return
+				}
 
 				await ctx.reply(caption)
 				return
@@ -748,6 +755,18 @@ const command: ICommand = {
 				text += `• *${ctx.prefix}weeklyboss* — Challenge Weekly Boss Bounty for huge material drops!\n`
 				text += `• *${ctx.prefix}raid rank* — View Total Assault Leaderboard\n`
 				text += `• *${ctx.prefix}raid list* — List all SchaleDB Raid Bosses`
+
+				const activeImgBuf = await fetchSchaleImageBuffer(
+					getRaidBossImageUrls(activeBoss),
+				)
+				if (activeImgBuf) {
+					await ctx.sock.sendMessage(
+						ctx.jid,
+						{ image: activeImgBuf, caption: text },
+						{ quoted: ctx.rawMsg },
+					)
+					return
+				}
 
 				await ctx.reply(text)
 				return
@@ -788,21 +807,15 @@ const command: ICommand = {
 			caption += `\n⚔️ *Challenge Now:*\n`
 			caption += `Type *${ctx.prefix}raid attack ${match.Name.toLowerCase()} normal* (or *hard / extreme / insane / torment*) to deploy your squad against *${match.Name}*!`
 
-			const imgName = match.PathName || match.DevName || match.Name
-			const imgUrl = `https://schaledb.com/images/raid/Boss_Portrait_${imgName}.png`
-
-			try {
-				const imgRes = await fetch(imgUrl)
-				if (imgRes.ok) {
-					const imgBuf = Buffer.from(await imgRes.arrayBuffer())
-					await ctx.sock.sendMessage(
-						ctx.jid,
-						{ image: imgBuf, caption },
-						{ quoted: ctx.rawMsg },
-					)
-					return
-				}
-			} catch {}
+			const imgBuf = await fetchSchaleImageBuffer(getRaidBossImageUrls(match))
+			if (imgBuf) {
+				await ctx.sock.sendMessage(
+					ctx.jid,
+					{ image: imgBuf, caption },
+					{ quoted: ctx.rawMsg },
+				)
+				return
+			}
 
 			await ctx.reply(caption)
 		} catch (error) {

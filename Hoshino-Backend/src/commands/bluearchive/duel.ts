@@ -1,29 +1,150 @@
 import type { CommandContext, ICommand } from "@customTypes/command"
 import { gachaRepository } from "@repositories/gacha.repository"
+import {
+	findGroupParticipant,
+	getParticipantIdentities,
+} from "@services/contextBuilder"
 import { logger } from "@utils/logger"
 import {
 	calculateArmorMultiplier,
 	calculateTerrainMultiplier,
-	formatArmorType,
-	formatBulletType,
 } from "@utils/schaledb"
 import NodeCache from "node-cache"
-import { resolveSenseiSquad } from "./upgrade"
+import { resolveCanonicalSensei, resolveSenseiSquad } from "./upgrade"
 
 interface PendingDuelChallenge {
 	id: string
 	agentId: string
 	chatJid: string
 	challengerJid: string
+	challengerIdentities: string[]
 	challengerName: string
 	opponentJid: string
+	opponentIdentities: string[]
+	opponentMentionJid: string
 	opponentTag: string
 	betAmount: number
 	currency: "pyroxene" | "credit"
+	cacheKeys: string[]
 	createdAt: number
 }
 
 const duelCache = new NodeCache({ stdTTL: 120, checkperiod: 30 })
+
+function findPendingChallengeForSensei(
+	agentId: string,
+	chatJid: string,
+	senseiIdentities: string[],
+): PendingDuelChallenge | undefined {
+	for (const id of senseiIdentities) {
+		const hit = duelCache.get<PendingDuelChallenge>(`${agentId}:${id}`)
+		if (hit) return hit
+	}
+	// Also check chat-scoped challenge if the sender's identities overlap with opponentIdentities
+	const chatHit = duelCache.get<PendingDuelChallenge>(
+		`chat:${agentId}:${chatJid}`,
+	)
+	if (chatHit) {
+		const idSet = new Set(senseiIdentities.map((x) => x.split("@")[0]))
+		const oppMatch = chatHit.opponentIdentities.some(
+			(oid) =>
+				senseiIdentities.includes(oid) || idSet.has(oid.split("@")[0]),
+		)
+		if (oppMatch) return chatHit
+	}
+	return undefined
+}
+
+function clearPendingChallenge(challenge: PendingDuelChallenge): void {
+	for (const k of challenge.cacheKeys) {
+		duelCache.del(k)
+	}
+}
+
+/**
+ * Extracts all candidate target JIDs from mentions, quoted message, raw contextInfo, or group participant matching.
+ */
+async function extractTargetCandidateJids(
+	args: string[],
+	ctx: CommandContext,
+): Promise<string[]> {
+	const candidates = new Set<string>()
+
+	// 1. Standard lazy mentions
+	const mentions = await ctx.getMentions()
+	for (const m of mentions) {
+		if (m && !m.endsWith("@g.us")) candidates.add(m)
+	}
+
+	// 2. Standard lazy quoted message
+	const quoted = await ctx.getQuotedMessage()
+	if (quoted?.senderJid && !quoted.senderJid.endsWith("@g.us")) {
+		candidates.add(quoted.senderJid)
+	}
+	if (quoted?.key?.participant && !quoted.key.participant.endsWith("@g.us")) {
+		candidates.add(quoted.key.participant)
+	}
+
+	// 3. Direct raw message envelope inspection (handles ephemeral/viewOnce/nested contextInfo)
+	const m = ctx.rawMsg.message
+	const unwrapped =
+		m?.ephemeralMessage?.message ||
+		m?.viewOnceMessage?.message ||
+		m?.viewOnceMessageV2?.message ||
+		m
+	const rawContextInfo =
+		unwrapped?.extendedTextMessage?.contextInfo ||
+		unwrapped?.imageMessage?.contextInfo ||
+		unwrapped?.videoMessage?.contextInfo ||
+		m?.extendedTextMessage?.contextInfo ||
+		m?.imageMessage?.contextInfo ||
+		m?.videoMessage?.contextInfo
+
+	if (rawContextInfo) {
+		const extCtx = rawContextInfo as typeof rawContextInfo & {
+			participantAlt?: string
+		}
+		if (extCtx.participantAlt && !extCtx.participantAlt.endsWith("@g.us")) {
+			candidates.add(extCtx.participantAlt)
+		}
+		if (
+			rawContextInfo.participant &&
+			!rawContextInfo.participant.endsWith("@g.us")
+		) {
+			candidates.add(rawContextInfo.participant)
+		}
+		if (Array.isArray(rawContextInfo.mentionedJid)) {
+			for (const mj of rawContextInfo.mentionedJid) {
+				if (mj && !mj.endsWith("@g.us")) candidates.add(mj)
+			}
+		}
+	}
+
+	// 4. Check @number or phone digits in args and match against group participants if in a group
+	const groupMeta = ctx.isGroup ? await ctx.getGroupMetadata() : null
+	for (const arg of args) {
+		if (arg.startsWith("@")) {
+			const cleanDigits = arg.slice(1).replace(/[^0-9]/g, "")
+			if (cleanDigits.length >= 6) {
+				candidates.add(`${cleanDigits}@s.whatsapp.net`)
+				candidates.add(`${cleanDigits}@lid`)
+				if (groupMeta?.participants?.length) {
+					const matched = findGroupParticipant(groupMeta.participants, [
+						`${cleanDigits}@s.whatsapp.net`,
+						`${cleanDigits}@lid`,
+					])
+					if (matched) {
+						for (const pid of getParticipantIdentities(matched)) {
+							if (!pid.endsWith("@g.us")) candidates.add(pid)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return Array.from(candidates)
+}
 
 const command: ICommand = {
 	name: ["duel", "pvp", "tactical", "bet", "taruhan"],
@@ -33,6 +154,7 @@ const command: ICommand = {
 	usage: [
 		"duel @sensei 500",
 		"duel @sensei 100000 credit",
+		"duel 500 (replying to a Sensei's message)",
 		"duel accept",
 		"duel decline",
 		"duel rank",
@@ -42,15 +164,20 @@ const command: ICommand = {
 		const sub = (args[0] || "").toLowerCase()
 
 		try {
-			const senderCanonical = await gachaRepository.resolveUserJid(
-				ctx.agentId,
-				ctx.senderJid,
-			)
+			const {
+				canonicalJid: senderCanonical,
+				allIdentities: senderIdentities,
+			} = await resolveCanonicalSensei(ctx)
 
 			// =========================================================================
 			// 1. PVP LEADERBOARD (.duel rank / .duel leaderboard / .duel top)
 			// =========================================================================
-			if (sub === "rank" || sub === "leaderboard" || sub === "top" || sub === "stats") {
+			if (
+				sub === "rank" ||
+				sub === "leaderboard" ||
+				sub === "top" ||
+				sub === "stats"
+			) {
 				const profiles = await gachaRepository.getAllProfiles(ctx.agentId)
 				const ranked = profiles
 					.filter((p) => p.pvpWins > 0 || p.pvpLosses > 0)
@@ -96,13 +223,18 @@ const command: ICommand = {
 				sub === "cancel" ||
 				sub === "batal"
 			) {
-				const keyByOpponent = `${ctx.agentId}:${senderCanonical}`
-				const pending = duelCache.get<PendingDuelChallenge>(keyByOpponent)
+				const pending = findPendingChallengeForSensei(
+					ctx.agentId,
+					ctx.jid,
+					senderIdentities,
+				)
 				if (!pending) {
-					await ctx.reply(`ℹ️ You don't have any active PvP Duel invitation to decline.`)
+					await ctx.reply(
+						`ℹ️ You don't have any active PvP Duel invitation to decline.`,
+					)
 					return
 				}
-				duelCache.del(keyByOpponent)
+				clearPendingChallenge(pending)
 				await ctx.reply(
 					`🏳️ *Tactical Challenge Declined!*\nThe duel invitation between *${pending.challengerName}* and *@${pending.opponentTag}* has been cancelled.`,
 				)
@@ -119,8 +251,11 @@ const command: ICommand = {
 				sub === "yes" ||
 				sub === "start"
 			) {
-				const keyByOpponent = `${ctx.agentId}:${senderCanonical}`
-				const challenge = duelCache.get<PendingDuelChallenge>(keyByOpponent)
+				const challenge = findPendingChallengeForSensei(
+					ctx.agentId,
+					ctx.jid,
+					senderIdentities,
+				)
 
 				if (!challenge) {
 					await ctx.reply(
@@ -130,20 +265,27 @@ const command: ICommand = {
 					return
 				}
 
-				duelCache.del(keyByOpponent)
+				clearPendingChallenge(challenge)
+
+				// Re-resolve canonical JIDs across all identities to ensure student rosters are unified
+				const challengerCanonical = await gachaRepository.resolveUserJid(
+					ctx.agentId,
+					challenge.challengerIdentities,
+				)
+				const opponentCanonical = await gachaRepository.resolveUserJid(
+					ctx.agentId,
+					[...challenge.opponentIdentities, ...senderIdentities],
+				)
 
 				const [challengerProfile, opponentProfile, squadA, squadB] =
 					await Promise.all([
 						gachaRepository.getOrCreateProfile(
 							ctx.agentId,
-							challenge.challengerJid,
+							challengerCanonical,
 						),
-						gachaRepository.getOrCreateProfile(
-							ctx.agentId,
-							challenge.opponentJid,
-						),
-						resolveSenseiSquad(ctx.agentId, challenge.challengerJid),
-						resolveSenseiSquad(ctx.agentId, challenge.opponentJid),
+						gachaRepository.getOrCreateProfile(ctx.agentId, opponentCanonical),
+						resolveSenseiSquad(ctx.agentId, challengerCanonical),
+						resolveSenseiSquad(ctx.agentId, opponentCanonical),
 					])
 
 				const unitsA = [...squadA.strikers, ...squadA.specials]
@@ -186,7 +328,6 @@ const command: ICommand = {
 				const arenaTerrain =
 					terrains[Math.floor(Math.random() * terrains.length)] || "Outdoor"
 
-				// Helper to evaluate a team's offensive & defensive performance against the opposing team
 				const evaluateTeamScore = (
 					attackers: typeof unitsA,
 					defenders: typeof unitsB,
@@ -207,13 +348,11 @@ const command: ICommand = {
 
 					let totalTacticalOutput = 0
 					let bestUnitName = attackers[0]?.schale.Name || "Student"
-					let bestUnitEx =
-						attackers[0]?.schale.Skills?.Ex?.Name || "EX Skill"
+					let bestUnitEx = attackers[0]?.schale.Skills?.Ex?.Name || "EX Skill"
 					let bestUnitScore = 0
 					let weakHitsCount = 0
 
 					for (const unit of attackers) {
-						// Pick opposing target to check Bullet vs Armor affinity
 						const target =
 							defenderStrikers[
 								Math.floor(Math.random() * defenderStrikers.length)
@@ -229,7 +368,6 @@ const command: ICommand = {
 							arenaTerrain,
 						)
 
-						// Critical & Accuracy/Evasion check
 						const hitChance = Math.min(
 							0.98,
 							Math.max(
@@ -256,7 +394,6 @@ const command: ICommand = {
 						const survivabilityScore =
 							unit.stats.maxHp * 0.22 + unit.stats.def * 4.2
 
-						// Small tactical RNG variance (93% - 107%)
 						const rng = 0.93 + Math.random() * 0.14
 						const unitTotal = Math.round(
 							(offenseScore + survivabilityScore) * rng,
@@ -286,11 +423,11 @@ const command: ICommand = {
 				const challengerWins =
 					simA.totalTacticalOutput >= simB.totalTacticalOutput
 				const winnerJid = challengerWins
-					? challenge.challengerJid
-					: challenge.opponentJid
+					? challengerCanonical
+					: opponentCanonical
 				const loserJid = challengerWins
-					? challenge.opponentJid
-					: challenge.challengerJid
+					? opponentCanonical
+					: challengerCanonical
 				const winnerName = challengerWins
 					? challenge.challengerName
 					: ctx.pushName || `@${challenge.opponentTag}`
@@ -370,22 +507,9 @@ const command: ICommand = {
 			// =========================================================================
 			// 4. CREATE A NEW PVP DUEL CHALLENGE (.duel @target <bet_amount> [currency])
 			// =========================================================================
-			const mentions = await ctx.getMentions()
-			const quoted = await ctx.getQuotedMessage()
+			const targetSeeds = await extractTargetCandidateJids(args, ctx)
 
-			let targetRawJid = mentions[0] || quoted?.senderJid || ""
-
-			// Also allow phone number or @number in args
-			if (!targetRawJid) {
-				const phoneArg = args.find((a) =>
-					/^@?\d{7,16}$/.test(a.replace(/[^0-9@]/g, "")),
-				)
-				if (phoneArg) {
-					targetRawJid = `${phoneArg.replace(/[^0-9]/g, "")}@s.whatsapp.net`
-				}
-			}
-
-			if (!targetRawJid) {
+			if (targetSeeds.length === 0) {
 				await ctx.reply(
 					`⚔️ *BLUE ARCHIVE TACTICAL PVP DUEL (BETTING)*\n` +
 						`───────────────────────────\n` +
@@ -402,22 +526,30 @@ const command: ICommand = {
 				return
 			}
 
-			const opponentCanonical = await gachaRepository.resolveUserJid(
-				ctx.agentId,
-				targetRawJid,
-			)
+			// Resolve ALL @lid and @s.whatsapp.net identities for the target Sensei in the group!
+			const {
+				canonicalJid: opponentCanonical,
+				allIdentities: opponentIdentities,
+			} = await resolveCanonicalSensei(ctx, targetSeeds)
 
-			if (
+			const isSelfChallenge =
 				opponentCanonical === senderCanonical ||
-				opponentCanonical.split("@")[0] === senderCanonical.split("@")[0]
-			) {
-				await ctx.reply(`❌ Sensei, you cannot challenge yourself to a PvP duel!`)
+				opponentIdentities.some((id) => senderIdentities.includes(id))
+
+			if (isSelfChallenge) {
+				await ctx.reply(
+					`❌ Sensei, you cannot challenge yourself to a PvP duel!`,
+				)
 				return
 			}
 
-			// Parse currency and bet amount from args (excluding @mention token)
+			// Parse currency and bet amount from non-mention args
 			let currency: "pyroxene" | "credit" = "pyroxene"
 			let betAmount = 200
+
+			const targetDigitSet = new Set(
+				opponentIdentities.map((id) => id.split("@")[0]?.replace(/[^0-9]/g, "")),
+			)
 
 			for (const arg of args) {
 				const lower = arg.toLowerCase()
@@ -436,15 +568,22 @@ const command: ICommand = {
 				) {
 					currency = "pyroxene"
 				} else if (!arg.startsWith("@")) {
-					const cleanNum = Number.parseInt(arg.replace(/[^0-9]/g, ""), 10)
-					if (!Number.isNaN(cleanNum) && cleanNum > 0 && cleanNum < 1000000000) {
-						betAmount = cleanNum
+					const cleanNum = arg.replace(/[^0-9]/g, "")
+					// Skip if this token is actually the opponent's phone/LID number
+					if (cleanNum.length >= 9 && targetDigitSet.has(cleanNum)) {
+						continue
+					}
+					const parsed = Number.parseInt(cleanNum, 10)
+					if (!Number.isNaN(parsed) && parsed > 0 && parsed < 1000000000) {
+						betAmount = parsed
 					}
 				}
 			}
 
 			if (betAmount < 10) {
-				await ctx.reply(`⚠️ Minimum PvP duel bet is *10 ${currency === "pyroxene" ? "Pyroxenes" : "Credits"}*!`)
+				await ctx.reply(
+					`⚠️ Minimum PvP duel bet is *10 ${currency === "pyroxene" ? "Pyroxenes" : "Credits"}*!`,
+				)
 				return
 			}
 
@@ -501,21 +640,44 @@ const command: ICommand = {
 				}
 			}
 
-			const opponentTag = opponentCanonical.split("@")[0] || "Sensei"
+			// Choose best JID for WhatsApp @mention tag in group
+			const groupMeta = ctx.isGroup ? await ctx.getGroupMetadata() : null
+			const matchedParticipant = findGroupParticipant(
+				groupMeta?.participants,
+				opponentIdentities,
+			)
+			const opponentMentionJid =
+				targetSeeds[0] || matchedParticipant?.id || opponentCanonical
+			const opponentTag =
+				opponentMentionJid.split("@")[0] ||
+				opponentCanonical.split("@")[0] ||
+				"Sensei"
+
+			const cacheKeys = [
+				`chat:${ctx.agentId}:${ctx.jid}`,
+				...opponentIdentities.map((id) => `${ctx.agentId}:${id}`),
+			]
+
 			const challengeObj: PendingDuelChallenge = {
 				id: `${Date.now()}`,
 				agentId: ctx.agentId,
 				chatJid: ctx.jid,
 				challengerJid: senderCanonical,
+				challengerIdentities: senderIdentities,
 				challengerName: ctx.pushName || `@${senderCanonical.split("@")[0]}`,
 				opponentJid: opponentCanonical,
+				opponentIdentities,
+				opponentMentionJid,
 				opponentTag,
 				betAmount,
 				currency,
+				cacheKeys,
 				createdAt: Date.now(),
 			}
 
-			duelCache.set(`${ctx.agentId}:${opponentCanonical}`, challengeObj)
+			for (const k of cacheKeys) {
+				duelCache.set(k, challengeObj)
+			}
 
 			let inviteMsg = `⚔️ *TACTICAL PVP DUEL CHALLENGE!* ⚔️\n`
 			inviteMsg += `───────────────────────────\n`
@@ -530,7 +692,9 @@ const command: ICommand = {
 				ctx.jid,
 				{
 					text: inviteMsg,
-					mentions: [targetRawJid, opponentCanonical],
+					mentions: Array.from(
+						new Set([opponentMentionJid, ...opponentIdentities]),
+					),
 				},
 				{ quoted: ctx.rawMsg },
 			)
@@ -542,4 +706,3 @@ const command: ICommand = {
 }
 
 export default command
-

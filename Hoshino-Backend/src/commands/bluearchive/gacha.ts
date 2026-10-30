@@ -4,6 +4,7 @@ import { momoRepository } from "@repositories/momo.repository"
 import { logger } from "@utils/logger"
 import {
 	executeGachaPull,
+	fetchSchaleImageBuffer,
 	formatArmorType,
 	formatBulletType,
 	formatSquadType,
@@ -12,6 +13,7 @@ import {
 	getStudentMatchScore,
 	searchSchaleStudent,
 } from "@utils/schaledb"
+import { resolveCanonicalSensei } from "./upgrade"
 
 const command: ICommand = {
 	name: [
@@ -50,12 +52,13 @@ const command: ICommand = {
 	execute: async (args: string[], ctx: CommandContext) => {
 		const cmd = ctx.commandName.toLowerCase()
 		const subArg = (args[0] || "").toLowerCase()
+		const { canonicalJid: senseiJid } = await resolveCanonicalSensei(ctx)
 
 		// ──────────────────────────────────────────
 		// 1. DAILY PYROXENE CLAIM (.daily)
 		// ──────────────────────────────────────────
 		if (cmd === "daily" || (cmd === "gacha" && subArg === "daily")) {
-			const res = await gachaRepository.claimDaily(ctx.agentId, ctx.senderJid)
+			const res = await gachaRepository.claimDaily(ctx.agentId, senseiJid)
 			if (res.success) {
 				await ctx.reply(
 					`💎 *ARONA DAILY WORK BONUS CLAIMED!*\n\n` +
@@ -138,7 +141,7 @@ const command: ICommand = {
 
 			const res = await gachaRepository.claimElephToPyroxenes(
 				ctx.agentId,
-				ctx.senderJid,
+				senseiJid,
 				{ starGrade: starFilter, studentNameOrId: nameOrIdFilter },
 			)
 
@@ -159,7 +162,7 @@ const command: ICommand = {
 			let replyText = `╔══════════════════════════╗\n`
 			replyText += `  💠 *SCHALE ELEPH EXCHANGE COMPLETE*\n`
 			replyText += `╚══════════════════════════╝\n\n`
-			replyText += `👤 *Sensei:* @${ctx.senderJid.split("@")[0]}\n`
+			replyText += `👤 *Sensei:* @${senseiJid.split("@")[0]}\n`
 			replyText += `♻️ *Duplicate Students Recycled:* ${res.claimedDuplicates} student(s)\n`
 			replyText += `💠 *Total Elephs Exchanged:* ${res.claimedEleph} Eleph\n`
 			replyText += `💎 *Pyroxenes Claimed:* +${res.pyroxenesGained.toLocaleString("en-US")} Pyroxenes 💎\n\n`
@@ -190,23 +193,27 @@ const command: ICommand = {
 		) {
 			const summary = await gachaRepository.getElephSummary(
 				ctx.agentId,
-				ctx.senderJid,
+				senseiJid,
 			)
 			const profile = await gachaRepository.getOrCreateProfile(
 				ctx.agentId,
-				ctx.senderJid,
+				senseiJid,
 			)
 
 			let text = `╔══════════════════════════╗\n`
 			text += `  💠 *SCHALE ELEPH RECYCLING CENTER*\n`
 			text += `╚══════════════════════════╝\n\n`
-			text += `👤 *Sensei:* @${ctx.senderJid.split("@")[0]}\n`
+			text += `👤 *Sensei:* @${senseiJid.split("@")[0]}\n`
 			text += `💎 *Pyroxene Balance:* ${profile.pyroxenes.toLocaleString("en-US")} 💎\n`
 			text += `💠 *Available Elephs:* ${summary.totalEleph} Eleph (${summary.totalDuplicates} duplicate copies)\n`
 			text += `💰 *Convertible Value:* ${summary.totalPyroxenes.toLocaleString("en-US")} Pyroxenes 💎\n\n`
 
 			text += `⚖️ *Fair Exchange Rates:*\n`
-			for (const [star, stars] of [[3, "⭐⭐⭐"], [2, "⭐⭐"], [1, "⭐"]] as const) {
+			for (const [star, stars] of [
+				[3, "⭐⭐⭐"],
+				[2, "⭐⭐"],
+				[1, "⭐"],
+			] as const) {
 				const e = ELEPH_CONFIG.ELEPH_PER_DUPLICATE[star] || 1
 				text += `  • ${stars} (${star}★ Dupe): ${e} Eleph ➔ ${e * ELEPH_CONFIG.PYROXENES_PER_ELEPH} Pyroxenes 💎\n`
 			}
@@ -250,11 +257,11 @@ const command: ICommand = {
 		) {
 			const profile = await gachaRepository.getOrCreateProfile(
 				ctx.agentId,
-				ctx.senderJid,
+				senseiJid,
 			)
 			const collection = await gachaRepository.getCollection(
 				ctx.agentId,
-				ctx.senderJid,
+				senseiJid,
 			)
 
 			const threeStars = collection.filter((s) => s.starGrade === 3)
@@ -291,7 +298,7 @@ const command: ICommand = {
 				let text = `╔══════════════════════════╗\n`
 				text += `  🌟 *3★ SENSEI ROSTER (${threeStars.length})*\n`
 				text += `╚══════════════════════════╝\n\n`
-				text += `👤 *Sensei:* @${ctx.senderJid.split("@")[0]}\n`
+				text += `👤 *Sensei:* @${senseiJid.split("@")[0]}\n`
 				text += `⭐ *Total 3★ Murid:* ${threeStars.length} murid\n\n`
 
 				if (threeStars.length === 0) {
@@ -323,7 +330,7 @@ const command: ICommand = {
 				let text = `╔══════════════════════════╗\n`
 				text += `  ⭐ *2★ SENSEI ROSTER (${twoStars.length})*\n`
 				text += `╚══════════════════════════╝\n\n`
-				text += `👤 *Sensei:* @${ctx.senderJid.split("@")[0]}\n`
+				text += `👤 *Sensei:* @${senseiJid.split("@")[0]}\n`
 				text += `⭐ *Total 2★ Murid:* ${twoStars.length} murid\n\n`
 
 				if (twoStars.length === 0) {
@@ -355,7 +362,7 @@ const command: ICommand = {
 				let text = `╔══════════════════════════╗\n`
 				text += `  ⭐ *1★ SENSEI ROSTER (${oneStars.length})*\n`
 				text += `╚══════════════════════════╝\n\n`
-				text += `👤 *Sensei:* @${ctx.senderJid.split("@")[0]}\n`
+				text += `👤 *Sensei:* @${senseiJid.split("@")[0]}\n`
 				text += `⭐ *Total 1★ Murid:* ${oneStars.length} murid\n\n`
 
 				if (oneStars.length === 0) {
@@ -386,7 +393,7 @@ const command: ICommand = {
 				let text = `╔══════════════════════════╗\n`
 				text += `  🎓 *SCHALE SENSEI RECORD*\n`
 				text += `╚══════════════════════════╝\n\n`
-				text += `👤 *Sensei:* @${ctx.senderJid.split("@")[0]}\n`
+				text += `👤 *Sensei:* @${senseiJid.split("@")[0]}\n`
 				text += `💎 *Pyroxenes:* ${profile.pyroxenes.toLocaleString("en-US")} 💎\n`
 				text += `✨ *Recruitment Points (Spark):* ${profile.sparkPoints}/200\n`
 				text += `📊 *Total Recruited:* ${profile.totalPulls} pulls\n`
@@ -514,10 +521,11 @@ const command: ICommand = {
 
 					// Try to send with student collection artwork
 					try {
-						const imgUrl = getStudentImageUrl(canonicalStudent.Id, "collection")
-						const imgRes = await fetch(imgUrl)
-						if (imgRes.ok) {
-							const imgBuffer = Buffer.from(await imgRes.arrayBuffer())
+						const imgBuffer = await fetchSchaleImageBuffer([
+							getStudentImageUrl(canonicalStudent.Id, "collection"),
+							getStudentImageUrl(canonicalStudent.Id, "portrait"),
+						])
+						if (imgBuffer) {
 							await ctx.reply({ image: imgBuffer, caption: text })
 							return
 						}
@@ -547,7 +555,7 @@ const command: ICommand = {
 			const schale = bestOwned.schaleInfo || schaleMap.get(target.studentId)
 			const bond = await momoRepository.getBond(
 				ctx.agentId,
-				ctx.senderJid,
+				senseiJid,
 				target.studentId,
 				target.studentName,
 			)
@@ -634,10 +642,11 @@ const command: ICommand = {
 
 			// Send with student collection artwork if available
 			try {
-				const imgUrl = getStudentImageUrl(target.studentId, "collection")
-				const imgRes = await fetch(imgUrl)
-				if (imgRes.ok) {
-					const imgBuffer = Buffer.from(await imgRes.arrayBuffer())
+				const imgBuffer = await fetchSchaleImageBuffer([
+					getStudentImageUrl(target.studentId, "collection"),
+					getStudentImageUrl(target.studentId, "portrait"),
+				])
+				if (imgBuffer) {
 					await ctx.reply({ image: imgBuffer, caption: text })
 					return
 				}
@@ -658,7 +667,7 @@ const command: ICommand = {
 		if (cmd === "spark" || subArg === "spark") {
 			const profile = await gachaRepository.getOrCreateProfile(
 				ctx.agentId,
-				ctx.senderJid,
+				senseiJid,
 			)
 			if (profile.sparkPoints < 200) {
 				await ctx.reply(
@@ -671,13 +680,13 @@ const command: ICommand = {
 			}
 
 			// Redeem Spark
-			await gachaRepository.redeemSpark(ctx.agentId, ctx.senderJid)
+			await gachaRepository.redeemSpark(ctx.agentId, senseiJid)
 			const sparkRes = await executeGachaPull(1, true)
 			const picked = sparkRes.threeStars[0]!
 
 			const { isNew, count } = await gachaRepository.saveStudent(
 				ctx.agentId,
-				ctx.senderJid,
+				senseiJid,
 				picked.Id,
 				picked.Name,
 				3,
@@ -691,10 +700,11 @@ const command: ICommand = {
 
 			// Send with 3★ artwork
 			try {
-				const imgUrl = getStudentImageUrl(picked.Id, "collection")
-				const imgRes = await fetch(imgUrl)
-				if (imgRes.ok) {
-					const imgBuf = Buffer.from(await imgRes.arrayBuffer())
+				const imgBuf = await fetchSchaleImageBuffer([
+					getStudentImageUrl(picked.Id, "collection"),
+					getStudentImageUrl(picked.Id, "portrait"),
+				])
+				if (imgBuf) {
 					await ctx.sock.sendMessage(
 						ctx.jid,
 						{ image: imgBuf, caption },
@@ -718,7 +728,7 @@ const command: ICommand = {
 		// Check Balance & Deduct
 		const gachaTx = await gachaRepository.processGachaPull(
 			ctx.agentId,
-			ctx.senderJid,
+			senseiJid,
 			cost,
 			pullCount,
 		)
@@ -741,7 +751,7 @@ const command: ICommand = {
 			for (const item of pullResult.results) {
 				const { isNew } = await gachaRepository.saveStudent(
 					ctx.agentId,
-					ctx.senderJid,
+					senseiJid,
 					item.student.Id,
 					item.student.Name,
 					item.starGrade,
@@ -786,11 +796,12 @@ const command: ICommand = {
 			// If a 3★ was pulled, fetch and send the top 3★ student's HD artwork!
 			if (has3Star) {
 				const top3Star = pullResult.threeStars[0]!
-				const imgUrl = getStudentImageUrl(top3Star.Id, "collection")
 				try {
-					const imgRes = await fetch(imgUrl)
-					if (imgRes.ok) {
-						const imgBuf = Buffer.from(await imgRes.arrayBuffer())
+					const imgBuf = await fetchSchaleImageBuffer([
+						getStudentImageUrl(top3Star.Id, "collection"),
+						getStudentImageUrl(top3Star.Id, "portrait"),
+					])
+					if (imgBuf) {
 						await ctx.sock.sendMessage(
 							ctx.jid,
 							{

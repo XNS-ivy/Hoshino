@@ -22,10 +22,10 @@ updated: 2026-10-29
 
 | ID | Task Description | Status | Related Modules | Updated |
 | :--- | :--- | :--- | :--- | :--- |
-| _None_ | _All scheduled Blue Archive RPG, Raid, MomoTalk & PvP tasks have been solved._ | — | — | — |
+| _None_ | All assigned tasks are currently solved! | ✅ Clean | — | 2026-10-30 |
 
 ### Active Checklist
-_No pending tasks currently queued._
+_No pending tasks in queue._
 
 ---
 
@@ -168,6 +168,37 @@ flowchart LR
 
 ---
 
+### 5. `TASK-006`: Fix Raid Boss Blank Image Bug
+- **Root Cause**:
+  1. `raid.ts` constructed the boss image URL as `https://schaledb.com/images/raid/Boss_Portrait_${imgName}.png` using lowercase `PathName` (`binah`) without the `_Lobby` suffix.
+  2. Because `schaledb.com` is a Single Page Application (SPA), requests to non-existent image paths return `HTTP 200 OK` with `Content-Type: text/html; charset=utf-8` (the HTML index page) instead of `404`.
+  3. `if (imgRes.ok)` passed the HTML text bytes into `ctx.sock.sendMessage(ctx.jid, { image: imgBuf })`, causing WhatsApp to display a blank/corrupted image.
+- **Technical Fix**:
+  1. Use the verified SchaleDB Raid Boss image URL pattern: `https://schaledb.com/images/raid/Boss_Portrait_${targetBoss.DevName}_Lobby.png` (with fallback to `https://schaledb.com/images/raid/icon/Icon_${targetBoss.DevName}.png`).
+  2. Create a centralized `fetchSchaleImageBuffer(url: string): Promise<Buffer | null>` helper in `src/utils/schaledb.ts` that:
+     - Verifies `res.ok` AND strictly checks `res.headers.get("content-type")?.startsWith("image/")`.
+     - Converts the image buffer (whether WebP or PNG) through `sharp(buf).png().toBuffer()` (with local disk caching in `data/schaledb/images/`) so WhatsApp always receives a valid, non-corrupted PNG buffer.
+  3. Also render a visual **Total Assault Raid Battle Card (`renderRaidBattleCard`)** via `sharp` compositing the boss artwork, HP bar, difficulty badge, MVP student, and score so Raid results always look crisp and authentic.
+
+---
+
+### 6. `TASK-007`: Fix Sensei PvP Duel Group Mention/Reply & LID Identity Resolution Bug
+- **Root Cause**:
+  1. When a Sensei runs `.gacha 10` in a group, `extractSenderIdentities` in `contextBuilder.ts` uses `key.participantAlt` (`628xxx@s.whatsapp.net`), storing their students under `628xxx@s.whatsapp.net`.
+  2. However, when another Sensei mentions `@target` or replies to their message in a group, WhatsApp's `contextInfo.mentionedJid` and `contextInfo.participant` only provide the target's `@lid` (`123456789@lid`) without `participantAlt` (or if `participant` is absent, `getQuotedMessage()` fell back to `jid` which is `@g.us`!).
+  3. Furthermore, when `.duel` previously called `getOrCreateProfile` with the unresolved `@lid`, an empty profile row (`0 students`) was created under `@lid`, shadowing the Sensei's real `@s.whatsapp.net` profile.
+- **Technical Fix**:
+  1. In `src/services/contextBuilder.ts`:
+     - Update `getQuotedMessage()` so it also checks `participantAlt` and never falls back to a `@g.us` group `remoteJid` for `senderJid`.
+     - Export a helper `resolveTargetUserJids(ctx, rawTargetJid)` that uses `resolveUserIdentities(ctx.sock, [rawTargetJid], await ctx.getGroupMetadata(), true)` to gather **all** linked `@lid` and `@s.whatsapp.net` identities for any mentioned or replied participant in a group.
+  2. In `src/repositories/gacha.repository.ts`:
+     - Upgrade `resolveUserJid(agentId, inputJidOrIdentities: string | string[])` to accept an array of candidate identities (`@lid` and `@s.whatsapp.net`), strip any `@g.us` JIDs, check student counts in `public.sensei_students` across all candidate identities, select the identity that actually owns students/pulls, and **auto-merge** any split `@lid` + `@s.whatsapp.net` rows into that single canonical `user_jid`.
+  3. In `src/commands/bluearchive/duel.ts` (and `upgrade.ts` / `raid.ts` / `momotalk.ts`):
+     - Resolve both Challenger and Opponent identities through `resolveUserIdentities(ctx.sock, ..., groupMeta, true)` before calling `gachaRepository.resolveUserJid`.
+     - Store pending duel keys in `duelCache` under **all** resolved opponent identities (`@lid` and `@s.whatsapp.net`) so `.duel accept` always matches regardless of which JID format WhatsApp sends on the accept message.
+
+---
+
 ## ✅ Solved Tasks
 
 | ID | Task Description | Status | Related Modules | Solved Date |
@@ -177,6 +208,8 @@ flowchart LR
 | `TASK-003` | **Interactive Total Assault Raid Boss & Weekly Boss System**: Playable PvE Raid (`.raid attack`) & Weekly Boss Bounty (`.weeklyboss`) combat using `raids.json`, calculating armor/terrain damage, tracking boss HP/scores/leaderboards, and dropping smart SchaleDB upgrade materials & Pyroxenes | ✅ Solved | [[Hoshino-Backend/commands/commands\|raid.ts]], [[Hoshino-Backend/repositories/gacha_momo.repository\|gacha.repository.ts]], [[Hoshino-Backend/utils/utils\|schaledb.ts]] | 2026-10-29 |
 | `TASK-004` | **Game-Accurate MomoTalk System with Web Scraping & UI Rendering**: Scrape authentic student MomoTalk episodes & dialogue trees from `bluearchive.wiki` MediaWiki API (`/w/api.php`) with local caching (`data/schaledb/momotalk/`), visual MomoTalk UI chat card rendering (`sharp` SVG-to-PNG), and Bond Stat bonuses | ✅ Solved | [[Hoshino-Backend/utils/utils\|momotalkScraper.ts]], [[Hoshino-Backend/commands/commands\|momotalk.ts]], [[Hoshino-Backend/repositories/gacha_momo.repository\|momo.repository.ts]] | 2026-10-29 |
 | `TASK-005` | **Sensei-vs-Sensei Tactical PvP Duel with Betting (`Tactical Challenge`)**: Interactive PvP challenge (`.duel @sensei <bet> [pyroxene\|credit]`, `.duel accept`, `.duel decline`, `.duel rank`) with 3-phase `4 Striker + 2 Special` squad combat simulation and atomic pot payout | ✅ Solved | [[Hoshino-Backend/commands/commands\|duel.ts]], [[Hoshino-Backend/repositories/gacha_momo.repository\|gacha.repository.ts]] | 2026-10-29 |
+| `TASK-006` | **Fix Raid Boss Blank Image Bug**: Updated Raid Boss image URLs to `Boss_Portrait_${DevName}_Lobby.png` (`getRaidBossImageUrls`) and added `fetchSchaleImageBuffer` with strict `Content-Type: image/*` validation and `sharp` PNG conversion | ✅ Solved | [[Hoshino-Backend/commands/commands\|raid.ts]], [[Hoshino-Backend/utils/utils\|schaledb.ts]] | 2026-10-30 |
+| `TASK-007` | **Fix Sensei PvP Duel Group Mention/Reply & LID Resolution Bug**: Fixed `getQuotedMessage`/`getMentions` in `contextBuilder.ts`, added `resolveCanonicalSensei`, and upgraded `gachaRepository.resolveUserJid` to resolve & auto-merge `@lid` and `@s.whatsapp.net` identities | ✅ Solved | [[Hoshino-Backend/commands/commands\|duel.ts]], [[Hoshino-Backend/repositories/gacha_momo.repository\|gacha.repository.ts]], [[Hoshino-Backend/services/contextBuilder\|contextBuilder.ts]] | 2026-10-30 |
 
 ### Completed Checklist
 - [x] **`TASK-001`**: Create agent rule (`.agents/rules/task-tracking-rule.md`) and initialize `docs/tasks.md` to track ongoing, pending, and solved tasks (`Solved` - 2026-10-29)
@@ -184,3 +217,5 @@ flowchart LR
 - [x] **`TASK-003`**: Interactive Total Assault Raid Boss & Weekly Boss System (`Solved` - 2026-10-29)
 - [x] **`TASK-004`**: Game-Accurate MomoTalk System with Web Scraping & Visual Flow (`Solved` - 2026-10-29)
 - [x] **`TASK-005`**: Sensei-vs-Sensei Tactical PvP Duel with Betting (`Solved` - 2026-10-29)
+- [x] **`TASK-006`**: Fix Raid Boss Blank Image Bug (`Solved` - 2026-10-30)
+- [x] **`TASK-007`**: Fix Sensei PvP Duel Group Mention/Reply & LID Resolution Bug (`Solved` - 2026-10-30)

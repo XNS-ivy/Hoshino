@@ -4,9 +4,16 @@ import {
 	type SenseiStudentItem,
 } from "@repositories/gacha.repository"
 import { momoRepository } from "@repositories/momo.repository"
+import {
+	extractSenderIdentities,
+	findGroupParticipants,
+	getParticipantIdentities,
+	resolveUserIdentities,
+} from "@services/contextBuilder"
 import { logger } from "@utils/logger"
 import {
 	calculateStudentCombatStats,
+	fetchSchaleImageBuffer,
 	formatArmorType,
 	formatBulletType,
 	formatSquadType,
@@ -17,6 +24,64 @@ import {
 	getStudentMatchScore,
 	type SchaleStudent,
 } from "@utils/schaledb"
+
+/**
+ * Resolves all known `@lid` and `@s.whatsapp.net` identities for a Sensei in a group or DM,
+ * and returns the canonical `user_jid` that owns their students in PostgreSQL.
+ */
+export async function resolveCanonicalSensei(
+	ctx: CommandContext,
+	rawTargetJids?: (string | undefined | null)[],
+): Promise<{ canonicalJid: string; allIdentities: string[] }> {
+	const groupMeta = ctx.isGroup ? await ctx.getGroupMetadata() : null
+
+	let seeds: (string | undefined | null)[]
+	if (rawTargetJids && rawTargetJids.length > 0) {
+		seeds = rawTargetJids
+	} else {
+		const { senderIdentities } = extractSenderIdentities(ctx.sock, ctx.rawMsg)
+		seeds = [ctx.senderJid, ...senderIdentities]
+	}
+
+	const cleanSeeds = seeds.filter(
+		(s): s is string =>
+			typeof s === "string" && s.length > 0 && !s.endsWith("@g.us"),
+	)
+
+	const resolved = await resolveUserIdentities(
+		ctx.sock,
+		cleanSeeds,
+		groupMeta,
+		true,
+	)
+
+	const identitySet = new Set<string>([...cleanSeeds, ...resolved])
+
+	if (groupMeta?.participants?.length) {
+		const matchedParticipants = findGroupParticipants(
+			groupMeta.participants,
+			Array.from(identitySet),
+		)
+		for (const p of matchedParticipants) {
+			for (const pid of getParticipantIdentities(p)) {
+				if (!pid.endsWith("@g.us")) identitySet.add(pid)
+			}
+		}
+	}
+
+	const allIdentities = Array.from(identitySet).filter(
+		(id) => Boolean(id) && !id.endsWith("@g.us"),
+	)
+	const canonicalJid = await gachaRepository.resolveUserJid(
+		ctx.agentId,
+		allIdentities,
+	)
+	if (canonicalJid && !allIdentities.includes(canonicalJid)) {
+		allIdentities.unshift(canonicalJid)
+	}
+
+	return { canonicalJid, allIdentities }
+}
 
 /**
  * Resolves the best matching owned student from Sensei's roster using deterministic scoring.
@@ -195,10 +260,7 @@ const command: ICommand = {
 		const invoked = (ctx.commandName || "upgrade").toLowerCase()
 
 		try {
-			const canonicalJid = await gachaRepository.resolveUserJid(
-				ctx.agentId,
-				ctx.senderJid,
-			)
+			const { canonicalJid } = await resolveCanonicalSensei(ctx)
 			const profile = await gachaRepository.refreshTicketsIfNeeded(
 				ctx.agentId,
 				canonicalJid,
@@ -1018,18 +1080,15 @@ const command: ICommand = {
 			caption += `• *${ctx.prefix}upgrade ${schale.Name} star*`
 
 			const portraitUrl = getStudentImageUrl(schale.Id, "collection")
-			try {
-				const imgRes = await fetch(portraitUrl)
-				if (imgRes.ok) {
-					const buf = Buffer.from(await imgRes.arrayBuffer())
-					await ctx.sock.sendMessage(
-						ctx.jid,
-						{ image: buf, caption },
-						{ quoted: ctx.rawMsg },
-					)
-					return
-				}
-			} catch {}
+			const imgBuf = await fetchSchaleImageBuffer(portraitUrl)
+			if (imgBuf) {
+				await ctx.sock.sendMessage(
+					ctx.jid,
+					{ image: imgBuf, caption },
+					{ quoted: ctx.rawMsg },
+				)
+				return
+			}
 
 			await ctx.reply(caption)
 		} catch (error) {

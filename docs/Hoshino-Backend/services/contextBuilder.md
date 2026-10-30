@@ -63,7 +63,7 @@ Each resolver contains single-flight memoization per message instance to avoid r
 - Evaluates sender admin status and bot admin status in the group chat by resolving all sender identities (`key.participant`, `key.participantAlt`, `authState.keys`, and `lidMapping`) and all bot identities (`sock.user.id`, `sock.user.lid`, `sock.authState.creds.me.id`, `sock.authState.creds.me.lid`) against all participant fields (`p.id`, `p.lid`, `p.phoneNumber`). If sender or bot could NOT be found in participants (e.g. unlinked LID), it resolves admin identities via `lidMapping.getLIDsForPNs()` / `getPNForLID()`. Relies on reactive cache invalidation from `groupHelper.ts` (`invalidateCachedGroupMetadata` on participant updates) to ensure 0ms cached evaluations without redundant live network round-trips.
 
 ### 4. `getQuotedMessage(): Promise<ParsedQuotedMessage | null>`
-- Extracts quoted message details (text, sender JID, stanzaId, and `getMediaBuffer()` for quoted media).
+- Extracts quoted message details (text, sender JID, stanzaId, and `getMediaBuffer()` for quoted media) from unwrapped `rawContent` and `m`. Checks both `participantAlt` and `participant`, prevents `@g.us` group JID fallback when `isGroup` is true, and resolves `@lid` quoted participants to `@s.whatsapp.net` via `resolveUserIdentities`.
 
 ### 5. `getMediaBuffer(): Promise<Buffer | null>`
 - Decrypts and downloads the message's binary media buffer on demand via `downloadMediaMessage()`.
@@ -75,7 +75,7 @@ Each resolver contains single-flight memoization per message instance to avoid r
 - Fetches high-resolution avatar URL via `sock.profilePictureUrl()`.
 
 ### 8. `getMentions(): Promise<string[]>`
-- Returns an array of normalized JIDs mentioned in the message.
+- Returns an array of normalized user JIDs mentioned in the message (extracted from unwrapped `rawContent`, excluding `@g.us`).
 
 ### 9. `getBusinessProfile(targetJid?): Promise<unknown | null>`
 - Retrieves WhatsApp Business profile details.

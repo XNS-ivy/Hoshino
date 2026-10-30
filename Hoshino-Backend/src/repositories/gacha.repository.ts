@@ -145,47 +145,222 @@ export class GachaRepository {
 	}
 
 	/**
-	 * Resolves an input JID or phone number to the single matching canonical Sensei profile user_jid.
+	 * Resolves one or more candidate JIDs (`@lid` and/or `@s.whatsapp.net`) or phone numbers
+	 * to the single canonical Sensei profile `user_jid` that owns the Sensei's students.
+	 * Automatically merges split `@lid` / `@s.whatsapp.net` rows if both exist for the same Sensei.
 	 */
 	public async resolveUserJid(
 		agentId: string,
-		inputJid: string,
+		inputJid: string | string[],
 	): Promise<string> {
-		if (!inputJid) return ""
-		const normalized = this.normalizeJid(inputJid)
-		const rawDigits = inputJid.replace(/@.*$/, "").replace(/[^0-9]/g, "")
-		const normalizedDigits = normalized.split("@")[0]
+		const rawList = (Array.isArray(inputJid) ? inputJid : [inputJid])
+			.map((j) => (j || "").trim())
+			.filter(
+				(j) =>
+					Boolean(j) &&
+					!j.endsWith("@g.us") &&
+					!j.endsWith("@broadcast") &&
+					!j.endsWith("@newsletter"),
+			)
 
-		// 1. Exact match with normalized JID or exact input
-		const exactMatch = await sql`
-			SELECT user_jid FROM public.sensei_profiles
-			WHERE agent_id = ${agentId} AND (user_jid = ${normalized} OR user_jid = ${inputJid})
-			LIMIT 1
-		`
-		if (exactMatch.length > 0) {
-			return exactMatch[0].user_jid as string
-		}
+		if (rawList.length === 0) return ""
 
-		// 2. Match by phone digits (handles @lid vs @s.whatsapp.net vs legacy unnormalized rows)
-		if (normalizedDigits || rawDigits) {
-			const digitMatches = await sql`
-				SELECT user_jid FROM public.sensei_profiles
-				WHERE agent_id = ${agentId} AND (
-					user_jid LIKE ${`${normalizedDigits}@%`}
-					OR user_jid LIKE ${`${rawDigits}@%`}
-					OR user_jid = ${normalizedDigits}
-					OR user_jid = ${rawDigits}
-					OR user_jid = ${`+${rawDigits}`}
-				)
-				ORDER BY total_pulls DESC, pyroxenes DESC
-				LIMIT 1
-			`
-			if (digitMatches.length > 0) {
-				return digitMatches[0].user_jid as string
+		const candidateJids = new Set<string>()
+		const candidateDigits = new Set<string>()
+
+		for (const raw of rawList) {
+			const norm = this.normalizeJid(raw)
+			if (norm && !norm.endsWith("@g.us")) {
+				candidateJids.add(norm)
+			}
+			if (!raw.endsWith("@g.us")) {
+				candidateJids.add(raw)
+			}
+			const rawDig = raw.replace(/@.*$/, "").replace(/[^0-9]/g, "")
+			const normDig = norm.split("@")[0]?.replace(/[^0-9]/g, "") || ""
+			if (rawDig.length >= 5) {
+				candidateDigits.add(rawDig)
+				candidateDigits.add(`${rawDig}@s.whatsapp.net`)
+				candidateDigits.add(`${rawDig}@lid`)
+			}
+			if (normDig.length >= 5) {
+				candidateDigits.add(normDig)
+				candidateDigits.add(`${normDig}@s.whatsapp.net`)
+				candidateDigits.add(`${normDig}@lid`)
 			}
 		}
 
-		return normalized
+		for (const d of candidateDigits) {
+			if (d.includes("@")) candidateJids.add(d)
+		}
+
+		const jidArray = Array.from(candidateJids)
+		if (jidArray.length === 0) return ""
+
+		// Query both sensei_students and sensei_profiles across all candidate JIDs,
+		// prioritizing whichever user_jid actually owns students or has pulls!
+		const matchedRows = await sql`
+			WITH candidate_students AS (
+				SELECT user_jid, COUNT(*)::int AS student_count, COALESCE(SUM(count), 0)::int AS total_copies
+				FROM public.sensei_students
+				WHERE agent_id = ${agentId} AND user_jid IN ${sql(jidArray)}
+				GROUP BY user_jid
+			),
+			candidate_profiles AS (
+				SELECT user_jid, COALESCE(total_pulls, 0)::int AS total_pulls, COALESCE(pyroxenes, 0)::int AS pyroxenes
+				FROM public.sensei_profiles
+				WHERE agent_id = ${agentId} AND user_jid IN ${sql(jidArray)}
+			)
+			SELECT 
+				COALESCE(s.user_jid, p.user_jid) AS user_jid,
+				COALESCE(s.student_count, 0)::int AS student_count,
+				COALESCE(s.total_copies, 0)::int AS total_copies,
+				COALESCE(p.total_pulls, 0)::int AS total_pulls,
+				COALESCE(p.pyroxenes, 0)::int AS pyroxenes
+			FROM candidate_students s
+			FULL OUTER JOIN candidate_profiles p ON s.user_jid = p.user_jid
+			ORDER BY 
+				COALESCE(s.student_count, 0) DESC,
+				COALESCE(s.total_copies, 0) DESC,
+				COALESCE(p.total_pulls, 0) DESC,
+				COALESCE(p.pyroxenes, 0) DESC,
+				CASE WHEN COALESCE(s.user_jid, p.user_jid) LIKE '%@s.whatsapp.net' THEN 0 ELSE 1 END ASC
+		`
+
+		if (matchedRows.length > 0) {
+			const typedRows = matchedRows as unknown as Array<Record<string, unknown>>
+			const canonicalUserJid = typedRows[0]!.user_jid as string
+
+			// Self-healing: if the user had split rows (e.g., an empty @lid row and a populated @s.whatsapp.net row), merge them now!
+			if (typedRows.length > 1) {
+				const secondaryJids = typedRows
+					.slice(1)
+					.map((r: Record<string, unknown>) => String(r.user_jid))
+					.filter((j: string) => Boolean(j) && j !== canonicalUserJid)
+
+				if (secondaryJids.length > 0) {
+					await this.mergeSecondaryJidsIntoCanonical(
+						agentId,
+						canonicalUserJid,
+						secondaryJids,
+					).catch(() => {})
+				}
+			}
+
+			return canonicalUserJid
+		}
+
+		// Prefer @s.whatsapp.net identity when initializing a brand new profile
+		const preferredPn = jidArray.find((j) => j.endsWith("@s.whatsapp.net"))
+		return preferredPn || this.normalizeJid(rawList[0]!)
+	}
+
+	/**
+	 * Merges split Sensei records (e.g. `@lid` and `@s.whatsapp.net` belonging to the same user)
+	 * into a single canonical `user_jid` so students, bonds, inventory, and balances are never lost.
+	 */
+	private async mergeSecondaryJidsIntoCanonical(
+		agentId: string,
+		canonicalJid: string,
+		secondaryJids: string[],
+	): Promise<void> {
+		for (const secJid of secondaryJids) {
+			if (!secJid || secJid === canonicalJid) continue
+
+			// Ensure canonical profile row exists
+			await sql`
+				INSERT INTO public.sensei_profiles (agent_id, user_jid, pyroxenes, credits, spark_points, total_pulls)
+				VALUES (${agentId}, ${canonicalJid}, 1200, 500000, 0, 0)
+				ON CONFLICT (agent_id, user_jid) DO NOTHING
+			`
+
+			// Merge profile stats if secondary profile has pulls or higher balances
+			const secProfiles = await sql`
+				SELECT * FROM public.sensei_profiles
+				WHERE agent_id = ${agentId} AND user_jid = ${secJid}
+				LIMIT 1
+			`
+			if (secProfiles.length > 0) {
+				const sp = secProfiles[0]!
+				const bonusPulls = Number(sp.total_pulls || 0)
+				const bonusSpark = Number(sp.spark_points || 0)
+				const secPyro = Number(sp.pyroxenes || 0)
+				// Only add extra pyroxenes above starter 1200 if secondary had activity
+				const extraPyro = bonusPulls > 0 ? secPyro : Math.max(0, secPyro - 1200)
+				await sql`
+					UPDATE public.sensei_profiles
+					SET 
+						pyroxenes = pyroxenes + ${extraPyro},
+						spark_points = spark_points + ${bonusSpark},
+						total_pulls = total_pulls + ${bonusPulls},
+						pvp_wins = COALESCE(pvp_wins, 0) + ${Number(sp.pvp_wins || 0)},
+						pvp_losses = COALESCE(pvp_losses, 0) + ${Number(sp.pvp_losses || 0)}
+					WHERE agent_id = ${agentId} AND user_jid = ${canonicalJid}
+				`
+			}
+
+			// Move students
+			const secStudents = await sql`
+				SELECT * FROM public.sensei_students
+				WHERE agent_id = ${agentId} AND user_jid = ${secJid}
+			`
+			for (const s of secStudents) {
+				await sql`
+					INSERT INTO public.sensei_students (
+						agent_id, user_jid, student_id, student_name, star_grade, count,
+						level, exp, ex_skill_level, normal_skill_level, passive_skill_level, sub_skill_level,
+						equip_slot1_tier, equip_slot2_tier, equip_slot3_tier, weapon_star, first_obtained_at
+					)
+					VALUES (
+						${agentId}, ${canonicalJid}, ${s.student_id}, ${s.student_name}, ${s.star_grade}, ${s.count},
+						${s.level ?? 1}, ${s.exp ?? 0}, ${s.ex_skill_level ?? 1}, ${s.normal_skill_level ?? 1}, ${s.passive_skill_level ?? 1}, ${s.sub_skill_level ?? 1},
+						${s.equip_slot1_tier ?? 1}, ${s.equip_slot2_tier ?? 1}, ${s.equip_slot3_tier ?? 1}, ${s.weapon_star ?? 0}, ${s.first_obtained_at}
+					)
+					ON CONFLICT (agent_id, user_jid, student_id)
+					DO UPDATE SET 
+						count = public.sensei_students.count + EXCLUDED.count,
+						star_grade = GREATEST(public.sensei_students.star_grade, EXCLUDED.star_grade),
+						level = GREATEST(COALESCE(public.sensei_students.level, 1), COALESCE(EXCLUDED.level, 1)),
+						ex_skill_level = GREATEST(COALESCE(public.sensei_students.ex_skill_level, 1), COALESCE(EXCLUDED.ex_skill_level, 1))
+				`
+			}
+			await sql`DELETE FROM public.sensei_students WHERE agent_id = ${agentId} AND user_jid = ${secJid}`
+
+			// Move bonds
+			const secBonds = await sql`
+				SELECT * FROM public.sensei_bonds
+				WHERE agent_id = ${agentId} AND user_jid = ${secJid}
+			`
+			for (const b of secBonds) {
+				await sql`
+					INSERT INTO public.sensei_bonds (agent_id, user_jid, student_id, student_name, bond_level, bond_exp, total_talks, last_talk, created_at, updated_at)
+					VALUES (${agentId}, ${canonicalJid}, ${b.student_id}, ${b.student_name}, ${b.bond_level}, ${b.bond_exp}, ${b.total_talks}, ${b.last_talk}, ${b.created_at}, ${b.updated_at})
+					ON CONFLICT (agent_id, user_jid, student_id)
+					DO UPDATE SET 
+						bond_level = GREATEST(public.sensei_bonds.bond_level, EXCLUDED.bond_level),
+						bond_exp = GREATEST(public.sensei_bonds.bond_exp, EXCLUDED.bond_exp),
+						total_talks = public.sensei_bonds.total_talks + EXCLUDED.total_talks
+				`
+			}
+			await sql`DELETE FROM public.sensei_bonds WHERE agent_id = ${agentId} AND user_jid = ${secJid}`
+
+			// Move inventory
+			const secInv = await sql`
+				SELECT * FROM public.sensei_inventory
+				WHERE agent_id = ${agentId} AND user_jid = ${secJid}
+			`
+			for (const item of secInv) {
+				await sql`
+					INSERT INTO public.sensei_inventory (agent_id, user_jid, item_id, item_name, category, rarity, count, updated_at)
+					VALUES (${agentId}, ${canonicalJid}, ${item.item_id}, ${item.item_name}, ${item.category}, ${item.rarity}, ${item.count}, CURRENT_TIMESTAMP)
+					ON CONFLICT (agent_id, user_jid, item_id)
+					DO UPDATE SET count = public.sensei_inventory.count + EXCLUDED.count
+				`
+			}
+			await sql`DELETE FROM public.sensei_inventory WHERE agent_id = ${agentId} AND user_jid = ${secJid}`
+			await sql`DELETE FROM public.sensei_raid_records WHERE agent_id = ${agentId} AND user_jid = ${secJid}`
+			await sql`DELETE FROM public.sensei_profiles WHERE agent_id = ${agentId} AND user_jid = ${secJid}`
+		}
 	}
 
 	/**

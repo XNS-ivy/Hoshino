@@ -21,7 +21,8 @@ updated: 2026-10-29
 
 ### Complete Method Reference:
 - `normalizeJid(jid: string): string`: Normalizes phone digits and WhatsApp JIDs.
-- `resolveUserJid(agentId: string, inputJid: string): Promise<string>`: Resolves canonical Sensei user JID from input numbers or JIDs.
+- `resolveUserJid(agentId: string, inputJid: string | string[]): Promise<string>`: Accepts one or more candidate user JIDs (`@lid` and `@s.whatsapp.net`), strips any `@g.us` group JIDs, prioritizes the identity that owns students/pulls in PostgreSQL, and automatically merges split `@lid`/`@s.whatsapp.net` records via `mergeSecondaryJidsIntoCanonical`.
+- `mergeSecondaryJidsIntoCanonical(agentId: string, canonicalJid: string, secondaryJids: string[]): Promise<void>`: Atomically consolidates split `@lid` and `@s.whatsapp.net` Sensei profiles, student rosters, material inventories, raid records, and MomoTalk bonds into a single canonical `user_jid`.
 - `getOrCreateProfile(agentId, userJid): Promise<SenseiProfile>`: Retrieves or initializes Sensei profile with 1,200 Pyroxenes, 500,000 Credits, 3 Raid Tickets, and 3 Bounty Tickets.
 - `claimDaily(agentId, userJid)`: Claims daily 1,200 Pyroxenes + 250,000 Credits + Activity Reports (`#11`, `#12`) and refreshes Raid/Bounty tickets (daily reset at 06:00 WIB).
 - `refreshTicketsIfNeeded(agentId, userJid): Promise<SenseiProfile>`: Automatically restores 3 Raid Tickets and 3 Bounty Tickets after 06:00 WIB daily reset.

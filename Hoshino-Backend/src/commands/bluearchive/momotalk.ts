@@ -10,11 +10,13 @@ import {
 	renderMomoTalkCard,
 } from "@utils/momotalkScraper"
 import {
+	fetchSchaleImageBuffer,
 	getSchaleStudents,
 	getStudentImageUrl,
 	getStudentMatchScore,
 	searchSchaleStudent,
 } from "@utils/schaledb"
+import { resolveCanonicalSensei } from "./upgrade"
 
 const MOMO_DIALOGUES: Record<string, MomoDialogue[]> = {
 	hoshino: [
@@ -451,25 +453,16 @@ const command: ICommand = {
 					activeSession.studentId,
 					"collection",
 				)
-
-				try {
-					let imgRes = await fetch(lobbyUrl)
-					if (!imgRes.ok) {
-						imgRes = await fetch(collectionUrl)
-					}
-
-					if (imgRes.ok) {
-						const imgBuf = Buffer.from(await imgRes.arrayBuffer())
-						replyText += `\n🖼️ *NEW MEMORIAL LOBBY ARTWORK UNLOCKED!*`
-
-						await ctx.sock.sendMessage(
-							ctx.jid,
-							{ image: imgBuf, caption: replyText },
-							{ quoted: ctx.rawMsg },
-						)
-						return
-					}
-				} catch {}
+				const imgBuf = await fetchSchaleImageBuffer([lobbyUrl, collectionUrl])
+				if (imgBuf) {
+					replyText += `\n🖼️ *NEW MEMORIAL LOBBY ARTWORK UNLOCKED!*`
+					await ctx.sock.sendMessage(
+						ctx.jid,
+						{ image: imgBuf, caption: replyText },
+						{ quoted: ctx.rawMsg },
+					)
+					return
+				}
 			}
 
 			// Render Authentic In-Game MomoTalk Chat Card with Sensei's blue bubble & Student follow-up bubbles!
@@ -513,10 +506,12 @@ const command: ICommand = {
 		// ──────────────────────────────────────────
 		// 3. START A NEW MOMOTALK CONVERSATION
 		// ──────────────────────────────────────────
+		const { canonicalJid: senseiCanonical } = await resolveCanonicalSensei(ctx)
+
 		// Fetch Sensei's recruited students
 		const collection = await gachaRepository.getCollection(
 			ctx.agentId,
-			ctx.senderJid,
+			senseiCanonical,
 		)
 
 		let targetStudentName = "Hoshino"
@@ -738,22 +733,14 @@ const command: ICommand = {
 
 		// Fallback to portrait / collection image if SVG rendering fails
 		const portraitUrl = getStudentImageUrl(targetStudentId, "collection")
-		try {
-			const imgRes = await fetch(portraitUrl)
-			if (imgRes.ok) {
-				const imgBuf = Buffer.from(await imgRes.arrayBuffer())
-				await ctx.sock.sendMessage(
-					ctx.jid,
-					{ image: imgBuf, caption: promptText },
-					{ quoted: ctx.rawMsg },
-				)
-				return
-			}
-		} catch (err) {
-			logger.warn(
-				"/commands/bluearchive/momotalk.ts",
-				`Failed fetching portrait: ${err}`,
+		const imgBuf = await fetchSchaleImageBuffer(portraitUrl)
+		if (imgBuf) {
+			await ctx.sock.sendMessage(
+				ctx.jid,
+				{ image: imgBuf, caption: promptText },
+				{ quoted: ctx.rawMsg },
 			)
+			return
 		}
 
 		await ctx.reply(promptText)

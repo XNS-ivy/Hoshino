@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { logger } from "@utils/logger"
+import sharp from "sharp"
 
 export interface SchaleStudentSkillEntry {
 	Name?: string
@@ -958,4 +959,64 @@ export function calculateTerrainMultiplier(
 		5: { multiplier: 1.3, grade: "👑 SS (1.3x)" },
 	}
 	return grades[adapt] || { multiplier: 1.0, grade: "😐 B (1.0x)" }
+}
+
+/**
+ * Returns verified SchaleDB Raid Boss image URLs in priority order (`Boss_Portrait_${DevName}_Lobby.png`, `Icon_${DevName}.png`).
+ */
+export function getRaidBossImageUrls(boss: {
+	DevName: string
+	PathName?: string
+	Name: string
+}): string[] {
+	const urls = [
+		`https://schaledb.com/images/raid/Boss_Portrait_${boss.DevName}_Lobby.png`,
+		`https://schaledb.com/images/raid/icon/Icon_${boss.DevName}.png`,
+	]
+	if (boss.PathName && boss.PathName !== boss.DevName) {
+		urls.push(
+			`https://schaledb.com/images/raid/Boss_Portrait_${boss.PathName}_Lobby.png`,
+		)
+	}
+	return urls
+}
+
+/**
+ * Safely fetches an image from SchaleDB, verifying that `Content-Type` is strictly `image/*`
+ * (preventing SchaleDB's SPA HTML 200 OK fallback from being treated as an image) and normalizing
+ * WebP/PNG buffers to a clean PNG Buffer via `sharp` so WhatsApp never renders a blank image.
+ */
+export async function fetchSchaleImageBuffer(
+	urlOrCandidates: string | string[],
+): Promise<Buffer | null> {
+	const urls = Array.isArray(urlOrCandidates)
+		? urlOrCandidates
+		: [urlOrCandidates]
+
+	for (const url of urls) {
+		if (!url) continue
+		try {
+			const res = await fetch(url, {
+				headers: {
+					"User-Agent": "HoshinoBot/1.0 (Blue Archive WhatsApp Assistant)",
+				},
+			})
+			if (!res.ok) continue
+
+			const contentType = (res.headers.get("content-type") || "").toLowerCase()
+			if (!contentType.startsWith("image/")) {
+				continue
+			}
+
+			const rawBuf = Buffer.from(await res.arrayBuffer())
+			if (rawBuf.length < 128) continue
+
+			const pngBuf = await sharp(rawBuf).png().toBuffer()
+			if (pngBuf && pngBuf.length > 128) {
+				return pngBuf
+			}
+		} catch {}
+	}
+
+	return null
 }

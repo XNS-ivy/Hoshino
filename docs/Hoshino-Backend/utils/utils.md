@@ -98,6 +98,10 @@ updated: 2026-10-29
   Official Blue Archive type affinity matrix (`2.0x` Weak, `1.0x` Normal, `0.5x` Resisted).
 - **Function `calculateTerrainMultiplier(student: SchaleStudent, terrain: string)`**:
   Calculates terrain mood adaptation (`D=0.8x` to `SS=1.3x`).
+- **Function `getRaidBossImageUrls(boss: Pick<SchaleRaidBoss, "DevName" | "PathName" | "Name">): string[]`**:
+  Builds the verified SchaleDB Raid Boss image URL priority list (`Boss_Portrait_${DevName}_Lobby.png` and fallback `icon/Icon_${DevName}.png`).
+- **Function `fetchSchaleImageBuffer(urlOrCandidates: string | string[]): Promise<Buffer | null>`**:
+  Safely fetches any SchaleDB image, strictly validates that `Content-Type` starts with `image/` (rejecting SchaleDB's `200 OK` `text/html` SPA fallback), and normalizes WebP/PNG bytes into a standard PNG buffer via `sharp` so WhatsApp never renders a blank image.
 
 ---
 

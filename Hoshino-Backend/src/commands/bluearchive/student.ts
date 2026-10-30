@@ -1,6 +1,7 @@
 import type { CommandContext, ICommand } from "@customTypes/command"
 import { logger } from "@utils/logger"
 import {
+	fetchSchaleImageBuffer,
 	formatArmorType,
 	formatBulletType,
 	formatSquadType,
@@ -82,23 +83,10 @@ const command: ICommand = {
 			const collectionUrl = getStudentImageUrl(student.Id, "collection")
 			const portraitUrl = getStudentImageUrl(student.Id, "portrait")
 
-			let imageBuffer: Buffer | null = null
-			try {
-				const imgRes = await fetch(collectionUrl)
-				if (imgRes.ok) {
-					imageBuffer = Buffer.from(await imgRes.arrayBuffer())
-				} else {
-					const portraitRes = await fetch(portraitUrl)
-					if (portraitRes.ok) {
-						imageBuffer = Buffer.from(await portraitRes.arrayBuffer())
-					}
-				}
-			} catch (imgErr) {
-				logger.warn(
-					"/commands/general/student.ts",
-					`Failed fetching artwork for ${student.Name}: ${imgErr}`,
-				)
-			}
+			const imageBuffer = await fetchSchaleImageBuffer([
+				collectionUrl,
+				portraitUrl,
+			])
 
 			// 5. Send with image or fallback to text
 			if (imageBuffer) {
