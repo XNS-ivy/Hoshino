@@ -1,9 +1,133 @@
 import type { CommandContext, ICommand } from "@customTypes/command"
+import { gachaRepository } from "@repositories/gacha.repository"
 import { messageRepository } from "@repositories/message.repository"
 import { commandLoader } from "@services/commandLoader"
 import { detectMessageType } from "@services/contextBuilder"
-import { chatWithHoshinoAgent, resetHoshinoMemory } from "@utils/ai"
+import {
+	chatWithHoshinoAgent,
+	type HoshinoCommandAction,
+	resetHoshinoMemory,
+} from "@utils/ai"
 import { logger } from "@utils/logger"
+import { resolveCanonicalSensei } from "./upgrade"
+
+const RECURSIVE_AI_TRIGGERS = new Set([
+	"hoshino",
+	"ojisan",
+	"oji-san",
+	"takanashi",
+	"ai",
+	"ask",
+	"gemini",
+	"gpt",
+])
+
+/**
+ * Deterministic fallback command intent detector when the user passes a direct or natural command
+ * instruction to `.hoshino` (e.g. `.hoshino kick @xxx`, `.hoshino gacha 10`, `.hoshino hapus pesan ini`).
+ */
+async function resolveFallbackCommandIntent(
+	prompt: string,
+	ctx: CommandContext,
+): Promise<HoshinoCommandAction | null> {
+	// Strip polite prefixes like "tolong", "coba", "bantu", "dong", "ya", "sensei"
+	const cleaned = prompt
+		.trim()
+		.replace(
+			/^(?:tolong|coba|bantu|bisa|minta|please|plis|boleh|ayo|yuk)\s+/i,
+			"",
+		)
+		.replace(/^[.!#/]+/, "")
+		.trim()
+
+	if (!cleaned) return null
+
+	const tokens = cleaned.split(/\s+/)
+	const firstWord = (tokens[0] || "").toLowerCase()
+
+	// 1. Direct command name match at start of cleaned prompt (e.g. ".hoshino kick @xxx", ".hoshino gacha 10", ".hoshino daily")
+	if (firstWord && !RECURSIVE_AI_TRIGGERS.has(firstWord)) {
+		const matchedCmd = commandLoader.getCommand(firstWord)
+		if (matchedCmd) {
+			// Avoid triggering "student" / "ba" / "raid" when the user is actually asking a conversational question like "raid boss terkuat siapa?"
+			const isConversationalQuestion =
+				/\b(siapa|apa|kenapa|mengapa|bagaimana|gimana|kapan|jelaskan|ceritakan|ceritain)\b/i.test(
+					prompt,
+				)
+			if (!isConversationalQuestion) {
+				return {
+					command: firstWord,
+					args: tokens.slice(1),
+				}
+			}
+		}
+	}
+
+	const lower = prompt.toLowerCase()
+	const mentions = await ctx.getMentions()
+	const regexMentions = prompt.match(/@\d{7,16}/g) || []
+	const targetTag =
+		regexMentions[0] ||
+		(mentions[0] ? `@${mentions[0].split("@")[0]}` : undefined)
+
+	// 2. Natural language Group Moderation intents ("kick", "keluarin", "tendang", "hapus pesan")
+	if (/\b(kick|keluarin|tendang)\b/i.test(lower)) {
+		return {
+			command: "kick",
+			args: targetTag ? [targetTag] : [],
+		}
+	}
+
+	if (
+		/\b(hapus|delete|del)\s+(pesan|chat|ini|itu)\b/i.test(lower) ||
+		/^(hapus|delete|del)$/i.test(cleaned)
+	) {
+		return {
+			command: "delete",
+			args: [],
+		}
+	}
+
+	if (/\b(autodelete)\b/i.test(lower)) {
+		const isDisable = /\b(matikan|disable|off|hapus|stop)\b/i.test(lower)
+		return {
+			command: isDisable ? "disableautodelete" : "autodelete",
+			args: targetTag ? [targetTag] : [],
+		}
+	}
+
+	// 3. Natural language Blue Archive & Utility intents
+	if (/\b(klaim|claim|ambil)\s+daily\b/i.test(lower)) {
+		return { command: "daily", args: [] }
+	}
+
+	const gachaMatch = lower.match(/\b(?:gacha|pull|tarik\s+gacha)\s*(10|1)?\b/i)
+	if (
+		gachaMatch &&
+		!/\b(apa|gimana|cara|rate|berapa)\b/i.test(lower)
+	) {
+		return {
+			command: "gacha",
+			args: [gachaMatch[1] === "1" ? "1" : "10"],
+		}
+	}
+
+	if (/\b(bikin|bikinin|buat|buatkan|jadiin)\s+(stiker|sticker)\b/i.test(lower)) {
+		return { command: "sticker", args: [] }
+	}
+
+	if (/\b(serang|lawan|attack)\s+(raid|boss)\b/i.test(lower)) {
+		return { command: "raid", args: ["attack"] }
+	}
+
+	return null
+}
+
+function isFalsePositiveRefusal(reply: string): boolean {
+	return /\b(nggak ngerti yang aneh-aneh|tidak dapat memenuhi|tidak bisa membantu dengan itu|melanggar kebijakan|sebagai ai|out of character)\b/i.test(
+		reply,
+	)
+}
 
 async function buildHoshinoTelemetry(
 	ctx: CommandContext,
@@ -61,7 +185,23 @@ async function buildHoshinoTelemetry(
 		)
 	}
 
-	// 3. Direct Media & Quoted Message Inspection
+	// 3. Sensei's Blue Archive Profile & Roster Summary from Database
+	try {
+		const { canonicalJid } = await resolveCanonicalSensei(ctx)
+		const [profile, collection] = await Promise.all([
+			gachaRepository.getOrCreateProfile(ctx.agentId, canonicalJid),
+			gachaRepository.getCollection(ctx.agentId, canonicalJid),
+		])
+		const threeStars = collection
+			.filter((s) => s.starGrade >= 3)
+			.slice(0, 12)
+			.map((s) => `${s.studentName} (Lv.${s.level}, ${s.starGrade}★)`)
+		lines.push(
+			`- Data Akun SCHALE Sensei Pengirim: Pyroxenes=${profile.pyroxenes.toLocaleString("en-US")} 💎, Credits=${profile.credits.toLocaleString("en-US")} 🪙, Total Murid Direkrut=${collection.length} murid${threeStars.length > 0 ? `, Murid Unggulan: ${threeStars.join(", ")}` : ""}`,
+		)
+	} catch {}
+
+	// 4. Direct Media & Quoted Message Inspection
 	lines.push(`- Tipe Media Pesan Saat Ini: ${ctx.messageType}`)
 
 	const quoted = await ctx.getQuotedMessage()
@@ -77,7 +217,7 @@ async function buildHoshinoTelemetry(
 		lines.push(`- Pesan yang Di-Reply (Quoted Message): TIDAK ADA`)
 	}
 
-	// 4. Mentions Resolver (from message contextInfo and text regex)
+	// 5. Mentions Resolver (from message contextInfo and text regex)
 	const rawMentions = await ctx.getMentions()
 	const promptMentions = (prompt.match(/@\d{7,16}/g) || []).map(
 		(m) => `${m.replace("@", "")}@s.whatsapp.net`,
@@ -113,10 +253,10 @@ const command: ICommand = {
 	name: ["hoshino", "ojisan", "oji-san", "takanashi"],
 	category: "bluearchive",
 	description:
-		"Chat interactively with Takanashi Hoshino AI persona and autonomously execute bot commands according to user role",
+		"Chat interactively with Takanashi Hoshino AI persona (grounded in local SchaleDB) and autonomously execute bot commands according to user role",
 	usage: [
 		"hoshino <chat message / command instruction>",
-		"hoshino kamu lagi ngapain?",
+		"hoshino siapa itu kisaki?",
 		"hoshino gacha 10 kali dong",
 		"hoshino kick @user",
 		"hoshino reset",
@@ -129,12 +269,12 @@ const command: ICommand = {
 		// 1. Show Help if no message provided
 		if (!prompt) {
 			await ctx.reply(
-				`🌸 *Takanashi Hoshino AI (Autonomous Agent)*\n\n` +
+				`🌸 *Takanashi Hoshino AI (Autonomous Agent & SchaleDB Knowledge)*\n\n` +
 					`💡 *Cara Pakai:*\n` +
-					`• *${ctx.prefix}${ctx.commandName} <pesan>* — Ngobrol langsung atau minta Hoshino menjalankan fitur bot\n` +
+					`• *${ctx.prefix}${ctx.commandName} <pesan>* — Ngobrol, tanya info murid Kivotos, atau minta Hoshino menjalankan fitur bot\n` +
 					`• *${ctx.prefix}${ctx.commandName} reset* — Reset memori percakapan Hoshino\n\n` +
 					`📌 *Contoh Interaksi & Otomasi:*\n` +
-					`• *${ctx.prefix}hoshino Sensei mau tidur siang bareng*\n` +
+					`• *${ctx.prefix}hoshino siapa itu Kisaki?*\n` +
 					`• *${ctx.prefix}hoshino tolong gacha 10 kali dong*\n` +
 					`• *${ctx.prefix}hoshino bikinin stiker dari gambar ini*\n` +
 					`• *${ctx.prefix}hoshino kick @user* _(Khusus Admin Grup)_`,
@@ -152,27 +292,42 @@ const command: ICommand = {
 		}
 
 		try {
-			// 3. Build live telemetry (Caller Role, Group Admin status, Bot Admin status, Mentions, Quoted Message, Media)
+			// 3. Build live telemetry (Caller Role, Group Admin status, Bot Admin status, Sensei Roster, Mentions, Quoted Message, Media)
 			const contextInfo = await buildHoshinoTelemetry(ctx, prompt)
 
-			// 4. Call Hoshino Agentic AI Persona
+			// 4. Call Hoshino Agentic AI Persona (automatically grounds with local SchaleDB students.json & raids.json)
 			const agentRes = await chatWithHoshinoAgent(ctx.senderJid, prompt, {
 				agentId: ctx.agentId,
 				prefix: ctx.prefix,
 				contextInfo,
 			})
 
-			// 5. Send Hoshino's conversational reply first
-			if (agentRes.reply) {
-				await ctx.reply(agentRes.reply)
+			// 5. Resolve command action (from AI tag OR deterministic fallback intent if AI forgot the tag)
+			const resolvedAction =
+				agentRes.action || (await resolveFallbackCommandIntent(prompt, ctx))
+
+			let replyToSend = agentRes.reply
+			if (resolvedAction && isFalsePositiveRefusal(replyToSend)) {
+				replyToSend =
+					"Uhe~ Siap Sensei! Biar Oji-san bantu jalankan perintahnya sekarang ya~ 🛡️"
 			}
 
-			// 6. If Hoshino emitted an autonomous command action, validate RBAC & execute it via CommandLoader
-			if (agentRes.action?.command) {
+			// 6. Send Hoshino's conversational reply first
+			if (replyToSend) {
+				await ctx.reply(replyToSend)
+			}
+
+			// 7. If an action is present, validate RBAC & execute it via CommandLoader
+			if (resolvedAction?.command) {
 				await commandLoader.executeDelegatedCommand(
 					ctx,
-					agentRes.action.command,
-					agentRes.action.args,
+					resolvedAction.command,
+					resolvedAction.args,
+					{
+						silentDeny: Boolean(
+							replyToSend && !agentRes.action && !isFalsePositiveRefusal(replyToSend),
+						),
+					},
 				)
 			}
 		} catch (error) {

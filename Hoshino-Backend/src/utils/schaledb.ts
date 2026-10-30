@@ -31,6 +31,7 @@ export interface SchaleStudent {
 	CharacterSSRNew?: string
 	CharacterAge?: string
 	BirthDay?: string
+	CharHeightMetric?: string
 	CharacterVoice?: string
 	Designer?: string
 	Illustrator?: string
@@ -1019,4 +1020,59 @@ export async function fetchSchaleImageBuffer(
 	}
 
 	return null
+}
+
+export interface SchaleRaidBossInfo {
+	Id: number
+	Name: string
+	DevName: string
+	PathName: string
+	Faction?: string
+	ArmorType: string
+	BulletType: string
+	BulletTypeInsane: string
+	Terrain?: string[]
+	Profile?: string
+}
+
+const RAIDS_FILE = join(CACHE_DIR, "raids.json")
+let cachedRaidsList: SchaleRaidBossInfo[] | null = null
+
+/**
+ * Loads all Total Assault Raid Boss definitions from local `data/schaledb/raids.json` (or fetches from SchaleDB).
+ */
+export async function getSchaleRaids(): Promise<{ Raid: SchaleRaidBossInfo[] }> {
+	if (cachedRaidsList && cachedRaidsList.length > 0) {
+		return { Raid: cachedRaidsList }
+	}
+	ensureCacheDir()
+	if (existsSync(RAIDS_FILE)) {
+		try {
+			const parsed = JSON.parse(readFileSync(RAIDS_FILE, "utf-8")) as {
+				Raid?: SchaleRaidBossInfo[]
+			}
+			if (Array.isArray(parsed.Raid) && parsed.Raid.length > 0) {
+				cachedRaidsList = parsed.Raid
+				return { Raid: cachedRaidsList }
+			}
+		} catch {}
+	}
+	try {
+		const res = await fetch("https://schaledb.com/data/en/raids.json", {
+			headers: {
+				"User-Agent": "HoshinoBot/1.0 (Blue Archive WhatsApp Assistant)",
+			},
+		})
+		if (res.ok) {
+			const parsed = (await res.json()) as { Raid?: SchaleRaidBossInfo[] }
+			if (Array.isArray(parsed.Raid)) {
+				cachedRaidsList = parsed.Raid
+				try {
+					writeFileSync(RAIDS_FILE, JSON.stringify(parsed, null, 2), "utf-8")
+				} catch {}
+				return { Raid: cachedRaidsList }
+			}
+		}
+	} catch {}
+	return { Raid: [] }
 }

@@ -105,6 +105,13 @@ export class CommandLoader {
 	}
 
 	/**
+	 * Looks up a registered command by any of its trigger names.
+	 */
+	public getCommand(triggerName: string): ICommand | undefined {
+		return this.commands.get(triggerName.trim().toLowerCase())
+	}
+
+	/**
 	 * Main 3-layer Command Processing Pipeline with Security & Robustness Shields.
 	 */
 	public async executeMessage(
@@ -520,6 +527,7 @@ export class CommandLoader {
 		parentCtx: CommandContext,
 		rawTargetCommand: string,
 		rawTargetArgs: string[],
+		options?: { silentDeny?: boolean },
 	): Promise<{
 		executed: boolean
 		deniedReason?: string
@@ -608,9 +616,11 @@ export class CommandLoader {
 
 		// 3. Check Group-Only Constraint
 		if (command.inGroup && !parentCtx.isGroup) {
-			await parentCtx.reply(
-				"Uhe~ Perintah ini cuma bisa dipakai di dalam grup ya Sensei~",
-			)
+			if (!options?.silentDeny) {
+				await parentCtx.reply(
+					"Uhe~ Perintah ini cuma bisa dipakai di dalam grup ya Sensei~",
+				)
+			}
 			return {
 				executed: false,
 				deniedReason: "GROUP_ONLY_COMMAND",
@@ -621,9 +631,11 @@ export class CommandLoader {
 		const isOwnerOrMaster = await parentCtx.getOwnerRole()
 		if (command.access === "owner" || command.access === "master") {
 			if (!isOwnerOrMaster) {
-				await parentCtx.reply(
-					"Uhe~ Maaf ya Sensei, perintah itu cuma boleh dijalankan oleh Bot Owner utama~",
-				)
+				if (!options?.silentDeny) {
+					await parentCtx.reply(
+						"Uhe~ Maaf ya Sensei, perintah itu cuma boleh dijalankan oleh Bot Owner utama~",
+					)
+				}
 				return {
 					executed: false,
 					deniedReason: "OWNER_REQUIRED",
@@ -635,9 +647,11 @@ export class CommandLoader {
 		if (parentCtx.isGroup && command.inGroupAccess === "admin") {
 			const { isAdmin } = await parentCtx.getSenderAdminStatus()
 			if (!isAdmin && !isOwnerOrMaster) {
-				await parentCtx.reply(
-					"Uhe~ Sensei kan belum jadi Admin di grup ini, jadi Oji-san nggak bisa jalanin perintah khusus Admin ya~",
-				)
+				if (!options?.silentDeny) {
+					await parentCtx.reply(
+						"Uhe~ Sensei kan belum jadi Admin di grup ini, jadi Oji-san nggak bisa jalanin perintah khusus Admin ya~",
+					)
+				}
 				return {
 					executed: false,
 					deniedReason: "GROUP_ADMIN_REQUIRED",
@@ -648,9 +662,11 @@ export class CommandLoader {
 		if (parentCtx.isGroup && command.botAdminRequired) {
 			const { isBotAdmin } = await parentCtx.getSenderAdminStatus()
 			if (!isBotAdmin) {
-				await parentCtx.reply(
-					"Uhe~ Oji-san belum dijadikan Admin di grup ini nih Sensei, jadi belum bisa eksekusi perintah itu~",
-				)
+				if (!options?.silentDeny) {
+					await parentCtx.reply(
+						"Uhe~ Oji-san belum dijadikan Admin di grup ini nih Sensei, jadi belum bisa eksekusi perintah itu~",
+					)
+				}
 				return {
 					executed: false,
 					deniedReason: "BOT_ADMIN_REQUIRED",

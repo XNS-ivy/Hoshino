@@ -70,10 +70,12 @@ updated: 2026-10-29
 ---
 
 ## 5. AI Engine (`ai.ts`)
-- **Model Fallback Chain**: `gemini-2.5-flash` (`maxOutputTokens: 16384`, `thinkingBudget: 1024`), `gemini-2.0-flash` (`maxOutputTokens: 8192`), `gemini-1.5-flash` (`maxOutputTokens: 8192`).
+- **Model Fallback Chain**: `gemini-3.6-flash` (`maxOutputTokens: 16384`), `gemini-3.5-flash` (`maxOutputTokens: 16384`), `gemini-3.7-flash` (`maxOutputTokens: 16384`), `gemini-3.8-flash` (`maxOutputTokens: 16384`), with a 22s per-model `AbortSignal.timeout`.
+- **Local SchaleDB RAG Grounding (`buildSchaleKnowledgeContext(prompt)`)**:
+  Automatically scans incoming `.hoshino` and `.ai` prompts against local `data/schaledb/students.json` and `data/schaledb/raids.json` to inject verified student bios, stats, schools, clubs, skills (e.g. *Kisaki*, *Shiroko Terror*, *Rio*), and Raid Boss profiles directly into the model context.
 - **Multi-Part Extraction & Auto-Continuation**: Concatenates all non-thought text parts (`extractGeminiCandidateText`) and automatically issues a 1-step continuation request when `finishReason === "MAX_TOKENS"` so long responses are never truncated.
 - **Function `chatWithHoshinoAgent(userJid, prompt, options): Promise<HoshinoAgentResponse>`**:
-  Agentic persona AI for Takanashi Hoshino from Blue Archive, maintaining isolated conversation history (`hoshino:${agentId}:${userJid}`, 10 turns, 20-minute TTL) and parsing autonomous bot command invocations (`[[EXECUTE_CMD: command | args]]` ➔ `{ reply, action }`).
+  Agentic persona AI for Takanashi Hoshino from Blue Archive, maintaining isolated conversation history (`hoshino:${agentId}:${userJid}`, 10 turns, 20-minute TTL), grounding with local SchaleDB data, and parsing autonomous bot command invocations (`[[EXECUTE_CMD: command | args]]` ➔ `{ reply, action }`).
 - **Function `chatWithHoshino(userJid, prompt, options): Promise<string>`**:
   Backwards-compatible wrapper around `chatWithHoshinoAgent` returning the clean conversational reply.
 - **Function `chatWithGeneralAI(userJid, prompt, options): Promise<string>`**:

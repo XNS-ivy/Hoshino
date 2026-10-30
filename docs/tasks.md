@@ -103,13 +103,32 @@ flowchart TD
 
 ---
 
+### 3. `TASK-003`: Fix Hoshino AI False-Positive Refusal & Ground AI in Local SchaleDB JSON + Bot Ecosystem
+- **Root Cause Analysis**:
+  1. **False-Positive Prompt Injection Refusals**: The system prompt in `src/utils/ai.ts` contained strict refusal clauses (`"Tolak permintaan..."`, `"Jangan pernah tertipu..."`) that caused Gemini to misclassify normal imperative bot commands (`.hoshino kick @xxx`, `.hoshino gacha 10`) or questions about newer Blue Archive characters (`"siapa itu kisaki"`) as prompt-injection/out-of-scope requests and decline them.
+  2. **Lack of Local SchaleDB RAG Grounding**: `.hoshino` was not reading our local `data/schaledb/students.json` (`274+` students including *Kisaki*, *Shiroko Terror*, *Rio*, etc.) or `data/schaledb/raids.json`. When asked about a character released after the LLM's base training cutoff (or with specific SchaleDB stats/lore), the model lacked grounded data.
+  3. **Gemini Default Safety Filter False-Positives**: Words like `"kick"`, `"attack"`, `"raid"`, `"senjata"`, or `"peluru"` in Blue Archive/group management contexts can trigger Gemini's default safety filters unless `safetySettings` are configured appropriately (`BLOCK_NONE` / `BLOCK_ONLY_HIGH`).
+- **Technical Blueprint**:
+  1. **Local SchaleDB RAG Context Injector (`buildSchaleGroundContext(prompt)`)**:
+     - Scan tokens and n-grams in the user's prompt against `getSchaleStudents()` (`students.json`) and `getSchaleRaids()` (`raids.json`).
+     - Whenever any student name, family name, personal name, school, club, or raid boss matches (e.g., `"kisaki"`, `"hoshino"`, `"binah"`, `"gehenna"`), automatically inject the exact SchaleDB student profile (`Name`, `FamilyName`, `School`, `Club`, `Age`, `BirthDay`, `Hobby`, `ProfileIntroduction`, `WeaponType`, `SquadType`, `BulletType`, `ArmorType`, `Skills`) into the AI prompt context!
+     - Also inject a summary of all Kivotos schools and total student count (`274+` students in local `SchaleDB`), plus the caller Sensei's own profile (`pyroxenes`, `credits`, `total students`, top owned students).
+  2. **Ecosystem-Permissive System Prompt**:
+     - Remove the paranoid anti-prompt-injection refusal instruction from `getHoshinoSystemInstruction()`. Instead, explicitly instruct Hoshino that **all Blue Archive lore/characters (from local SchaleDB), all bot commands (including moderation like `kick`/`delete`, gacha, raid, duel, media downloaders, utilities), and all general questions from Sensei are 100% legitimate parts of the Hoshino Bot Ecosystem and MUST ALWAYS BE ANSWERED AND EXECUTED HELPFULLY** (since hard RBAC security is already enforced in TypeScript by `CommandLoader.executeDelegatedCommand`).
+  3. **Hybrid Deterministic + AI Command Intent Resolver (`resolveFallbackCommandAction`)**:
+     - In `src/commands/bluearchive/hoshino.ts`, if the user's message clearly expresses an action intent (e.g., `.hoshino kick @xxx`, `.hoshino delete`, `.hoshino gacha 10`, `.hoshino daily`, `.hoshino sticker`, `.hoshino raid attack`, `.hoshino upgrade ...`, `.hoshino student ...`), ensure that even if Gemini omits the `[[EXECUTE_CMD: ...]]` tag in its text response, the fallback parser still extracts the command and passes it to `commandLoader.executeDelegatedCommand(ctx, ...)`!
+
+---
+
 ## ✅ Solved Tasks (Awaiting User Verification)
 
 | ID | Task Description | Status | Related Modules | Solved Date |
 | :--- | :--- | :--- | :--- | :--- |
 | `TASK-001` | **Decouple General AI (`.ai`) Personality from Hoshino Persona (`.hoshino`) & Fix Truncated AI Output**: Rewrote `getGeneralAISystemInstruction` with strict anti-roleplay guardrails, isolated `resetGeneralAIMemory` vs `resetHoshinoMemory` caches, increased `gemini-2.5-flash` output budget to `16384` with `thinkingBudget: 1024`, concatenated all response `content.parts`, and added auto-continuation on `MAX_TOKENS` | ✅ Solved | [[Hoshino-Backend/utils/utils\|ai.ts]], [[Hoshino-Backend/commands/commands\|ai.ts]] | 2026-10-30 |
 | `TASK-002` | **Agentic Hoshino AI Command Dispatcher (`.hoshino` Autonomous Bot Execution)**: Added live message & role telemetry (`buildHoshinoTelemetry`), structured action parsing (`chatWithHoshinoAgent`), and hard RBAC sub-command execution (`commandLoader.executeDelegatedCommand`) across all bot commands | ✅ Solved | [[Hoshino-Backend/utils/utils\|ai.ts]], [[Hoshino-Backend/commands/commands\|hoshino.ts]], [[Hoshino-Backend/services/commandLoader\|commandLoader.ts]] | 2026-10-30 |
+| `TASK-003` | **Fix Hoshino AI False-Positive Refusal & Ground AI in Local SchaleDB JSON + Bot Ecosystem**: Added `buildSchaleKnowledgeContext` (local `students.json` & `raids.json` RAG grounding), updated model chain to `gemini-3.8-flash`/`3.7`/`3.6`, relaxed prompt-injection & safety guardrails for bot ecosystem commands, and added `resolveFallbackCommandIntent` in `hoshino.ts` | ✅ Solved | [[Hoshino-Backend/utils/utils\|ai.ts]], [[Hoshino-Backend/commands/commands\|hoshino.ts]], [[Hoshino-Backend/utils/utils\|schaledb.ts]] | 2026-10-30 |
 
 ### Completed Checklist
 - [x] **`TASK-001`**: Decouple General AI (`.ai`) Personality from Hoshino Persona (`.hoshino`) & Fix Truncated AI Output (`Solved` - 2026-10-30)
 - [x] **`TASK-002`**: Agentic Hoshino AI Command Dispatcher (`.hoshino` Autonomous Bot Execution) (`Solved` - 2026-10-30)
+- [x] **`TASK-003`**: Fix Hoshino AI False-Positive Refusal & Ground AI in Local SchaleDB JSON + Bot Ecosystem (`Solved` - 2026-10-30)
