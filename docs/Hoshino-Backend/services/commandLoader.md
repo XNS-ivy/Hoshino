@@ -77,3 +77,11 @@ flowchart TD
      - `botAdminRequired`: Bot must be group admin.
   10. **Shield Cooldown**: Checks per-user cooldown window (default: 2 seconds, owner exempt).
   11. **Execution**: Dispatches `command.execute(args, ctx)` under the 30-second timeout guard.
+
+### 5. `executeDelegatedCommand(parentCtx: CommandContext, rawTargetCommand: string, rawTargetArgs: string[]): Promise<{ executed: boolean; deniedReason?: string }>`
+- **Description**: Safely executes a sub-command autonomously delegated by the Hoshino AI Agent (`hoshino.ts`).
+- **Security & Guardrails**:
+  - Blocks recursive AI self-calls (`hoshino`, `ojisan`, `takanashi`, `ai`, `ask`, `gemini`, `gpt`).
+  - Enforces Global Command Toggle (`isCommandEnabledGlobally`) and Group Command Policy (`isCommandAllowedInGroup`).
+  - Enforces hard cryptographic RBAC checks on `parentCtx` (`inGroup`, `access: "owner" | "master"`, `inGroupAccess: "admin"`, `botAdminRequired`, and `allowedMediaTypes`) so prompt injection cannot bypass user role restrictions.
+  - Passes through original message context, quoted messages, media buffers, and merges `@digits` arguments into `getMentions()`.

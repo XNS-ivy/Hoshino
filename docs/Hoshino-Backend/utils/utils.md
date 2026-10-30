@@ -70,13 +70,16 @@ updated: 2026-10-29
 ---
 
 ## 5. AI Engine (`ai.ts`)
-- **Model Fallback Chain**: `gemini-3.6-flash`, `gemini-2.5-flash`, `gemini-1.5-flash`.
+- **Model Fallback Chain**: `gemini-2.5-flash` (`maxOutputTokens: 16384`, `thinkingBudget: 1024`), `gemini-2.0-flash` (`maxOutputTokens: 8192`), `gemini-1.5-flash` (`maxOutputTokens: 8192`).
+- **Multi-Part Extraction & Auto-Continuation**: Concatenates all non-thought text parts (`extractGeminiCandidateText`) and automatically issues a 1-step continuation request when `finishReason === "MAX_TOKENS"` so long responses are never truncated.
+- **Function `chatWithHoshinoAgent(userJid, prompt, options): Promise<HoshinoAgentResponse>`**:
+  Agentic persona AI for Takanashi Hoshino from Blue Archive, maintaining isolated conversation history (`hoshino:${agentId}:${userJid}`, 10 turns, 20-minute TTL) and parsing autonomous bot command invocations (`[[EXECUTE_CMD: command | args]]` ➔ `{ reply, action }`).
 - **Function `chatWithHoshino(userJid, prompt, options): Promise<string>`**:
-  Persona AI for Takanashi Hoshino from Blue Archive, maintaining conversation history (last 8 turns, 15-minute TTL).
+  Backwards-compatible wrapper around `chatWithHoshinoAgent` returning the clean conversational reply.
 - **Function `chatWithGeneralAI(userJid, prompt, options): Promise<string>`**:
-  General assistant for code, queries, and questions.
-- **Function `resetAIMemory(userJid): void`**:
-  Clears conversational memory cache for a given user.
+  Strictly neutral, professional General AI assistant (`general:${agentId}:${userJid}`), completely decoupled from the Takanashi Hoshino roleplay persona.
+- **Functions `resetHoshinoMemory(userJid, agentId?)`, `resetGeneralAIMemory(userJid, agentId?)`, `resetAIMemory(userJid, agentId?)`**:
+  Clears conversational memory cache per mode or globally for a given user.
 
 ---
 

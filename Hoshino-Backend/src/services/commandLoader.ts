@@ -1,7 +1,7 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
-import type { ICommand } from "@customTypes/command"
+import type { CommandContext, ICommand } from "@customTypes/command"
 import { commandRepository } from "@repositories/command.repository"
 import { logger } from "@utils/logger"
 import type { WAMessage, WASocket } from "baileys"
@@ -506,6 +506,227 @@ export class CommandLoader {
 					`[${agentId}] Error executing command "${commandName}": ${error}`,
 				)
 				await ctx.reply("⚠️ An error occurred while processing the command.")
+			}
+		} finally {
+			if (timeoutTimer) clearTimeout(timeoutTimer)
+		}
+	}
+
+	/**
+	 * Safely executes a sub-command delegated by the Agentic Hoshino AI (`hoshino.ts`),
+	 * enforcing all RBAC, group, bot-admin, media-type, and anti-loop security checks.
+	 */
+	public async executeDelegatedCommand(
+		parentCtx: CommandContext,
+		rawTargetCommand: string,
+		rawTargetArgs: string[],
+	): Promise<{
+		executed: boolean
+		deniedReason?: string
+	}> {
+		if (!this.loaded) await this.init()
+
+		const cleanCmdName = rawTargetCommand
+			.trim()
+			.replace(/^[.!#/]+/, "")
+			.toLowerCase()
+
+		// Security Guard: Prevent recursive AI self-invocation loops
+		const forbiddenRecursiveCommands = new Set([
+			"hoshino",
+			"ojisan",
+			"oji-san",
+			"takanashi",
+			"ai",
+			"ask",
+			"gemini",
+			"gpt",
+		])
+		if (!cleanCmdName || forbiddenRecursiveCommands.has(cleanCmdName)) {
+			return {
+				executed: false,
+				deniedReason: "RECURSIVE_AI_COMMAND_BLOCKED",
+			}
+		}
+
+		const command = this.commands.get(cleanCmdName)
+		if (!command) {
+			return {
+				executed: false,
+				deniedReason: `COMMAND_NOT_FOUND:${cleanCmdName}`,
+			}
+		}
+
+		const rawPrimary = Array.isArray(command.name)
+			? command.name[0]
+			: command.name
+		const primaryName = (rawPrimary || cleanCmdName).toLowerCase()
+		const allCommandNames = (
+			Array.isArray(command.name) ? command.name : [command.name]
+		).map((n) => n.toLowerCase())
+
+		// 1. Check Global Agent Command Toggle
+		const isGloballyEnabled = await commandRepository.isCommandEnabledGlobally(
+			parentCtx.agentId,
+			allCommandNames,
+		)
+		if (!isGloballyEnabled) {
+			return {
+				executed: false,
+				deniedReason: "COMMAND_GLOBALLY_DISABLED",
+			}
+		}
+
+		// 2. Check Group Command Permission & Registration
+		const isGroupToggleCommand =
+			["enablebot", "disablebot", "bot", "listen"].includes(cleanCmdName) ||
+			["enablebot", "disablebot", "bot", "listen"].includes(primaryName)
+
+		if (parentCtx.isGroup) {
+			const isExempt =
+				isGroupToggleCommand ||
+				primaryName === "enablecmd" ||
+				primaryName === "disablecmd" ||
+				cleanCmdName === "enablecmd" ||
+				cleanCmdName === "disablecmd"
+			if (!isExempt) {
+				const isAllowedInGroup =
+					await commandRepository.isCommandAllowedInGroup(
+						parentCtx.agentId,
+						parentCtx.jid,
+						allCommandNames,
+						!!command.needAdminRegisterThisCommand,
+					)
+				if (!isAllowedInGroup) {
+					return {
+						executed: false,
+						deniedReason: "COMMAND_DISABLED_IN_GROUP",
+					}
+				}
+			}
+		}
+
+		// 3. Check Group-Only Constraint
+		if (command.inGroup && !parentCtx.isGroup) {
+			await parentCtx.reply(
+				"Uhe~ Perintah ini cuma bisa dipakai di dalam grup ya Sensei~",
+			)
+			return {
+				executed: false,
+				deniedReason: "GROUP_ONLY_COMMAND",
+			}
+		}
+
+		// 4. Hard RBAC Check: Owner / Master Access
+		const isOwnerOrMaster = await parentCtx.getOwnerRole()
+		if (command.access === "owner" || command.access === "master") {
+			if (!isOwnerOrMaster) {
+				await parentCtx.reply(
+					"Uhe~ Maaf ya Sensei, perintah itu cuma boleh dijalankan oleh Bot Owner utama~",
+				)
+				return {
+					executed: false,
+					deniedReason: "OWNER_REQUIRED",
+				}
+			}
+		}
+
+		// 5. Hard RBAC Check: Group Admin & Bot Admin Access
+		if (parentCtx.isGroup && command.inGroupAccess === "admin") {
+			const { isAdmin } = await parentCtx.getSenderAdminStatus()
+			if (!isAdmin && !isOwnerOrMaster) {
+				await parentCtx.reply(
+					"Uhe~ Sensei kan belum jadi Admin di grup ini, jadi Oji-san nggak bisa jalanin perintah khusus Admin ya~",
+				)
+				return {
+					executed: false,
+					deniedReason: "GROUP_ADMIN_REQUIRED",
+				}
+			}
+		}
+
+		if (parentCtx.isGroup && command.botAdminRequired) {
+			const { isBotAdmin } = await parentCtx.getSenderAdminStatus()
+			if (!isBotAdmin) {
+				await parentCtx.reply(
+					"Uhe~ Oji-san belum dijadikan Admin di grup ini nih Sensei, jadi belum bisa eksekusi perintah itu~",
+				)
+				return {
+					executed: false,
+					deniedReason: "BOT_ADMIN_REQUIRED",
+				}
+			}
+		}
+
+		// 6. Check Allowed Media Types
+		if (command.allowedMediaTypes && command.allowedMediaTypes.length > 0) {
+			const quoted = await parentCtx.getQuotedMessage()
+			const quotedMsg = quoted?.rawQuoted
+			const quotedMessageType = quotedMsg ? detectMessageType(quotedMsg) : null
+			const matchesAllowed =
+				command.allowedMediaTypes.includes(parentCtx.messageType) ||
+				(quotedMessageType &&
+					command.allowedMediaTypes.includes(quotedMessageType))
+
+			if (!matchesAllowed) {
+				return {
+					executed: false,
+					deniedReason: "MEDIA_TYPE_MISMATCH",
+				}
+			}
+		}
+
+		// 7. Build Delegated Context preserving original message, mentions, and quoted message
+		const cleanArgs = rawTargetArgs.slice(0, 50)
+		const delegatedCtx: CommandContext = {
+			...parentCtx,
+			commandName: cleanCmdName,
+			args: cleanArgs,
+			body: `${parentCtx.prefix}${cleanCmdName}${cleanArgs.length > 0 ? ` ${cleanArgs.join(" ")}` : ""}`,
+			getMentions: async () => {
+				const baseMentions = await parentCtx.getMentions()
+				const argMentions: string[] = []
+				for (const arg of cleanArgs) {
+					const digits = arg.replace(/[^0-9]/g, "")
+					if (digits.length >= 7 && digits.length <= 16) {
+						argMentions.push(
+							commandRepository.normalizeJid(arg.includes("@") ? arg : digits),
+						)
+					}
+				}
+				return Array.from(new Set([...baseMentions, ...argMentions]))
+			},
+		}
+
+		// 8. Execute with Timeout Guard
+		const defaultTimeout = command.category === "downloaders" ? 60000 : 30000
+		const timeoutMs = command.executionTimeout ?? defaultTimeout
+		let timeoutTimer: ReturnType<typeof setTimeout> | undefined
+		const timeoutPromise = new Promise<never>((_, reject) => {
+			timeoutTimer = setTimeout(() => {
+				reject(new Error("EXECUTION_TIMEOUT"))
+			}, timeoutMs)
+		})
+
+		try {
+			await Promise.race([
+				Promise.resolve(command.execute(cleanArgs, delegatedCtx)),
+				timeoutPromise,
+			])
+			logger.info(
+				"/services/commandLoader.ts",
+				`[${parentCtx.agentId}] Delegated AI Command "${cleanCmdName}" executed for ${parentCtx.senderJid} in ${parentCtx.jid}`,
+			)
+			return { executed: true }
+		} catch (error: unknown) {
+			const err = error as Error
+			logger.error(
+				"/services/commandLoader.ts",
+				`[${parentCtx.agentId}] Error executing delegated AI command "${cleanCmdName}": ${err?.message || error}`,
+			)
+			return {
+				executed: false,
+				deniedReason: `EXECUTION_ERROR:${err?.message || error}`,
 			}
 		} finally {
 			if (timeoutTimer) clearTimeout(timeoutTimer)

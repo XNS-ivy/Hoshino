@@ -1,6 +1,6 @@
 import type { CommandContext, ICommand } from "@customTypes/command"
 import { messageRepository } from "@repositories/message.repository"
-import { chatWithGeneralAI, resetAIMemory } from "@utils/ai"
+import { chatWithGeneralAI, resetGeneralAIMemory } from "@utils/ai"
 import { logger } from "@utils/logger"
 
 async function resolveChatContext(
@@ -11,7 +11,7 @@ async function resolveChatContext(
 
 	const senderName = ctx.pushName || ctx.senderJid.split("@")[0]
 	lines.push(
-		`- Pengirim Chat: "${senderName}" (Nomor: ${ctx.senderJid.split("@")[0]})`,
+		`- Nama Pengguna: "${senderName}" (Nomor: ${ctx.senderJid.split("@")[0]})`,
 	)
 
 	if (ctx.isGroup) {
@@ -21,6 +21,13 @@ async function resolveChatContext(
 		)
 	} else {
 		lines.push(`- Lokasi Chat: Private Chat (Personal DM)`)
+	}
+
+	const quoted = await ctx.getQuotedMessage()
+	if (quoted?.text) {
+		lines.push(
+			`- Pesan yang sedang di-reply oleh pengguna: "${quoted.text.slice(0, 600)}"`,
+		)
 	}
 
 	const rawMentions = await ctx.getMentions()
@@ -55,33 +62,34 @@ async function resolveChatContext(
 const command: ICommand = {
 	name: ["ai", "ask", "gemini", "gpt"],
 	category: "utility",
-	description: "Ask questions to general AI Assistant powered by Google Gemini",
+	description: "Ask questions to General AI Assistant powered by Google Gemini",
 	usage: [
 		"ai <question>",
 		"ai jelaskan teori relativitas secara singkat",
+		"ai buatkan contoh REST API dengan Bun dan Elysia",
 		"ai reset",
 	],
 	textOnly: true,
-	executionTimeout: 45000,
+	executionTimeout: 60000,
 	execute: async (args: string[], ctx: CommandContext) => {
 		const prompt = args.join(" ").trim()
 
 		// 1. Show Help if no prompt provided
 		if (!prompt) {
 			await ctx.reply(
-				`🤖 *Hoshino General AI Assistant*\n\n` +
+				`🤖 *General AI Assistant (Google Gemini)*\n\n` +
 					`💡 *Cara Pakai:*\n` +
-					`• *${ctx.prefix}${ctx.commandName} <pertanyaan>* — Tanya apa saja ke AI\n` +
-					`• *${ctx.prefix}${ctx.commandName} reset* — Reset memori obrolan\n\n` +
-					`📌 *Contoh:* *${ctx.prefix}ai buatkan pantun bertema Blue Archive*`,
+					`• *${ctx.prefix}${ctx.commandName} <pertanyaan>* — Tanya koding, sains, tugas, atau pengetahuan umum\n` +
+					`• *${ctx.prefix}${ctx.commandName} reset* — Reset memori percakapan AI umum\n\n` +
+					`📌 *Contoh:* *${ctx.prefix}ai jelaskan cara kerja algoritma Dijkstra beserta contoh kodenya*`,
 			)
 			return
 		}
 
-		// 2. Handle Memory Reset
+		// 2. Handle Memory Reset (strictly resets only General AI memory)
 		if (prompt.toLowerCase() === "reset" || prompt.toLowerCase() === "clear") {
-			resetAIMemory(ctx.senderJid)
-			await ctx.reply("🔄 AI conversation memory has been cleared.")
+			resetGeneralAIMemory(ctx.senderJid, ctx.agentId)
+			await ctx.reply("🔄 General AI conversation memory has been cleared.")
 			return
 		}
 
@@ -89,8 +97,9 @@ const command: ICommand = {
 			// 3. Resolve context and mentions
 			const contextInfo = await resolveChatContext(ctx, prompt)
 
-			// 4. Call General AI
+			// 4. Call General AI (neutral, objective assistant)
 			const reply = await chatWithGeneralAI(ctx.senderJid, prompt, {
+				agentId: ctx.agentId,
 				prefix: ctx.prefix,
 				contextInfo,
 			})

@@ -20,7 +20,7 @@ updated: 2026-10-29
 | `raid.ts` | `raid`, `boss`, `totalassault`, `weeklyboss`, `bounty`, `grandassault` | `user` | Playable PvE Total Assault Raid Boss & Weekly Boss combat (`Normal` through `Insane` & `Torment`) using SchaleDB `raids.json`. Simulates squad combat using student stats, EX skills, Bullet vs Armor counters (`2.0x Weak`), and Terrain mood, dropping smart SchaleDB upgrade materials (Blu-rays, Tech Notes, Oopart Artifacts, Activity Reports, Blueprints), Credits, and Pyroxenes, with server leaderboards (`.raid rank`) |
 | `momotalk.ts` | `momo`, `momotalk`, `bond` | `user` | Game-accurate interactive MomoTalk messenger that scrapes authentic student MomoTalk episodes & dialogue trees from `bluearchive.wiki/w/api.php` (cached in `data/schaledb/momotalk/`), renders visual **MomoTalk UI Chat Cards** via `sharp` SVG-to-PNG (pink header, circular student avatar, chat bubbles, blue Sensei reply box, pink `♥ Relationship Event` banner), grants Bond Stat bonuses (`+ATK/HP%`), and unlocks Live2D Memorial Lobby artwork |
 | `duel.ts` | `duel`, `pvp`, `tactical`, `bet`, `taruhan` | `user` | Sensei-vs-Sensei Tactical Challenge PvP Duel with Pyroxene or Credit wagering (`.duel @sensei <bet> [pyroxene\|credit]`, `.duel accept`, `.duel decline`, `.duel rank`). Simulates 3-phase `4 Striker + 2 Special` squad combat with armor counters, terrain adaptation, EX skill clashes, MVP selection, and atomic pot payout |
-| `hoshino.ts` | `hoshino`, `ojisan`, `takanashi` | `user` | Multi-turn conversational AI persona for Takanashi Hoshino |
+| `hoshino.ts` | `hoshino`, `ojisan`, `takanashi` | `user` | Autonomous Agentic AI persona for Takanashi Hoshino: inspects live message telemetry (Caller Role, Group Admin status, Bot Admin status, Mentions, Quoted Message, Media), chats in-character, and autonomously dispatches any registered bot command (`commandLoader.executeDelegatedCommand`) subject to strict RBAC verification |
 | `student.ts` | `student`, `ba`, `murid`, `schale` | `user` | Full student wiki profiles from SchaleDB with relevance scoring (combat roles, armor types, VAs, HD art) |
 
 ---
@@ -67,7 +67,7 @@ updated: 2026-10-29
 | `whatanime.ts` | `whatanime`, `sauce`, `traceanime` | `user` | Reverse search anime scenes via Trace.moe |
 | `qrcode.ts` | `qrcode`, `qr` | `user` | Generates QR code images from text or URLs |
 | `math.ts` | `math`, `calc` | `user` | Evaluates scientific mathematical expressions |
-| `ai.ts` | `ai`, `ask`, `gemini` | `user` | General AI assistant powered by Google Gemini |
+| `ai.ts` | `ai`, `ask`, `gemini`, `gpt` | `user` | Neutral, professional General AI assistant powered by Google Gemini (strictly isolated from Hoshino roleplay persona & memory) |
 | `ping.ts` | `ping` | `user` | Tests bot response latency and uptime |
 | `help.ts` | `help`, `menu` | `user` | Renders a dynamic command menu filtered by caller permissions using 2 parallel bulk SQL queries and O(1) in-memory toggle checks |
 
