@@ -1,0 +1,31 @@
+name: Sync Main to Private Branch
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  sync-private:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout private branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: private
+
+      - name: Merge latest main into private
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin main private
+          if git merge-base --is-ancestor origin/main HEAD; then
+            echo "Branch 'private' already contains the latest commit from 'main'."
+            exit 0
+          fi
+          git merge origin/main --no-edit -m "chore(private): auto-merge latest changes from main"
+          git push origin private
