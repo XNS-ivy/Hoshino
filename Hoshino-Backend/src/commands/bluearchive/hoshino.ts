@@ -64,8 +64,8 @@ async function resolveFallbackCommandIntent(
 	}
 
 	const lower = prompt.toLowerCase()
-	const mentions = await ctx.getMentions()
-	const regexMentions = prompt.match(/@\d{7,16}/g) || []
+	const mentions = (await ctx.getMentions()).filter(Boolean)
+	const regexMentions = prompt.match(/@\d{6,16}/g) || []
 	const targetTag =
 		regexMentions[0] ||
 		(mentions[0] ? `@${mentions[0].split("@")[0]}` : undefined)
@@ -217,11 +217,18 @@ async function buildHoshinoTelemetry(
 		lines.push(`- Pesan yang Di-Reply (Quoted Message): TIDAK ADA`)
 	}
 
-	// 5. Mentions Resolver (from message contextInfo and text regex)
-	const rawMentions = await ctx.getMentions()
-	const promptMentions = (prompt.match(/@\d{7,16}/g) || []).map(
-		(m) => `${m.replace("@", "")}@s.whatsapp.net`,
+	// 5. Mentions Resolver (from message contextInfo and text regex, deduplicated by numeric ID)
+	const rawMentions = (await ctx.getMentions()).filter(Boolean)
+	const seenDigits = new Set(
+		rawMentions.map((m) => m.split("@")[0]?.replace(/[^0-9]/g, "") || ""),
 	)
+	const promptMentions = (prompt.match(/@\d{6,16}/g) || [])
+		.map((m) => m.replace(/[^0-9]/g, ""))
+		.filter((digits) => digits.length >= 6 && !seenDigits.has(digits))
+		.map((digits) => {
+			seenDigits.add(digits)
+			return `${digits}@s.whatsapp.net`
+		})
 	const allMentions = Array.from(new Set([...rawMentions, ...promptMentions]))
 
 	if (allMentions.length > 0) {

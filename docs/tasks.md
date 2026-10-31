@@ -23,7 +23,7 @@ updated: 2026-10-30
 
 | ID | Task Description | Status | Related Modules | Updated |
 | :--- | :--- | :--- | :--- | :--- |
-| _None_ | All assigned tasks are currently solved! | ✅ Clean | — | 2026-10-30 |
+| _None_ | All assigned tasks are currently solved! | ✅ Clean | — | 2026-10-31 |
 
 ### Active Checklist
 _No pending tasks in queue._
@@ -120,15 +120,74 @@ flowchart TD
 
 ---
 
+### 4. `TASK-004`: Fix `@mention` Resolution Bug in Hoshino AI Agent & Group Moderation (`autodelete`, `kick`, `disableautodelete`, `blacklist`, `whitelist`)
+- **Root Cause Analysis**:
+  1. **Leading `@` Bug in `commandRepository.normalizeJid(jid)` & `gachaRepository.normalizeJid(jid)`**:
+     - When Hoshino AI dispatches `[[EXECUTE_CMD: autodelete | @178409284091930]]` or `[[EXECUTE_CMD: kick | @178409284091930]]`, `args[0]` is `"@178409284091930"`.
+     - Inside `commandRepository.normalizeJid("@178409284091930")`, `raw.indexOf("@")` was `0`, so `const user = raw.slice(0, 0)` evaluated to `""` (empty string) and returned `""`!
+     - As a result, `delegatedCtx.getMentions()` pushed `""`, and `targetJid` became `""`, causing `.hoshino kick @xxxx` and `.hoshino autodelete @xxxx` to fail with `❌ Mention user or reply to their message...` while message replies (`quoted.senderJid`) succeeded.
+  2. **Bare `@lid` Digits Normalized as `@s.whatsapp.net` Without Reverse LID Lookup**:
+     - Added `expandUserJidVariants` in `commandRepository` and reverse LID lookup in `resolveUserIdentities` + group participant matching in `getMentions()`, `delegatedCtx.getMentions()`, `kick.ts`, `autodelete.ts`, and `disableautodelete.ts` so both `@lid` and `@s.whatsapp.net` variants are always resolved and stored.
+  3. **Missing `jid` Column on `public.agent_autodeletes` in Live PostgreSQL Instance**:
+     - Executed `initAuthDatabase()` migration so `public.agent_autodeletes` includes the composite `(agent_id, jid, user_jid)` primary key.
+
+### 5. `TASK-005`: Fix `.squad set` Array Serialization & PostgreSQL `INT[]` Decoding Bug
+- **Root Cause Analysis**:
+  1. **`sql.array(..., 23)` & Binary Protocol `INT[]` Decoding in `gachaRepository`**:
+     - `setSquad()` in `src/repositories/gacha.repository.ts` used `sql.array(cleanStrikers, 23)` which can throw in certain Bun SQL states, and `getOrCreateProfile()` selected `COALESCE(squad_strikers, '{}') as "squadStrikers"` without `::text` casting. In Bun's PostgreSQL binary protocol, `INT[]` was not decoded as a standard JS `Array` (`Array.isArray(raw.squadStrikers)` evaluated to `false`), causing `mapProfileRow()` to always return `squadStrikers: []` and `squadSpecials: []`!
+  2. **Strict Comma-Only Delimiter in `.squad set`**:
+     - Users typing `.squad set Suzumi Toki Serina` (space-separated without commas) or `.squad Suzumi, Toki` (omitting `set`) had the entire string treated as a single student name.
+- **Technical Blueprint**:
+  1. Replaced `sql.array(..., 23)` in `setSquad()` with standard PostgreSQL array literal casting (`${`{${cleanStrikers.join(",")}}`}::int[]`), cast `COALESCE(squad_strikers, '{}')::text` in `getOrCreateProfile()`, and added `parseIntArray()` in `gacha.repository.ts`.
+  2. Enhanced `.squad` in `src/commands/bluearchive/upgrade.ts` to support both comma-separated and space-separated student names (with greedy multi-word student name matching), `.squad <students>` without `set`, and `.squad auto|reset|clear`.
+
+---
+
+### 6. `TASK-006`: Single-Responsibility Command Architecture & Unbundling Blue Archive Commands
+- **Problem Statement**:
+  Previously, 3 files in `src/commands/bluearchive/` (`gacha.ts`, `upgrade.ts`, `raid.ts`) bundled multiple unrelated commands into a single `ICommand` export by overloading `name: [...]` and dispatching on `ctx.commandName`:
+  - `gacha.ts` combined `.gacha`, `.daily`, `.spark`, `.mystudent`, and `.eleph`.
+  - `upgrade.ts` combined `.upgrade`, `.inventory`, and `.squad`.
+  - `raid.ts` combined `.raid` and `.weeklyboss`.
+  This caused:
+  1. Unclear command boundaries, bloated `usage`/`description` strings, and 800-1,200 line monolithic command files.
+  2. Coarse-grained toggles in the Frontend Dashboard & `.help` menu (toggling `gacha` disabled `daily` and `mystudent`, toggling `upgrade` disabled `squad` and `inventory`).
+  3. Ambiguous intent matching for the `.hoshino` Agentic AI Command Dispatcher.
+- **Architectural Rule (Single-Responsibility Command Principle)**:
+  - **One Command Purpose = One `ICommand` File**: Every distinct user-facing feature MUST reside in its own dedicated file under `src/commands/<category>/<command>.ts`.
+  - **`name: string[]` is strictly for true synonyms/aliases** of the **exact same action** (e.g., `["gacha", "pull"]`, `["squad", "party"]`, `["inventory", "bag", "materials"]`), NEVER for bundling different features that branch on `ctx.commandName`.
+- **Decomposition Matrix**:
+  1. **From `gacha.ts` ➔ 5 Dedicated Command Files**:
+     - `src/commands/bluearchive/gacha.ts` (`["gacha", "pull"]`): Gacha recruitment simulation (1x and 10x pulls).
+     - `src/commands/bluearchive/daily.ts` (`["daily"]`): Daily Arona reward claim (`+1,200 Pyroxenes`, `+250,000 Credits`, Activity Reports, Raid/Bounty ticket refresh).
+     - `src/commands/bluearchive/spark.ts` (`["spark"]`): 200 Spark Points guaranteed 3★ student exchange.
+     - `src/commands/bluearchive/mystudent.ts` (`["mystudent", "students", "pyroxene"]`): Sensei profile, Pyroxene balance, student collection viewer, and owned student + MomoTalk bond inspector.
+     - `src/commands/bluearchive/eleph.ts` (`["eleph", "claimeleph", "claim"]`): Duplicate student Eleph summary and Eleph-to-Pyroxene conversion.
+  2. **From `upgrade.ts` ➔ 3 Dedicated Command Files**:
+     - `src/commands/bluearchive/upgrade.ts` (`["upgrade", "levelup", "skillup", "gearup", "mystic"]`): Student progression (Level, Skills, Equipment, Mystic Star/UE) + shared progression helpers (`resolveCanonicalSensei`, `findOwnedStudentByQuery`, `resolveSenseiSquad`).
+     - `src/commands/bluearchive/inventory.ts` (`["inventory", "bag", "materials"]`): SchaleDB upgrade material & equipment blueprint bag viewer.
+     - `src/commands/bluearchive/squad.ts` (`["squad", "party"]`): 4 Striker + 2 Special tactical squad formation manager (`.squad`, `.squad set <students>`, `.squad auto`).
+  3. **From `raid.ts` ➔ 2 Dedicated Command Files**:
+     - `src/commands/bluearchive/raid.ts` (`["raid", "boss", "totalassault", "grandassault"]`): Total Assault Raid Boss combat, boss guide, boss list, and leaderboard + shared raid helpers.
+     - `src/commands/bluearchive/weeklyboss.ts` (`["weeklyboss", "bounty"]`): Weekly Boss Bounty combat for targeted school materials, blueprints, Credits, and Pyroxenes.
+
+---
+
 ## ✅ Solved Tasks (Awaiting User Verification)
 
 | ID | Task Description | Status | Related Modules | Solved Date |
 | :--- | :--- | :--- | :--- | :--- |
 | `TASK-001` | **Decouple General AI (`.ai`) Personality from Hoshino Persona (`.hoshino`) & Fix Truncated AI Output**: Rewrote `getGeneralAISystemInstruction` with strict anti-roleplay guardrails, isolated `resetGeneralAIMemory` vs `resetHoshinoMemory` caches, increased `gemini-2.5-flash` output budget to `16384` with `thinkingBudget: 1024`, concatenated all response `content.parts`, and added auto-continuation on `MAX_TOKENS` | ✅ Solved | [[Hoshino-Backend/utils/utils\|ai.ts]], [[Hoshino-Backend/commands/commands\|ai.ts]] | 2026-10-30 |
 | `TASK-002` | **Agentic Hoshino AI Command Dispatcher (`.hoshino` Autonomous Bot Execution)**: Added live message & role telemetry (`buildHoshinoTelemetry`), structured action parsing (`chatWithHoshinoAgent`), and hard RBAC sub-command execution (`commandLoader.executeDelegatedCommand`) across all bot commands | ✅ Solved | [[Hoshino-Backend/utils/utils\|ai.ts]], [[Hoshino-Backend/commands/commands\|hoshino.ts]], [[Hoshino-Backend/services/commandLoader\|commandLoader.ts]] | 2026-10-30 |
-| `TASK-003` | **Fix Hoshino AI False-Positive Refusal & Ground AI in Local SchaleDB JSON + Bot Ecosystem**: Added `buildSchaleKnowledgeContext` (local `students.json` & `raids.json` RAG grounding), updated model chain to `gemini-3.8-flash`/`3.7`/`3.6`, relaxed prompt-injection & safety guardrails for bot ecosystem commands, and added `resolveFallbackCommandIntent` in `hoshino.ts` | ✅ Solved | [[Hoshino-Backend/utils/utils\|ai.ts]], [[Hoshino-Backend/commands/commands\|hoshino.ts]], [[Hoshino-Backend/utils/utils\|schaledb.ts]] | 2026-10-30 |
+| `TASK-003` | **Fix Hoshino AI False-Positive Refusal & Ground AI in Local SchaleDB JSON + Bot Ecosystem**: Added `buildSchaleKnowledgeContext` (local `students.json` & `raids.json` RAG grounding), updated model chain to `gemini-3.6-flash` priority, relaxed prompt-injection & safety guardrails for bot ecosystem commands, and added `resolveFallbackCommandIntent` in `hoshino.ts` | ✅ Solved | [[Hoshino-Backend/utils/utils\|ai.ts]], [[Hoshino-Backend/commands/commands\|hoshino.ts]], [[Hoshino-Backend/utils/utils\|schaledb.ts]] | 2026-10-30 |
+| `TASK-004` | **Fix `@mention` Resolution Bug in Hoshino AI Agent & Group Moderation (`autodelete`, `kick`, `disableautodelete`, `blacklist`, `whitelist`)**: Fixed `normalizeJid` returning `""` on `@xxxx` strings, added `expandUserJidVariants` (`@lid` + `@s.whatsapp.net`), enhanced `getMentions()` and `resolveUserIdentities()` with inline `@digits` + group participant LID matching, and migrated `public.agent_autodeletes.jid` | ✅ Solved | [[Hoshino-Backend/repositories/repositories\|command.repository.ts]], [[Hoshino-Backend/services/contextBuilder\|contextBuilder.ts]], [[Hoshino-Backend/services/commandLoader\|commandLoader.ts]], [[Hoshino-Backend/commands/commands\|kick.ts / autodelete.ts / hoshino.ts]] | 2026-10-31 |
+| `TASK-005` | **Fix `.squad set` Array Serialization & PostgreSQL `INT[]` Decoding Bug**: Replaced `sql.array` with `${literal}::int[]` in `setSquad()`, added `::text` casting + `parseIntArray()` in `getOrCreateProfile()`, and added space-separated + comma-separated student name parsing in `.squad set` | ✅ Solved | [[Hoshino-Backend/repositories/gacha.repository\|gacha.repository.ts]], [[Hoshino-Backend/commands/commands\|upgrade.ts]] | 2026-10-31 |
+| `TASK-006` | **Single-Responsibility Command Architecture & Unbundling Blue Archive Commands**: Split `gacha.ts` into 5 dedicated command files (`gacha.ts`, `daily.ts`, `spark.ts`, `mystudent.ts`, `eleph.ts`), `upgrade.ts` into 3 dedicated files (`upgrade.ts`, `inventory.ts`, `squad.ts`), and `raid.ts` into 2 dedicated files (`raid.ts`, `weeklyboss.ts`), and documented the Single-Responsibility Command Architecture rule | ✅ Solved | [[Hoshino-Backend/commands/commands\|Commands Matrix]], [[Hoshino-Backend/README\|Backend Architecture]] | 2026-10-31 |
 
 ### Completed Checklist
 - [x] **`TASK-001`**: Decouple General AI (`.ai`) Personality from Hoshino Persona (`.hoshino`) & Fix Truncated AI Output (`Solved` - 2026-10-30)
 - [x] **`TASK-002`**: Agentic Hoshino AI Command Dispatcher (`.hoshino` Autonomous Bot Execution) (`Solved` - 2026-10-30)
 - [x] **`TASK-003`**: Fix Hoshino AI False-Positive Refusal & Ground AI in Local SchaleDB JSON + Bot Ecosystem (`Solved` - 2026-10-30)
+- [x] **`TASK-004`**: Fix `@mention` Resolution Bug in Hoshino AI Agent & Group Moderation (`autodelete`, `kick`, `disableautodelete`, `blacklist`, `whitelist`) (`Solved` - 2026-10-31)
+- [x] **`TASK-005`**: Fix `.squad set` Array Serialization & PostgreSQL `INT[]` Decoding Bug (`Solved` - 2026-10-31)
+- [x] **`TASK-006`**: Single-Responsibility Command Architecture & Unbundling Blue Archive Commands (`Solved` - 2026-10-31)

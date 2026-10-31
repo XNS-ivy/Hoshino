@@ -20,9 +20,10 @@ updated: 2026-10-24
 
 ## 🛠️ Complete Method Reference
 
-### 1. `normalizeJid(jid: string): string` & `normalizeJidList(jids): string[]`
-- `normalizeJid(jid: string): string`: Strips device IDs (`:device`), companion agent suffixes (`_agent`), and port suffixes from WhatsApp user JIDs while normalizing domains (`@c.us` / `@hosted` -> `@s.whatsapp.net`, `@hosted.lid` -> `@lid`, and preserving `@g.us`, `@broadcast`, `@newsletter`).
+### 1. `normalizeJid(jid: string): string`, `normalizeJidList(jids): string[]` & `expandUserJidVariants(jids): string[]`
+- `normalizeJid(jid: string): string`: Strips leading `@` mention prefixes (`replace(/^@+/, "")`), device IDs (`:device`), companion agent suffixes (`_agent`), and port suffixes from WhatsApp user JIDs while normalizing domains (`@c.us` / `@hosted` -> `@s.whatsapp.net`, `@hosted.lid` -> `@lid`, and preserving `@g.us`, `@broadcast`, `@newsletter`).
 - `normalizeJidList(jids: string | (string | undefined | null)[]): string[]`: Normalizes and deduplicates one or more candidate user JIDs/LIDs, filtering out group (`@g.us`) and broadcast JIDs.
+- `expandUserJidVariants(jids: string | (string | undefined | null)[]): string[]`: Expands normalized user JIDs so any numeric user ID (`>= 6` digits) includes both `${digits}@s.whatsapp.net` and `${digits}@lid` variants. Used by `isAutoDelete`, `addAutoDelete`, `removeAutoDelete`, `isBlacklisted`, `addBlacklist`, and `removeBlacklist` so `@digits` mentions match regardless of whether the target is using `@lid` or `@s.whatsapp.net`.
 
 ### 2. Owners (`public.agent_owners`)
 - `getOwnerRole(agentId, userJid: string | string[]): Promise<"master" | "owner" | null>`: Returns highest matched owner role (`"master"` or `"owner"`) across all candidate JIDs/LIDs.

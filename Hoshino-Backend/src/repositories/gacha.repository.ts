@@ -126,7 +126,8 @@ export class GachaRepository {
 	 * Normalizes JID string to prevent comparison and database key mismatches.
 	 */
 	public normalizeJid(jid: string): string {
-		const clean = jid.trim().split(":")[0] || jid.trim()
+		const stripped = jid.trim().replace(/^@+/, "")
+		const clean = (stripped.split(":")[0] || stripped).trim()
 		if (clean.includes("@")) {
 			const parts = clean.split("@")
 			const userPart = parts[0] || ""
@@ -495,6 +496,27 @@ export class GachaRepository {
 		}
 	}
 
+	private parseIntArray(val: unknown): number[] {
+		if (!val) return []
+		if (Array.isArray(val)) {
+			return val.map(Number).filter((n) => !Number.isNaN(n))
+		}
+		if (ArrayBuffer.isView(val)) {
+			return Array.from(val as unknown as ArrayLike<number>)
+				.map(Number)
+				.filter((n) => !Number.isNaN(n))
+		}
+		if (typeof val === "string") {
+			const trimmed = val.trim().replace(/^\{|\}$/g, "").trim()
+			if (!trimmed) return []
+			return trimmed
+				.split(",")
+				.map((s) => Number.parseInt(s.trim(), 10))
+				.filter((n) => !Number.isNaN(n))
+		}
+		return []
+	}
+
 	private mapProfileRow(raw: Record<string, unknown>): SenseiProfile {
 		return {
 			...(raw as unknown as SenseiProfile),
@@ -506,12 +528,8 @@ export class GachaRepository {
 			bountyTickets: Number(raw?.bountyTickets ?? 3),
 			pvpWins: Number(raw?.pvpWins ?? 0),
 			pvpLosses: Number(raw?.pvpLosses ?? 0),
-			squadStrikers: Array.isArray(raw?.squadStrikers)
-				? (raw.squadStrikers as number[]).map(Number)
-				: [],
-			squadSpecials: Array.isArray(raw?.squadSpecials)
-				? (raw.squadSpecials as number[]).map(Number)
-				: [],
+			squadStrikers: this.parseIntArray(raw?.squadStrikers),
+			squadSpecials: this.parseIntArray(raw?.squadSpecials),
 		}
 	}
 
@@ -543,8 +561,8 @@ export class GachaRepository {
 				last_ticket_reset as "lastTicketReset",
 				COALESCE(pvp_wins, 0) as "pvpWins",
 				COALESCE(pvp_losses, 0) as "pvpLosses",
-				COALESCE(squad_strikers, '{}') as "squadStrikers",
-				COALESCE(squad_specials, '{}') as "squadSpecials",
+				COALESCE(squad_strikers, '{}')::text as "squadStrikers",
+				COALESCE(squad_specials, '{}')::text as "squadSpecials",
 				created_at as "createdAt",
 				updated_at as "updatedAt"
 		`
@@ -1139,13 +1157,21 @@ export class GachaRepository {
 		specials: number[],
 	): Promise<void> {
 		const profile = await this.getOrCreateProfile(agentId, userJid)
-		const cleanStrikers = strikers.slice(0, 4).map(Number)
-		const cleanSpecials = specials.slice(0, 2).map(Number)
+		const cleanStrikers = strikers
+			.slice(0, 4)
+			.map((n) => Number.parseInt(String(n), 10))
+			.filter((n) => !Number.isNaN(n))
+		const cleanSpecials = specials
+			.slice(0, 2)
+			.map((n) => Number.parseInt(String(n), 10))
+			.filter((n) => !Number.isNaN(n))
+		const strikersLiteral = `{${cleanStrikers.join(",")}}`
+		const specialsLiteral = `{${cleanSpecials.join(",")}}`
 		await sql`
 			UPDATE public.sensei_profiles
 			SET 
-				squad_strikers = ${sql.array(cleanStrikers, 23)},
-				squad_specials = ${sql.array(cleanSpecials, 23)},
+				squad_strikers = ${strikersLiteral}::int[],
+				squad_specials = ${specialsLiteral}::int[],
 				updated_at = CURRENT_TIMESTAMP
 			WHERE agent_id = ${agentId} AND user_jid = ${profile.userJid}
 		`

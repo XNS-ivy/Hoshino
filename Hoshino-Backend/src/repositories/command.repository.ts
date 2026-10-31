@@ -57,10 +57,10 @@ export class CommandRepository {
 	}
 
 	/**
-	 * Normalizes JID string to prevent comparison mismatches (removes device IDs, agent suffixes, and normalizes domain).
+	 * Normalizes JID string to prevent comparison mismatches (removes leading '@', device IDs, agent suffixes, and normalizes domain).
 	 */
 	public normalizeJid(jid: string): string {
-		const raw = jid.trim()
+		const raw = jid.trim().replace(/^@+/, "")
 		if (!raw) return ""
 		const atIdx = raw.indexOf("@")
 		if (atIdx === -1) {
@@ -110,6 +110,25 @@ export class CommandRepository {
 					),
 			),
 		)
+	}
+
+	/**
+	 * Expands normalized user JIDs so numeric user IDs include both `@s.whatsapp.net` and `@lid` variants.
+	 * Prevents domain mismatch when a bare `@digits` mention is normalized without knowing whether the digits are a LID or PN.
+	 */
+	public expandUserJidVariants(
+		jids: string | (string | undefined | null)[],
+	): string[] {
+		const baseList = this.normalizeJidList(jids)
+		const expanded = new Set<string>(baseList)
+		for (const jid of baseList) {
+			const digits = jid.split("@")[0]?.replace(/[^0-9]/g, "") || ""
+			if (digits.length >= 6) {
+				expanded.add(`${digits}@s.whatsapp.net`)
+				expanded.add(`${digits}@lid`)
+			}
+		}
+		return Array.from(expanded)
 	}
 
 	/**
@@ -194,7 +213,7 @@ export class CommandRepository {
 		agentId: string,
 		userJid: string | string[],
 	): Promise<boolean> {
-		const cleanJids = this.normalizeJidList(userJid)
+		const cleanJids = this.expandUserJidVariants(userJid)
 		if (cleanJids.length === 0) return false
 		const rows = await sql`
 			SELECT user_jid FROM public.agent_blacklists
@@ -225,7 +244,7 @@ export class CommandRepository {
 		userJid: string | string[],
 		reason?: string,
 	): Promise<void> {
-		const cleanJids = this.normalizeJidList(userJid)
+		const cleanJids = this.expandUserJidVariants(userJid)
 		for (const cleanJid of cleanJids) {
 			await sql`
 				INSERT INTO public.agent_blacklists (agent_id, user_jid, reason)
@@ -242,7 +261,7 @@ export class CommandRepository {
 		agentId: string,
 		userJid: string | string[],
 	): Promise<void> {
-		const cleanJids = this.normalizeJidList(userJid)
+		const cleanJids = this.expandUserJidVariants(userJid)
 		if (cleanJids.length === 0) return
 		await sql`
 			DELETE FROM public.agent_blacklists
@@ -259,7 +278,7 @@ export class CommandRepository {
 		groupJid: string,
 		userJid: string | string[],
 	): Promise<boolean> {
-		const cleanJids = this.normalizeJidList(userJid)
+		const cleanJids = this.expandUserJidVariants(userJid)
 		if (cleanJids.length === 0) return false
 		const rows = await sql`
 			SELECT user_jid FROM public.agent_autodeletes
@@ -307,7 +326,7 @@ export class CommandRepository {
 		userJid: string | string[],
 		groupJid = "*",
 	): Promise<void> {
-		const cleanJids = this.normalizeJidList(userJid)
+		const cleanJids = this.expandUserJidVariants(userJid)
 		for (const cleanJid of cleanJids) {
 			await sql`
 				INSERT INTO public.agent_autodeletes (agent_id, jid, user_jid)
@@ -325,7 +344,7 @@ export class CommandRepository {
 		userJid: string | string[],
 		groupJid?: string,
 	): Promise<void> {
-		const cleanJids = this.normalizeJidList(userJid)
+		const cleanJids = this.expandUserJidVariants(userJid)
 		if (cleanJids.length === 0) return
 		if (groupJid) {
 			await sql`

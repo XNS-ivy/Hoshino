@@ -1,13 +1,23 @@
 ---
 tags: [moc, backend, internal-memory]
 aliases: [Backend Architecture Hub]
-updated: 2026-10-15
+updated: 2026-10-31
 ---
 
 # ⚙️ Hoshino Backend - Internal Memory MOC
 
 > [!NOTE]
 > The Hoshino Backend is built using the **Bun runtime** and **Elysia.js**, interfacing with WhatsApp multi-instance sockets via **Baileys** and **PostgreSQL** for isolated multi-tenant session storage.
+
+---
+
+## 🏛️ Core Architectural Principles
+
+> [!IMPORTANT]
+> **Single-Responsibility Command Architecture (`src/commands/<category>/<command>.ts`)**:
+> - **1 Purpose = 1 Command File**: Every distinct user-facing command MUST live in its own dedicated `.ts` file (e.g., `gacha.ts`, `daily.ts`, `spark.ts`, `mystudent.ts`, `eleph.ts`, `upgrade.ts`, `inventory.ts`, `squad.ts`, `raid.ts`, `weeklyboss.ts`).
+> - **Synonyms Only in `name: string[]`**: Triggers inside a single `ICommand` must strictly be synonyms of the **same** action (`["gacha", "pull"]`, `["squad", "party"]`). Never bundle unrelated commands into one file that branches on `ctx.commandName`.
+> - **Shared Domain Helpers**: Common domain helpers (such as `resolveCanonicalSensei`, `findOwnedStudentByQuery`, `resolveSenseiSquad`, or `getRaidBosses`) are exported as named functions and imported cleanly across sibling command modules.
 
 ---
 

@@ -10,13 +10,13 @@ const command: ICommand = {
 	access: "owner",
 	textOnly: true,
 	execute: async (args: string[], ctx: CommandContext) => {
-		const mentions = await ctx.getMentions()
+		const mentions = (await ctx.getMentions()).filter(Boolean)
 		const quoted = await ctx.getQuotedMessage()
 		let targetJid = mentions.length > 0 ? mentions[0] : null
 
 		if (!targetJid && args[0]) {
 			const cleanDigits = args[0].replace(/[^0-9]/g, "")
-			if (cleanDigits.length >= 7) {
+			if (cleanDigits.length >= 6) {
 				targetJid = commandRepository.normalizeJid(
 					args[0].includes("@") ? args[0] : cleanDigits,
 				)

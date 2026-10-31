@@ -75,7 +75,7 @@ Each resolver contains single-flight memoization per message instance to avoid r
 - Fetches high-resolution avatar URL via `sock.profilePictureUrl()`.
 
 ### 8. `getMentions(): Promise<string[]>`
-- Returns an array of normalized user JIDs mentioned in the message (extracted from unwrapped `rawContent`, excluding `@g.us`).
+- Returns an array of normalized user JIDs mentioned in the message (extracted across all `contextInfo` message layers in `rawContent`/`m`, plus fallback inline `@\d{6,16}` mentions from `body` matched against `GroupMetadata` participants so `@lid` vs `@s.whatsapp.net` domains are preserved, excluding `@g.us`).
 
 ### 9. `getBusinessProfile(targetJid?): Promise<unknown | null>`
 - Retrieves WhatsApp Business profile details.

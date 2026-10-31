@@ -16,7 +16,7 @@ import {
 } from "@utils/schaledb"
 import { resolveCanonicalSensei, resolveSenseiSquad } from "./upgrade"
 
-interface SchaleRaidBoss {
+export interface SchaleRaidBoss {
 	Id: number
 	Name: string
 	DevName: string
@@ -117,7 +117,7 @@ const RAIDS_FILE = join(CACHE_DIR, "raids.json")
 let cachedRaids: SchaleRaidBoss[] | null = null
 let lastRaidFetch = 0
 
-async function getRaidBosses(): Promise<SchaleRaidBoss[]> {
+export async function getRaidBosses(): Promise<SchaleRaidBoss[]> {
 	const now = Date.now()
 	if (cachedRaids && now - lastRaidFetch < 7 * 24 * 60 * 60 * 1000) {
 		return cachedRaids
@@ -157,7 +157,7 @@ async function getRaidBosses(): Promise<SchaleRaidBoss[]> {
 	}
 }
 
-function getRecommendedCounter(armorType: string): string {
+export function getRecommendedCounter(armorType: string): string {
 	switch (armorType) {
 		case "LightArmor":
 			return "🔴 Explosive (Red) Strikers"
@@ -172,7 +172,7 @@ function getRecommendedCounter(armorType: string): string {
 	}
 }
 
-function getActiveWeeklyBoss(bosses: SchaleRaidBoss[]): SchaleRaidBoss {
+export function getActiveWeeklyBoss(bosses: SchaleRaidBoss[]): SchaleRaidBoss {
 	if (bosses.length === 0) {
 		return {
 			Id: 1,
@@ -192,7 +192,7 @@ function getActiveWeeklyBoss(bosses: SchaleRaidBoss[]): SchaleRaidBoss {
 /**
  * Generates smart, relevant SchaleDB material drops tailored to the students in Sensei's squad!
  */
-async function generateSmartMaterialDrops(
+export async function generateSmartMaterialDrops(
 	squadStudents: Array<{
 		schale: SchaleStudent
 		owned: { exSkillLevel: number; normalSkillLevel: number }
@@ -267,7 +267,13 @@ async function generateSmartMaterialDrops(
 	}
 
 	// 2. Always drop Schale Equipment Blueprint Boxes (#9000)
-	addDrop(9000, "Schale Equipment Blueprint Box", "Equipment", "SR", 3 * multiplier)
+	addDrop(
+		9000,
+		"Schale Equipment Blueprint Box",
+		"Equipment",
+		"SR",
+		3 * multiplier,
+	)
 
 	// 3. Inspect Sensei's deployed squad to drop the EXACT SchaleDB Blu-rays, Tech Notes, and Oopart Artifacts they need!
 	for (const member of squadStudents) {
@@ -277,7 +283,10 @@ async function generateSmartMaterialDrops(
 			Math.min(4, member.owned.exSkillLevel),
 		)
 		for (const mat of exRecipe.materials) {
-			const dropAmt = Math.max(2, Math.ceil((mat.requiredCount * 0.35) * Math.min(4, multiplier)))
+			const dropAmt = Math.max(
+				2,
+				Math.ceil(mat.requiredCount * 0.35 * Math.min(4, multiplier)),
+			)
 			addDrop(mat.itemId, mat.itemName, mat.category, mat.rarity, dropAmt)
 		}
 
@@ -287,7 +296,10 @@ async function generateSmartMaterialDrops(
 			Math.min(9, member.owned.normalSkillLevel),
 		)
 		for (const mat of subRecipe.materials) {
-			const dropAmt = Math.max(2, Math.ceil((mat.requiredCount * 0.4) * Math.min(4, multiplier)))
+			const dropAmt = Math.max(
+				2,
+				Math.ceil(mat.requiredCount * 0.4 * Math.min(4, multiplier)),
+			)
 			addDrop(mat.itemId, mat.itemName, mat.category, mat.rarity, dropAmt)
 		}
 	}
@@ -296,28 +308,19 @@ async function generateSmartMaterialDrops(
 }
 
 const command: ICommand = {
-	name: [
-		"raid",
-		"boss",
-		"totalassault",
-		"weeklyboss",
-		"bounty",
-		"grandassault",
-	],
+	name: ["raid", "boss", "totalassault", "grandassault"],
 	category: "bluearchive",
 	description:
-		"Playable Blue Archive Total Assault Raid Boss & Weekly Boss combat with SchaleDB material drops, armor/terrain damage simulation, and leaderboards",
+		"Playable Blue Archive Total Assault Raid Boss combat with SchaleDB material drops, armor/terrain damage simulation, boss guides, and leaderboards",
 	usage: [
 		"raid",
 		"raid attack [boss] [normal|hard|veryhard|hardcore|extreme|insane|torment]",
-		"weeklyboss [boss/school]",
 		"raid rank",
 		"raid list",
 		"raid binah",
 	],
 	textOnly: true,
 	execute: async (args: string[], ctx: CommandContext) => {
-		const invoked = (ctx.commandName || "raid").toLowerCase()
 		const sub = (args[0] || "").toLowerCase()
 
 		try {
@@ -330,138 +333,7 @@ const command: ICommand = {
 			)
 
 			// =========================================================================
-			// 1. WEEKLY BOSS / BOUNTY RAID (.weeklyboss / .bounty / .raid weekly)
-			// =========================================================================
-			if (
-				invoked === "weeklyboss" ||
-				invoked === "bounty" ||
-				sub === "weekly" ||
-				sub === "bounty"
-			) {
-				const squad = await resolveSenseiSquad(ctx.agentId, canonicalJid)
-				if (squad.strikers.length === 0 && squad.specials.length === 0) {
-					await ctx.reply(
-						`❌ You need at least 1 student in your roster to challenge the Weekly Boss!\nUse *${ctx.prefix}gacha 10* first.`,
-					)
-					return
-				}
-
-				const ticketRes = await gachaRepository.consumeTicket(
-					ctx.agentId,
-					canonicalJid,
-					"bounty",
-				)
-				if (!ticketRes.success) {
-					await ctx.reply(
-						`🎫 *Out of Weekly Boss Bounty Tickets (0/3)!*\n` +
-							`Tickets reset daily at 06:00 WIB or when you claim *${ctx.prefix}daily*.`,
-					)
-					return
-				}
-
-				const queryArg =
-					invoked === "weeklyboss" || invoked === "bounty"
-						? args.join(" ").trim().toLowerCase()
-						: args.slice(1).join(" ").trim().toLowerCase()
-
-				const targetBoss =
-					(queryArg &&
-						bosses.find(
-							(b) =>
-								b.Name.toLowerCase().includes(queryArg) ||
-								b.DevName.toLowerCase().includes(queryArg) ||
-								b.PathName?.toLowerCase().includes(queryArg),
-						)) ||
-					bosses[( bosses.indexOf(activeBoss) + 1 ) % Math.max(1, bosses.length)] ||
-					activeBoss
-
-				const allDeployed = [...squad.strikers, ...squad.specials]
-				const terrain = targetBoss.Terrain?.[0] || "Outdoor"
-
-				let totalSquadDamage = 0
-				const combatLines: string[] = []
-
-				for (const unit of allDeployed) {
-					const armorCheck = calculateArmorMultiplier(
-						unit.schale.BulletType,
-						targetBoss.ArmorType,
-					)
-					const terrainCheck = calculateTerrainMultiplier(unit.schale, terrain)
-					const rawDmg =
-						unit.stats.atk *
-						4.5 *
-						unit.stats.exMultiplier *
-						unit.stats.skillMultiplier
-					const finalDmg = Math.round(
-						rawDmg * armorCheck.multiplier * terrainCheck.multiplier,
-					)
-					totalSquadDamage += finalDmg
-					combatLines.push(
-						`  • *${unit.schale.Name}* (Lv.${unit.owned.level}): *${finalDmg.toLocaleString()} DMG* [${armorCheck.label}]`,
-					)
-				}
-
-				const tierMult = Math.max(
-					2,
-					Math.min(8, Math.floor(squad.totalCombatPower / 8000) + 2),
-				)
-				const creditsEarned = 180000 * tierMult
-				const pyroxenesEarned = 150
-				const drops = await generateSmartMaterialDrops(allDeployed, tierMult)
-
-				await gachaRepository.addCredits(
-					ctx.agentId,
-					canonicalJid,
-					creditsEarned,
-				)
-				await gachaRepository.addPyroxenes(
-					ctx.agentId,
-					canonicalJid,
-					pyroxenesEarned,
-				)
-				await gachaRepository.addInventoryItems(
-					ctx.agentId,
-					canonicalJid,
-					drops,
-				)
-
-				let text = `👑 *WEEKLY BOSS BOUNTY CLEARED!*\n`
-				text += `───────────────────────────\n`
-				text += `👾 *Weekly Boss:* ${targetBoss.Name} (${formatArmorType(targetBoss.ArmorType)})\n`
-				text += `🏞️ *Battlefield:* ${terrain}\n`
-				text += `🎫 *Bounty Tickets Left:* ${ticketRes.remaining}/3\n`
-				text += `───────────────────────────\n`
-				text += `⚔️ *SQUAD DAMAGE BREAKDOWN (${totalSquadDamage.toLocaleString()} Total DMG):*\n`
-				text += `${combatLines.join("\n")}\n\n`
-				text += `🎁 *SCHALEDB MATERIAL & BOUNTY DROPS:*\n`
-				text += `  • 💎 *+${pyroxenesEarned} Pyroxenes*\n`
-				text += `  • 🪙 *+${creditsEarned.toLocaleString()} Credits*\n`
-				for (const d of drops.slice(0, 10)) {
-					text += `  • 📦 *[${d.rarity}] ${d.itemName}* ×${d.count}\n`
-				}
-				if (drops.length > 10) {
-					text += `  • _...and ${drops.length - 10} more SchaleDB materials added to ${ctx.prefix}inventory!_\n`
-				}
-				text += `\n💡 Use *${ctx.prefix}upgrade <student>* to spend your new materials!`
-
-				const bossImgBuf = await fetchSchaleImageBuffer(
-					getRaidBossImageUrls(targetBoss),
-				)
-				if (bossImgBuf) {
-					await ctx.sock.sendMessage(
-						ctx.jid,
-						{ image: bossImgBuf, caption: text },
-						{ quoted: ctx.rawMsg },
-					)
-					return
-				}
-
-				await ctx.reply(text)
-				return
-			}
-
-			// =========================================================================
-			// 2. RAID LEADERBOARD (.raid rank / .raid leaderboard)
+			// 1. RAID LEADERBOARD (.raid rank / .raid leaderboard)
 			// =========================================================================
 			if (sub === "rank" || sub === "leaderboard" || sub === "top") {
 				const records = await gachaRepository.getRaidLeaderboard(ctx.agentId)
@@ -489,7 +361,7 @@ const command: ICommand = {
 			}
 
 			// =========================================================================
-			// 3. LIST ALL BOSSES (.raid list / .raid bosses)
+			// 2. LIST ALL BOSSES (.raid list / .raid bosses)
 			// =========================================================================
 			if (sub === "list" || sub === "bosses" || sub === "all") {
 				let text = `⚔️ *KIVOTOS TOTAL ASSAULT BOSSES (SchaleDB)*\n`
@@ -512,9 +384,14 @@ const command: ICommand = {
 			}
 
 			// =========================================================================
-			// 4. INTERACTIVE TOTAL ASSAULT RAID BATTLE (.raid attack [boss] [difficulty])
+			// 3. INTERACTIVE TOTAL ASSAULT RAID BATTLE (.raid attack [boss] [difficulty])
 			// =========================================================================
-			if (sub === "attack" || sub === "fight" || sub === "battle" || sub === "start") {
+			if (
+				sub === "attack" ||
+				sub === "fight" ||
+				sub === "battle" ||
+				sub === "start"
+			) {
 				const squad = await resolveSenseiSquad(ctx.agentId, canonicalJid)
 				if (squad.strikers.length === 0 && squad.specials.length === 0) {
 					await ctx.reply(
@@ -523,7 +400,6 @@ const command: ICommand = {
 					return
 				}
 
-				// Parse optional boss name and difficulty from remaining args
 				const remArgs = args.slice(1).map((a) => a.toLowerCase())
 				let chosenDiff: RaidDifficultyConfig = RAID_DIFFICULTIES.normal!
 				const bossTokens: string[] = []
@@ -563,7 +439,6 @@ const command: ICommand = {
 				const terrain = targetBoss.Terrain?.[0] || "Outdoor"
 				const allUnits = [...squad.strikers, ...squad.specials]
 
-				// Backline Special support buff (+15% of Specials' ATK/HEAL added to Strikers)
 				const specialAtkSupport = Math.round(
 					squad.specials.reduce((sum, s) => sum + s.stats.atk, 0) * 0.18,
 				)
@@ -588,7 +463,6 @@ const command: ICommand = {
 							? unit.stats.atk + specialAtkSupport
 							: Math.round(unit.stats.atk * 0.85)
 
-					// Insane / Torment Boss Counter-Attack Survivability factor
 					let survivabilityFactor = 1.0
 					if (
 						(chosenDiff.key === "Insane" || chosenDiff.key === "Torment") &&
@@ -604,7 +478,6 @@ const command: ICommand = {
 						}
 					}
 
-					// 3-Minute (180s) Raid Window Simulation: Auto-attacks + Normal Skills + 3 EX Skill rotations
 					const rawRotationDmg =
 						effectiveAtk *
 						12.5 *
@@ -632,7 +505,6 @@ const command: ICommand = {
 					)
 				}
 
-				// Add team sustain bonus damage if healers are present
 				if (specialHealSupport > 0) {
 					totalDamageDealt += specialHealSupport * 8
 				}
@@ -648,7 +520,6 @@ const command: ICommand = {
 						)
 					: Math.round(chosenDiff.baseScore * damageRatio * 0.6)
 
-				// Even on partial clear (wipe), Sensei earns proportional consolation rewards & materials!
 				const rewardRatio = cleared ? 1.0 : Math.max(0.4, damageRatio)
 				const earnedCredits = Math.round(chosenDiff.creditReward * rewardRatio)
 				const earnedPyroxenes = cleared
@@ -727,11 +598,11 @@ const command: ICommand = {
 			}
 
 			// =========================================================================
-			// 5. DASHBOARD OVERVIEW (.raid with no args)
+			// 4. DASHBOARD OVERVIEW (.raid with no args)
 			// =========================================================================
 			if (!sub) {
 				const squad = await resolveSenseiSquad(ctx.agentId, canonicalJid)
-				let text = `⚔️ *SCHALE TOTAL ASSAULT & WEEKLY BOSS HQ*\n`
+				let text = `⚔️ *SCHALE TOTAL ASSAULT HQ*\n`
 				text += `───────────────────────────\n`
 				text += `👾 *Active Season Boss:* *${activeBoss.Name}*\n`
 				text += `🛡️ *Boss Armor:* ${formatArmorType(activeBoss.ArmorType)}\n`
@@ -773,7 +644,7 @@ const command: ICommand = {
 			}
 
 			// =========================================================================
-			// 6. SPECIFIC BOSS DETAIL GUIDE (.raid <boss name>)
+			// 5. SPECIFIC BOSS DETAIL GUIDE (.raid <boss name>)
 			// =========================================================================
 			const targetName = args.join(" ").trim().toLowerCase()
 			const match = bosses.find(

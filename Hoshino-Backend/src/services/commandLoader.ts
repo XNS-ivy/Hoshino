@@ -10,6 +10,7 @@ import {
 	buildCommandContext,
 	detectMessageType,
 	extractSenderIdentities,
+	findGroupParticipant,
 	resolveUserIdentities,
 } from "./contextBuilder"
 
@@ -700,17 +701,51 @@ export class CommandLoader {
 			args: cleanArgs,
 			body: `${parentCtx.prefix}${cleanCmdName}${cleanArgs.length > 0 ? ` ${cleanArgs.join(" ")}` : ""}`,
 			getMentions: async () => {
-				const baseMentions = await parentCtx.getMentions()
+				const baseMentions = (await parentCtx.getMentions()).filter(
+					(m) => Boolean(m) && !m.endsWith("@g.us"),
+				)
+				const existingDigits = new Set(
+					baseMentions.map(
+						(m) => m.split("@")[0]?.replace(/[^0-9]/g, "") || "",
+					),
+				)
 				const argMentions: string[] = []
+				const groupMeta = parentCtx.isGroup
+					? await parentCtx.getGroupMetadata()
+					: null
+
 				for (const arg of cleanArgs) {
 					const digits = arg.replace(/[^0-9]/g, "")
-					if (digits.length >= 7 && digits.length <= 16) {
-						argMentions.push(
-							commandRepository.normalizeJid(arg.includes("@") ? arg : digits),
+					if (digits.length >= 6 && digits.length <= 16) {
+						if (existingDigits.has(digits)) continue
+
+						if (groupMeta?.participants?.length) {
+							const matched = findGroupParticipant(groupMeta.participants, [
+								`${digits}@lid`,
+								`${digits}@s.whatsapp.net`,
+							])
+							if (matched?.id) {
+								const cleanMatched = commandRepository.normalizeJid(matched.id)
+								if (cleanMatched && !cleanMatched.endsWith("@g.us")) {
+									argMentions.push(cleanMatched)
+									existingDigits.add(digits)
+									continue
+								}
+							}
+						}
+
+						const norm = commandRepository.normalizeJid(
+							arg.includes("@") ? arg : digits,
 						)
+						if (norm && !norm.endsWith("@g.us")) {
+							argMentions.push(norm)
+							existingDigits.add(digits)
+						}
 					}
 				}
-				return Array.from(new Set([...baseMentions, ...argMentions]))
+				return Array.from(new Set([...baseMentions, ...argMentions])).filter(
+					Boolean,
+				)
 			},
 		}
 

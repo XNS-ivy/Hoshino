@@ -229,21 +229,10 @@ export async function resolveSenseiSquad(
 }
 
 const command: ICommand = {
-	name: [
-		"upgrade",
-		"levelup",
-		"skillup",
-		"gearup",
-		"mystic",
-		"inventory",
-		"bag",
-		"materials",
-		"squad",
-		"party",
-	],
+	name: ["upgrade", "levelup", "skillup", "gearup", "mystic"],
 	category: "bluearchive",
 	description:
-		"Upgrade Blue Archive students (Level, EX/Sub Skills, Equipment T1-T9, Mystic Star/UE) using authentic SchaleDB materials, manage Inventory, and configure your 4 Striker + 2 Special Squad",
+		"Upgrade Blue Archive students (Level 1-90, EX/Sub Skills, Equipment T1-T9, Mystic Star/UE) using authentic SchaleDB materials",
 	usage: [
 		"upgrade <student>",
 		"upgrade <student> level [levels]",
@@ -251,9 +240,6 @@ const command: ICommand = {
 		"upgrade <student> skill [normal|passive|sub]",
 		"upgrade <student> gear [1|2|3]",
 		"upgrade <student> star",
-		"inventory",
-		"squad",
-		"squad set <student1>, <student2>...",
 	],
 	textOnly: true,
 	execute: async (args: string[], ctx: CommandContext) => {
@@ -267,226 +253,7 @@ const command: ICommand = {
 			)
 
 			// =========================================================================
-			// 1. INVENTORY / MATERIALS VIEW (.inventory, .bag, .materials)
-			// =========================================================================
-			if (
-				invoked === "inventory" ||
-				invoked === "bag" ||
-				invoked === "materials"
-			) {
-				const inv = await gachaRepository.getInventory(
-					ctx.agentId,
-					canonicalJid,
-				)
-
-				let text = `🎒 *SCHALE MATERIAL INVENTORY*\n`
-				text += `───────────────────────────\n`
-				text += `👤 *Sensei:* ${ctx.pushName}\n`
-				text += `💎 *Pyroxenes:* ${profile.pyroxenes.toLocaleString()}\n`
-				text += `🪙 *Credits:* ${profile.credits.toLocaleString()}\n`
-				text += `🎫 *Raid Tickets:* ${profile.raidTickets}/3 | *Bounty:* ${profile.bountyTickets}/3\n`
-				text += `───────────────────────────\n\n`
-
-				if (inv.length === 0) {
-					text += `📭 *Your material bag is currently empty!*\n\n`
-					text += `💡 *How to get SchaleDB Upgrade Materials:*\n`
-					text += `• *${ctx.prefix}daily* — Claim 1,200 Pyroxenes, 250,000 Credits & Activity Reports\n`
-					text += `• *${ctx.prefix}raid attack* — Fight Total Assault Raid Bosses for Blu-rays, Tech Notes & Oopart Artifacts\n`
-					text += `• *${ctx.prefix}weeklyboss* — Clear Weekly Bounty Bosses for targeted school materials & Equipment Blueprints`
-					await ctx.reply(text)
-					return
-				}
-
-				const reports = inv.filter((i) => i.category === "CharacterExpGrowth")
-				const blurays = inv.filter((i) => i.category === "CDItem")
-				const technotes = inv.filter((i) => i.category === "BookItem")
-				const artifacts = inv.filter((i) => i.category === "Artifact")
-				const blueprints = inv.filter(
-					(i) =>
-						i.category === "Equipment" ||
-						(i.category !== "CharacterExpGrowth" &&
-							i.category !== "CDItem" &&
-							i.category !== "BookItem" &&
-							i.category !== "Artifact"),
-				)
-
-				if (reports.length > 0) {
-					text += `📘 *Activity Reports (Level EXP):*\n`
-					for (const item of reports) {
-						text += `  • [${item.rarity}] ${item.itemName}: *×${item.count}*\n`
-					}
-					text += `\n`
-				}
-				if (blurays.length > 0) {
-					text += `💿 *Tactical Training Blu-rays (EX Skill):*\n`
-					for (const item of blurays) {
-						text += `  • [${item.rarity}] ${item.itemName}: *×${item.count}*\n`
-					}
-					text += `\n`
-				}
-				if (technotes.length > 0) {
-					text += `📓 *Tech Notes (Basic/Passive/Sub Skill):*\n`
-					for (const item of technotes) {
-						text += `  • [${item.rarity}] ${item.itemName}: *×${item.count}*\n`
-					}
-					text += `\n`
-				}
-				if (artifacts.length > 0) {
-					text += `🏺 *Oopart Artifacts (SchaleDB Relics):*\n`
-					for (const item of artifacts) {
-						text += `  • [${item.rarity}] ${item.itemName}: *×${item.count}*\n`
-					}
-					text += `\n`
-				}
-				if (blueprints.length > 0) {
-					text += `🛠️ *Equipment Blueprints & Gear:*\n`
-					for (const item of blueprints) {
-						text += `  • [${item.rarity}] ${item.itemName}: *×${item.count}*\n`
-					}
-					text += `\n`
-				}
-
-				text += `───────────────────────────\n`
-				text += `💡 Upgrade a student with *${ctx.prefix}upgrade <student name>*`
-				await ctx.reply(text)
-				return
-			}
-
-			// =========================================================================
-			// 2. SQUAD / PARTY FORMATION (.squad, .party)
-			// =========================================================================
-			if (invoked === "squad" || invoked === "party") {
-				const sub = args[0]?.toLowerCase()
-
-				if (sub === "auto") {
-					await gachaRepository.setSquad(ctx.agentId, canonicalJid, [], [])
-					const squad = await resolveSenseiSquad(ctx.agentId, canonicalJid)
-					await ctx.reply(
-						`✅ *Squad Reset to Auto-Best Formation!*\n⚡ *Total Combat Power:* ${squad.totalCombatPower.toLocaleString()} CP`,
-					)
-					return
-				}
-
-				if (sub === "set") {
-					const rawList = args.slice(1).join(" ")
-					const names = rawList
-						.split(/[,|/]/)
-						.map((s) => s.trim())
-						.filter(Boolean)
-
-					if (names.length === 0) {
-						await ctx.reply(
-							`⚠️ Please provide student names separated by commas!\nExample: *${ctx.prefix}squad set Hoshino, Shiroko, Aru, Mika, Himari, Fuuka*`,
-						)
-						return
-					}
-
-					const strikers: number[] = []
-					const specials: number[] = []
-					const chosenNames: string[] = []
-					const notFound: string[] = []
-
-					for (const n of names) {
-						const found = await findOwnedStudentByQuery(
-							ctx.agentId,
-							canonicalJid,
-							n,
-						)
-						if (!found) {
-							notFound.push(n)
-							continue
-						}
-						if (found.schale.SquadType === "Main") {
-							if (
-								strikers.length < 4 &&
-								!strikers.includes(found.owned.studentId)
-							) {
-								strikers.push(found.owned.studentId)
-								chosenNames.push(`⚔️ ${found.schale.Name}`)
-							}
-						} else {
-							if (
-								specials.length < 2 &&
-								!specials.includes(found.owned.studentId)
-							) {
-								specials.push(found.owned.studentId)
-								chosenNames.push(`🛡️ ${found.schale.Name}`)
-							}
-						}
-					}
-
-					await gachaRepository.setSquad(
-						ctx.agentId,
-						canonicalJid,
-						strikers,
-						specials,
-					)
-					const updatedSquad = await resolveSenseiSquad(
-						ctx.agentId,
-						canonicalJid,
-					)
-
-					let reply = `✅ *TACTICAL SQUAD UPDATED!*\n`
-					reply += `───────────────────────────\n`
-					reply += `Assigned: ${chosenNames.join(", ") || "Auto-filled"}\n`
-					if (notFound.length > 0) {
-						reply += `⚠️ Not in roster: ${notFound.join(", ")}\n`
-					}
-					reply += `⚡ *Total Squad Combat Power:* ${updatedSquad.totalCombatPower.toLocaleString()} CP`
-					await ctx.reply(reply)
-					return
-				}
-
-				const squad = await resolveSenseiSquad(ctx.agentId, canonicalJid)
-				if (squad.strikers.length === 0 && squad.specials.length === 0) {
-					await ctx.reply(
-						`📭 You don't have any students in your squad yet! Use *${ctx.prefix}gacha 10* first.`,
-					)
-					return
-				}
-
-				let text = `🛡️ *SENSEI TACTICAL SQUAD FORMATION*\n`
-				text += `───────────────────────────\n`
-				text += `👤 *Sensei:* ${ctx.pushName}\n`
-				text += `⚡ *Total Combat Power:* *${squad.totalCombatPower.toLocaleString()} CP*\n`
-				text += `🏆 *PvP Record:* ${profile.pvpWins}W - ${profile.pvpLosses}L\n`
-				text += `───────────────────────────\n\n`
-
-				text += `⚔️ *STRIKER UNIT (Frontline - Max 4):*\n`
-				if (squad.strikers.length === 0) {
-					text += `  _No Strikers owned_\n`
-				} else {
-					for (const s of squad.strikers) {
-						const stars = "★".repeat(s.owned.starGrade)
-						const ue = s.owned.weaponStar > 0 ? ` [UE${s.owned.weaponStar}★]` : ""
-						text += `  • *${s.schale.Name}* (${stars}${ue}) — *Lv.${s.owned.level}*\n`
-						text += `    ${formatBulletType(s.schale.BulletType)} | ${formatArmorType(s.schale.ArmorType)} | ⚡ ${s.stats.combatPower.toLocaleString()} CP\n`
-						text += `    Skills: EX${s.owned.exSkillLevel} / ${s.owned.normalSkillLevel}/${s.owned.passiveSkillLevel}/${s.owned.subSkillLevel} | Gear: T${s.owned.equipSlot1Tier}/T${s.owned.equipSlot2Tier}/T${s.owned.equipSlot3Tier}\n`
-					}
-				}
-
-				text += `\n🛡️ *SPECIAL UNIT (Backline Support - Max 2):*\n`
-				if (squad.specials.length === 0) {
-					text += `  _No Specials owned_\n`
-				} else {
-					for (const s of squad.specials) {
-						const stars = "★".repeat(s.owned.starGrade)
-						const ue = s.owned.weaponStar > 0 ? ` [UE${s.owned.weaponStar}★]` : ""
-						text += `  • *${s.schale.Name}* (${stars}${ue}) — *Lv.${s.owned.level}*\n`
-						text += `    ${formatBulletType(s.schale.BulletType)} | ⚡ ${s.stats.combatPower.toLocaleString()} CP | Bond ♥${s.bondLevel}\n`
-						text += `    Skills: EX${s.owned.exSkillLevel} / ${s.owned.normalSkillLevel}/${s.owned.passiveSkillLevel}/${s.owned.subSkillLevel} | Gear: T${s.owned.equipSlot1Tier}/T${s.owned.equipSlot2Tier}/T${s.owned.equipSlot3Tier}\n`
-					}
-				}
-
-				text += `\n───────────────────────────\n`
-				text += `💡 *Customize Squad:* *${ctx.prefix}squad set Student1, Student2, Student3...*\n`
-				text += `💡 *Auto-Pick Best:* *${ctx.prefix}squad auto*`
-				await ctx.reply(text)
-				return
-			}
-
-			// =========================================================================
-			// 3. STUDENT UPGRADE & PROGRESSION (.upgrade, .levelup, .skillup, .gearup, .mystic)
+			// STUDENT UPGRADE & PROGRESSION (.upgrade, .levelup, .skillup, .gearup, .mystic)
 			// =========================================================================
 			if (args.length === 0) {
 				await ctx.reply(
@@ -1092,11 +859,14 @@ const command: ICommand = {
 
 			await ctx.reply(caption)
 		} catch (error) {
+			const errMsg = error instanceof Error ? error.message : String(error)
 			logger.error(
 				"/commands/bluearchive/upgrade.ts",
-				`Student upgrade error: ${error}`,
+				`Command "${invoked}" error: ${errMsg}`,
 			)
-			await ctx.reply("⚠️ An error occurred while processing student upgrade.")
+			await ctx.reply(
+				`⚠️ An error occurred while processing *${ctx.prefix}${invoked}*: ${errMsg}`,
+			)
 		}
 	},
 }

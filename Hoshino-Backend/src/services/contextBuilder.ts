@@ -304,16 +304,40 @@ export async function resolveUserIdentities(
 				} catch {}
 			}
 		} else if (id.endsWith("@s.whatsapp.net")) {
+			const pnUser = id.split("@")[0]
 			let resolvedLid: string | null | undefined
-			if (authKeys) {
+			if (authKeys && pnUser) {
 				try {
-					const pnUser = id.split("@")[0]
-					if (pnUser) {
-						const stored = await authKeys.get("lid-mapping", [pnUser])
-						const lidUser = stored?.[pnUser]
-						if (typeof lidUser === "string" && lidUser) {
-							resolvedLid = `${lidUser}@lid`
+					const stored = await authKeys.get("lid-mapping", [pnUser])
+					const lidUser = stored?.[pnUser]
+					if (typeof lidUser === "string" && lidUser) {
+						resolvedLid = `${lidUser}@lid`
+					}
+				} catch {}
+
+				// Also check if pnUser is actually bare LID digits (e.g. "178409284091930" normalized as "@s.whatsapp.net")
+				if (!resolvedLid) {
+					try {
+						const revKey = `${pnUser}_reverse`
+						const storedRev = await authKeys.get("lid-mapping", [revKey])
+						const mappedPnUser = storedRev?.[revKey]
+						if (typeof mappedPnUser === "string" && mappedPnUser) {
+							identities.add(`${pnUser}@lid`)
+							const cleanPn = commandRepository.normalizeJid(
+								`${mappedPnUser}@s.whatsapp.net`,
+							)
+							if (cleanPn) identities.add(cleanPn)
 						}
+					} catch {}
+				}
+			}
+			if (lidMapping && pnUser) {
+				try {
+					const reversePn = await lidMapping.getPNForLID(`${pnUser}@lid`)
+					if (reversePn) {
+						identities.add(`${pnUser}@lid`)
+						const cleanPn = commandRepository.normalizeJid(reversePn)
+						if (cleanPn) identities.add(cleanPn)
 					}
 				} catch {}
 			}
@@ -948,13 +972,75 @@ export function buildCommandContext(
 			unwrapped?.extendedTextMessage?.contextInfo ||
 			unwrapped?.imageMessage?.contextInfo ||
 			unwrapped?.videoMessage?.contextInfo ||
+			unwrapped?.documentMessage?.contextInfo ||
+			unwrapped?.stickerMessage?.contextInfo ||
+			unwrapped?.audioMessage?.contextInfo ||
 			m?.extendedTextMessage?.contextInfo ||
 			m?.imageMessage?.contextInfo ||
-			m?.videoMessage?.contextInfo
-		const list = contextInfo?.mentionedJid || []
-		return list
-			.map((item) => commandRepository.normalizeJid(item))
-			.filter((jidItem) => Boolean(jidItem) && !jidItem.endsWith("@g.us"))
+			m?.videoMessage?.contextInfo ||
+			m?.documentMessage?.contextInfo ||
+			m?.stickerMessage?.contextInfo ||
+			m?.audioMessage?.contextInfo
+		const rawList = contextInfo?.mentionedJid || []
+		const results: string[] = []
+
+		for (const item of rawList) {
+			const clean = commandRepository.normalizeJid(item)
+			if (clean && !clean.endsWith("@g.us") && !results.includes(clean)) {
+				results.push(clean)
+			}
+		}
+
+		// Fallback: also parse inline @digits mentions from message body if not already captured
+		const inlineMatches = body.match(/@\d{6,16}/g) || []
+		if (inlineMatches.length > 0) {
+			const existingDigits = new Set(
+				results.map((r) => r.split("@")[0]?.replace(/[^0-9]/g, "") || ""),
+			)
+			const meta = isGroup
+				? (groupMetaCache ??
+					groupMetadataCache.get<GroupMetadata>(jid) ??
+					(await getGroupMetadata()))
+				: null
+
+			for (const tag of inlineMatches) {
+				const digits = tag.replace(/[^0-9]/g, "")
+				if (!digits || existingDigits.has(digits)) continue
+
+				if (meta?.participants?.length) {
+					const matched = findGroupParticipant(meta.participants, [
+						`${digits}@lid`,
+						`${digits}@s.whatsapp.net`,
+					])
+					if (matched?.id) {
+						const cleanParticipantJid = commandRepository.normalizeJid(
+							matched.id,
+						)
+						if (
+							cleanParticipantJid &&
+							!cleanParticipantJid.endsWith("@g.us") &&
+							!results.includes(cleanParticipantJid)
+						) {
+							results.push(cleanParticipantJid)
+							existingDigits.add(digits)
+							continue
+						}
+					}
+				}
+
+				const fallbackJid = commandRepository.normalizeJid(digits)
+				if (
+					fallbackJid &&
+					!fallbackJid.endsWith("@g.us") &&
+					!results.includes(fallbackJid)
+				) {
+					results.push(fallbackJid)
+					existingDigits.add(digits)
+				}
+			}
+		}
+
+		return results
 	}
 
 	const getBusinessProfile = async (

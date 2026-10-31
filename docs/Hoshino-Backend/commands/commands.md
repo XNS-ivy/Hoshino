@@ -1,7 +1,7 @@
 ---
-tags: [memory, backend, commands, matrix]
+tags: [memory, backend, commands, matrix, architecture]
 aliases: [Commands Index, src/commands/, Command Matrix]
-updated: 2026-10-29
+updated: 2026-10-31
 ---
 
 # 📜 Bot Command Matrix (`src/commands/`)
@@ -11,13 +11,33 @@ updated: 2026-10-29
 
 ---
 
+## 🏗️ Single-Responsibility Command Architecture
+
+> [!IMPORTANT]
+> **Architectural Rule (One Command Purpose = One `ICommand` File)**:
+> 1. **Dedicated Purpose per File**: Every distinct user-facing command or feature MUST reside in its own dedicated `.ts` file inside `src/commands/<category>/`.
+> 2. **Strict Alias Policy**: The `name: string[]` array on an `ICommand` MUST only contain true synonyms/aliases for the **exact same action** (e.g., `["gacha", "pull"]`, `["squad", "party"]`, `["inventory", "bag", "materials"]`). Never bundle different commands into a single file that branches on `ctx.commandName`.
+> 3. **Independent Governance & AI Dispatch**: Separating each command into its own `ICommand` module ensures:
+>    - Independent enable/disable toggles in the Frontend Dashboard & Group Command Registry (`enablecmd` / `disablecmd`).
+>    - Clean, self-contained `description` and `usage` entries in `.help`.
+>    - Unambiguous tool/action intent selection for the `.hoshino` Agentic AI Command Dispatcher.
+
+---
+
 ## 1. Blue Archive (`src/commands/bluearchive/`)
 
 | File Script | Trigger Name(s) | Access | Description & Execution Logic |
 | :--- | :--- | :--- | :--- |
-| `gacha.ts` | `gacha`, `pull`, `daily`, `spark`, `mystudent`, `students`, `pyroxene`, `eleph`, `claim`, `claimeleph` | `user` | Official 3% rate Blue Archive gacha simulation, daily claim (`+1,200 Pyroxenes`, `+250,000 Credits`, `Activity Reports`, & Raid/Bounty ticket refresh), 200 spark points pity redemption, student roster viewing, specific student status & MomoTalk bond inspection (`.mystudent [name/star]`), and duplicate Eleph-to-Pyroxene exchange |
-| `upgrade.ts` | `upgrade`, `levelup`, `skillup`, `gearup`, `mystic`, `inventory`, `bag`, `materials`, `squad`, `party` | `user` | Full student RPG progression system using authentic SchaleDB materials (`items.json` & `equipment.json`): upgrade student Level (`1➔90`), EX Skill (`1➔5`), Basic/Passive/Sub Skills (`1➔10`), Equipment Slots 1-3 (`T1➔T9`), and Mystic Star Liberation (`1★➔5★ + UE 1★-3★`), plus material inventory viewer (`.inventory`), `4 Striker + 2 Special` squad formation manager (`.squad`), and `resolveCanonicalSensei(ctx, rawTargetJids?)` helper for multi-identity `@lid`/`@s.whatsapp.net` resolution |
-| `raid.ts` | `raid`, `boss`, `totalassault`, `weeklyboss`, `bounty`, `grandassault` | `user` | Playable PvE Total Assault Raid Boss & Weekly Boss combat (`Normal` through `Insane` & `Torment`) using SchaleDB `raids.json`. Simulates squad combat using student stats, EX skills, Bullet vs Armor counters (`2.0x Weak`), and Terrain mood, dropping smart SchaleDB upgrade materials (Blu-rays, Tech Notes, Oopart Artifacts, Activity Reports, Blueprints), Credits, and Pyroxenes, with server leaderboards (`.raid rank`) |
+| `gacha.ts` | `gacha`, `pull` | `user` | Official 3% rate Blue Archive gacha recruitment simulator (`1x` for 120 Pyroxenes, `10x` for 1,200 Pyroxenes with guaranteed `2★+` slot and HD `3★` collection artwork) |
+| `daily.ts` | `daily` | `user` | Claims Arona's daily Sensei work bonus (`+1,200 Pyroxenes`, `+250,000 Credits`, `Activity Reports`, and daily Raid/Bounty ticket refresh at 06:00 WIB) |
+| `spark.ts` | `spark` | `user` | Exchanges `200` Recruitment Spark Points for a guaranteed `3★` Blue Archive student |
+| `mystudent.ts` | `mystudent`, `students`, `pyroxene` | `user` | Sensei profile, Pyroxene balance, recruited student collection filtered by star grade (`.mystudent [1\|2\|3]`), and detailed owned student + MomoTalk bond inspection (`.mystudent <name>`) |
+| `eleph.ts` | `eleph`, `claimeleph`, `claim` | `user` | Duplicate student Eleph inventory breakdown and fair Eleph-to-Pyroxene exchange (`.eleph`, `.claim eleph [1\|2\|3\|student]`) |
+| `upgrade.ts` | `upgrade`, `levelup`, `skillup`, `gearup`, `mystic` | `user` | Student RPG progression system using authentic SchaleDB materials (`items.json` & `equipment.json`): upgrade student Level (`1➔90`), EX Skill (`1➔5`), Basic/Passive/Sub Skills (`1➔10`), Equipment Slots 1-3 (`T1➔T9`), and Mystic Star Liberation (`1★➔5★ + UE 1★-3★`). Also exports shared helpers `resolveCanonicalSensei`, `findOwnedStudentByQuery`, and `resolveSenseiSquad` |
+| `inventory.ts` | `inventory`, `bag`, `materials` | `user` | Displays Sensei's SchaleDB upgrade material inventory (Activity Reports, Tactical Blu-rays, Tech Notes, Oopart Artifacts, Equipment Blueprints, Credits, Pyroxenes, and Raid/Bounty tickets) |
+| `squad.ts` | `squad`, `party` | `user` | Configures Sensei's `4 Striker + 2 Special` tactical squad formation (`.squad`, `.squad set <students>`, `.squad auto`) supporting both comma-separated and space-separated student names |
+| `raid.ts` | `raid`, `boss`, `totalassault`, `grandassault` | `user` | Playable PvE Total Assault Raid Boss combat (`Normal` through `Insane` & `Torment`) using SchaleDB `raids.json`, boss guides (`.raid <boss>`), boss list (`.raid list`), and server leaderboards (`.raid rank`). Exports shared raid helpers for `weeklyboss.ts` |
+| `weeklyboss.ts` | `weeklyboss`, `bounty` | `user` | Playable Weekly Boss Bounty combat consuming Bounty tickets (`3/day`) for targeted school upgrade materials, Equipment Blueprints, Credits, and Pyroxenes |
 | `momotalk.ts` | `momo`, `momotalk`, `bond` | `user` | Game-accurate interactive MomoTalk messenger that scrapes authentic student MomoTalk episodes & dialogue trees from `bluearchive.wiki/w/api.php` (cached in `data/schaledb/momotalk/`), renders visual **MomoTalk UI Chat Cards** via `sharp` SVG-to-PNG (pink header, circular student avatar, chat bubbles, blue Sensei reply box, pink `♥ Relationship Event` banner), grants Bond Stat bonuses (`+ATK/HP%`), and unlocks Live2D Memorial Lobby artwork |
 | `duel.ts` | `duel`, `pvp`, `tactical`, `bet`, `taruhan` | `user` | Sensei-vs-Sensei Tactical Challenge PvP Duel with Pyroxene or Credit wagering (`.duel @sensei <bet> [pyroxene\|credit]`, `.duel accept`, `.duel decline`, `.duel rank`). Simulates 3-phase `4 Striker + 2 Special` squad combat with armor counters, terrain adaptation, EX skill clashes, MVP selection, and atomic pot payout |
 | `hoshino.ts` | `hoshino`, `ojisan`, `takanashi` | `user` | Autonomous Agentic AI persona for Takanashi Hoshino: inspects live message telemetry (Caller Role, Group Admin status, Bot Admin status, Mentions, Quoted Message, Media), chats in-character, and autonomously dispatches any registered bot command (`commandLoader.executeDelegatedCommand`) subject to strict RBAC verification |
