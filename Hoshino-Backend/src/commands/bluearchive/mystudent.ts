@@ -21,6 +21,8 @@ const command: ICommand = {
 		"View Sensei's Pyroxene balance, recruited student collection by star grade, or detailed owned student status & MomoTalk bond",
 	usage: [
 		"mystudent",
+		"mystudent 5",
+		"mystudent 4",
 		"mystudent 3",
 		"mystudent 2",
 		"mystudent 1",
@@ -40,6 +42,8 @@ const command: ICommand = {
 				senseiJid,
 			)
 
+			const fiveStars = collection.filter((s) => s.starGrade >= 5)
+			const fourStars = collection.filter((s) => s.starGrade === 4)
 			const threeStars = collection.filter((s) => s.starGrade === 3)
 			const twoStars = collection.filter((s) => s.starGrade === 2)
 			const oneStars = collection.filter((s) => s.starGrade === 1)
@@ -51,6 +55,75 @@ const command: ICommand = {
 			const normalizedFilter = cleanQuery
 				.toLowerCase()
 				.replace(/[^a-z0-9]/g, "")
+
+			// ── Case A1: Specific Filter for 5★ Students ──
+			if (
+				normalizedFilter === "5" ||
+				normalizedFilter === "5star" ||
+				normalizedFilter === "5stars" ||
+				normalizedFilter === "5s"
+			) {
+				let text = `╔══════════════════════════╗\n`
+				text += `  👑 *5★ SENSEI ROSTER (${fiveStars.length})*\n`
+				text += `╚══════════════════════════╝\n\n`
+				text += `👤 *Sensei:* @${senseiJid.split("@")[0]}\n`
+				text += `⭐ *Total 5★ Murid:* ${fiveStars.length} murid\n\n`
+
+				if (fiveStars.length === 0) {
+					text += `_Belum ada murid 5★. Tingkatkan muridmu ke 5★ dengan *${ctx.prefix}upgrade <nama> star*!_\n`
+				} else {
+					for (let i = 0; i < fiveStars.length; i++) {
+						const s = fiveStars[i]!
+						const ueText = s.weaponStar > 0 ? ` 🔫 *[UE ${s.weaponStar}★]*` : ""
+						const dupeText = s.count > 1 ? ` _(Eleph x${s.count - 1})_` : ""
+						text += `${i + 1}. ⭐⭐⭐⭐⭐ *${s.studentName}* (Lv.${s.level})${ueText}${dupeText}\n`
+					}
+				}
+
+				text += `\n💡 *Navigasi Roster:*\n`
+				text += `• *${ctx.prefix}mystudent <nama>* — Detail status & bond murid (cth: *${ctx.prefix}mystudent "Hoshino"*)\n`
+				text += `• *${ctx.prefix}mystudent 4* — Lihat seluruh murid 4★\n`
+				text += `• *${ctx.prefix}mystudent 3* — Lihat seluruh murid 3★\n`
+				text += `• *${ctx.prefix}mystudent 2* — Lihat seluruh murid 2★\n`
+				text += `• *${ctx.prefix}mystudent 1* — Lihat seluruh murid 1★\n`
+				text += `• *${ctx.prefix}mystudent* — Ringkasan profil & balance`
+				await ctx.reply(text)
+				return
+			}
+
+			// ── Case A2: Specific Filter for 4★ Students ──
+			if (
+				normalizedFilter === "4" ||
+				normalizedFilter === "4star" ||
+				normalizedFilter === "4stars" ||
+				normalizedFilter === "4s"
+			) {
+				let text = `╔══════════════════════════╗\n`
+				text += `  🌟 *4★ SENSEI ROSTER (${fourStars.length})*\n`
+				text += `╚══════════════════════════╝\n\n`
+				text += `👤 *Sensei:* @${senseiJid.split("@")[0]}\n`
+				text += `⭐ *Total 4★ Murid:* ${fourStars.length} murid\n\n`
+
+				if (fourStars.length === 0) {
+					text += `_Belum ada murid 4★. Tingkatkan muridmu dari 3★ ke 4★ dengan *${ctx.prefix}upgrade <nama> star*!_\n`
+				} else {
+					for (let i = 0; i < fourStars.length; i++) {
+						const s = fourStars[i]!
+						const dupeText = s.count > 1 ? ` _(Eleph x${s.count - 1})_` : ""
+						text += `${i + 1}. ⭐⭐⭐⭐ *${s.studentName}* (Lv.${s.level})${dupeText}\n`
+					}
+				}
+
+				text += `\n💡 *Navigasi Roster:*\n`
+				text += `• *${ctx.prefix}mystudent <nama>* — Detail status & bond murid (cth: *${ctx.prefix}mystudent "Hoshino"*)\n`
+				text += `• *${ctx.prefix}mystudent 5* — Lihat seluruh murid 5★\n`
+				text += `• *${ctx.prefix}mystudent 3* — Lihat seluruh murid 3★\n`
+				text += `• *${ctx.prefix}mystudent 2* — Lihat seluruh murid 2★\n`
+				text += `• *${ctx.prefix}mystudent 1* — Lihat seluruh murid 1★\n`
+				text += `• *${ctx.prefix}mystudent* — Ringkasan profil & balance`
+				await ctx.reply(text)
+				return
+			}
 
 			// ── Case A: Specific Filter for 3★ Students ──
 			if (
@@ -71,12 +144,14 @@ const command: ICommand = {
 					for (let i = 0; i < threeStars.length; i++) {
 						const s = threeStars[i]!
 						const dupeText = s.count > 1 ? ` _(Eleph x${s.count - 1})_` : ""
-						text += `${i + 1}. ⭐⭐⭐ *${s.studentName}*${dupeText}\n`
+						text += `${i + 1}. ⭐⭐⭐ *${s.studentName}* (Lv.${s.level})${dupeText}\n`
 					}
 				}
 
 				text += `\n💡 *Navigasi Roster:*\n`
 				text += `• *${ctx.prefix}mystudent <nama>* — Detail status & bond murid (cth: *${ctx.prefix}mystudent "Mari"*)\n`
+				text += `• *${ctx.prefix}mystudent 5* — Lihat seluruh murid 5★\n`
+				text += `• *${ctx.prefix}mystudent 4* — Lihat seluruh murid 4★\n`
 				text += `• *${ctx.prefix}mystudent 2* — Lihat seluruh murid 2★\n`
 				text += `• *${ctx.prefix}mystudent 1* — Lihat seluruh murid 1★\n`
 				text += `• *${ctx.prefix}mystudent* — Ringkasan profil & balance`
@@ -103,12 +178,14 @@ const command: ICommand = {
 					for (let i = 0; i < twoStars.length; i++) {
 						const s = twoStars[i]!
 						const dupeText = s.count > 1 ? ` _(Eleph x${s.count - 1})_` : ""
-						text += `${i + 1}. ⭐⭐ *${s.studentName}*${dupeText}\n`
+						text += `${i + 1}. ⭐⭐ *${s.studentName}* (Lv.${s.level})${dupeText}\n`
 					}
 				}
 
 				text += `\n💡 *Navigasi Roster:*\n`
 				text += `• *${ctx.prefix}mystudent <nama>* — Detail status & bond murid (cth: *${ctx.prefix}mystudent "Mari"*)\n`
+				text += `• *${ctx.prefix}mystudent 5* — Lihat seluruh murid 5★\n`
+				text += `• *${ctx.prefix}mystudent 4* — Lihat seluruh murid 4★\n`
 				text += `• *${ctx.prefix}mystudent 3* — Lihat seluruh murid 3★\n`
 				text += `• *${ctx.prefix}mystudent 1* — Lihat seluruh murid 1★\n`
 				text += `• *${ctx.prefix}mystudent* — Ringkasan profil & balance`
@@ -135,12 +212,14 @@ const command: ICommand = {
 					for (let i = 0; i < oneStars.length; i++) {
 						const s = oneStars[i]!
 						const dupeText = s.count > 1 ? ` _(Eleph x${s.count - 1})_` : ""
-						text += `${i + 1}. ⭐ *${s.studentName}*${dupeText}\n`
+						text += `${i + 1}. ⭐ *${s.studentName}* (Lv.${s.level})${dupeText}\n`
 					}
 				}
 
 				text += `\n💡 *Navigasi Roster:*\n`
 				text += `• *${ctx.prefix}mystudent <nama>* — Detail status & bond murid (cth: *${ctx.prefix}mystudent "Mari"*)\n`
+				text += `• *${ctx.prefix}mystudent 5* — Lihat seluruh murid 5★\n`
+				text += `• *${ctx.prefix}mystudent 4* — Lihat seluruh murid 4★\n`
 				text += `• *${ctx.prefix}mystudent 3* — Lihat seluruh murid 3★\n`
 				text += `• *${ctx.prefix}mystudent 2* — Lihat seluruh murid 2★\n`
 				text += `• *${ctx.prefix}mystudent* — Ringkasan profil & balance`
@@ -163,9 +242,44 @@ const command: ICommand = {
 				text += `📊 *Total Recruited:* ${profile.totalPulls} pulls\n`
 				text += `👥 *Roster:* ${collection.length}/274 unique students\n\n`
 				text += `⭐ *Grade Breakdown:*\n`
+				if (fiveStars.length > 0) {
+					text += `  • ⭐⭐⭐⭐⭐ (5★): ${fiveStars.length} murid\n`
+				}
+				if (fourStars.length > 0) {
+					text += `  • ⭐⭐⭐⭐ (4★): ${fourStars.length} murid\n`
+				}
 				text += `  • ⭐⭐⭐ (3★): ${threeStars.length} murid\n`
 				text += `  • ⭐⭐ (2★): ${twoStars.length} murid\n`
 				text += `  • ⭐ (1★): ${oneStars.length} murid\n\n`
+
+				if (fiveStars.length > 0) {
+					text += `👑 *Murid 5★ (${fiveStars.length}):*\n`
+					const limit = Math.min(fiveStars.length, 12)
+					for (let i = 0; i < limit; i++) {
+						const s = fiveStars[i]!
+						const ueText = s.weaponStar > 0 ? ` 🔫 *[UE ${s.weaponStar}★]*` : ""
+						const dupeText = s.count > 1 ? ` _(Eleph x${s.count - 1})_` : ""
+						text += `  • ⭐⭐⭐⭐⭐ *${s.studentName}* (Lv.${s.level})${ueText}${dupeText}\n`
+					}
+					if (fiveStars.length > limit) {
+						text += `  _...dan ${fiveStars.length - limit} murid 5★ lainnya. (Ketik *${ctx.prefix}mystudent 5* untuk lihat semua)_\n`
+					}
+					text += `\n`
+				}
+
+				if (fourStars.length > 0) {
+					text += `🌟 *Murid 4★ (${fourStars.length}):*\n`
+					const limit = Math.min(fourStars.length, 12)
+					for (let i = 0; i < limit; i++) {
+						const s = fourStars[i]!
+						const dupeText = s.count > 1 ? ` _(Eleph x${s.count - 1})_` : ""
+						text += `  • ⭐⭐⭐⭐ *${s.studentName}* (Lv.${s.level})${dupeText}\n`
+					}
+					if (fourStars.length > limit) {
+						text += `  _...dan ${fourStars.length - limit} murid 4★ lainnya. (Ketik *${ctx.prefix}mystudent 4* untuk lihat semua)_\n`
+					}
+					text += `\n`
+				}
 
 				if (threeStars.length > 0) {
 					text += `🌟 *Murid 3★ (${threeStars.length}):*\n`
@@ -173,7 +287,7 @@ const command: ICommand = {
 					for (let i = 0; i < limit; i++) {
 						const s = threeStars[i]!
 						const dupeText = s.count > 1 ? ` _(Eleph x${s.count - 1})_` : ""
-						text += `  • ⭐⭐⭐ *${s.studentName}*${dupeText}\n`
+						text += `  • ⭐⭐⭐ *${s.studentName}* (Lv.${s.level})${dupeText}\n`
 					}
 					if (threeStars.length > limit) {
 						text += `  _...dan ${threeStars.length - limit} murid 3★ lainnya. (Ketik *${ctx.prefix}mystudent 3* untuk lihat semua)_\n`
@@ -186,7 +300,7 @@ const command: ICommand = {
 					text += `\n⭐ *Murid 2★ (${twoStars.length}):*\n`
 					const names = twoStars
 						.slice(0, 8)
-						.map((s) => s.studentName)
+						.map((s) => `${s.studentName} (Lv.${s.level})`)
 						.join(", ")
 					text += `  ${names}`
 					if (twoStars.length > 8) {
@@ -199,7 +313,7 @@ const command: ICommand = {
 					text += `\n⭐ *Murid 1★ (${oneStars.length}):*\n`
 					const names = oneStars
 						.slice(0, 8)
-						.map((s) => s.studentName)
+						.map((s) => `${s.studentName} (Lv.${s.level})`)
 						.join(", ")
 					text += `  ${names}`
 					if (oneStars.length > 8) {
@@ -210,7 +324,7 @@ const command: ICommand = {
 
 				text += `\n📌 *Navigasi Perintah:*\n`
 				text += `• *${ctx.prefix}mystudent <nama_murid>* — Cek detail status & bond murid (cth: *${ctx.prefix}mystudent "Mari"*)\n`
-				text += `• *${ctx.prefix}mystudent 1 / 2 / 3* — Lihat daftar lengkap per bintang\n`
+				text += `• *${ctx.prefix}mystudent 1 - 5* — Lihat daftar lengkap murid per bintang (1★ hingga 5★)\n`
 				text += `• *${ctx.prefix}eleph* / *${ctx.prefix}claim eleph* — Rincian & klaim duplikat Eleph ke Pyroxenes\n`
 				text += `• *${ctx.prefix}daily* — Klaim 1.200 Pyroxenes harian (Reset 06:00 WIB)\n`
 				text += `• *${ctx.prefix}gacha 10* — Rekrut 10 Murid Kivotos\n`
@@ -335,7 +449,8 @@ const command: ICommand = {
 			let text = `╔══════════════════════════╗\n`
 			text += `  📋 *DATA MAHASISWA & BOND*\n`
 			text += `╚══════════════════════════╝\n\n`
-			text += `🌸 *Nama:* ${target.studentName} [${starStr}]\n`
+			const ueStr = target.weaponStar > 0 ? ` 🔫 *[UE ${target.weaponStar}★]*` : ""
+			text += `🌸 *Nama:* ${target.studentName} [${starStr}]${ueStr} — *Lv.${target.level}/90*\n`
 			if (schale?.School) {
 				text += `🏫 *Sekolah:* ${schale.School}  |  🏛️ *Klub:* ${schale.Club || "General"}\n`
 			}
@@ -345,6 +460,8 @@ const command: ICommand = {
 			}
 
 			text += `\n📦 *Status Kepemilikan (Roster):*\n`
+			text += `• *Bintang (Rarity):* ${starStr} (${target.starGrade}★)${ueStr}\n`
+			text += `• *Level Murid:* Lv.${target.level} / 90\n`
 			text += `• *Total Tarikan:* ${target.count}x didapatkan\n`
 			if (dupeCount > 0) {
 				text += `• *Eleph Tersedia:* ${totalEleph} Eleph _(${dupeCount} duplikat)_\n`
