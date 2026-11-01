@@ -23,7 +23,7 @@ updated: 2026-10-30
 
 | ID | Task Description | Status | Related Modules | Updated |
 | :--- | :--- | :--- | :--- | :--- |
-| _None_ | All assigned tasks are currently solved! | ✅ Clean | — | 2026-10-31 |
+| _None_ | All assigned tasks are currently solved! | ✅ Clean | — | 2026-11-01 |
 
 ### Active Checklist
 _No pending tasks in queue._
@@ -173,6 +173,26 @@ flowchart TD
 
 ---
 
+### 7. `TASK-007`: Extend Student Roster & Inspection to 4★ and 5★ (+UE)
+- **Objective**:
+  Allow Sensei to view, filter, and inspect their upgraded 4★ and 5★ students (via Mystic Liberation / Unique Weapon UE 1★-3★) using `.mystudent 4`, `.mystudent 5`, as well as within the general `.mystudent` overview and Eleph recycling commands (`.claim eleph 4`, `.claim eleph 5`).
+- **Root Cause & Scope**:
+  1. Previously, `mystudent.ts` only filtered `threeStars`, `twoStars`, and `oneStars`. When students were upgraded to 4★ or 5★ via `.upgrade <student> star`, they no longer matched `s.starGrade === 3` and were completely omitted from star roster listings.
+  2. Typing `.mystudent 4` or `.mystudent 5` was mistakenly parsed as a name query instead of a star grade filter.
+  3. `eleph.ts` only handled filters for 1, 2, and 3 stars.
+- **Implementation Plan**:
+  1. In `mystudent.ts`:
+     - Filter `fiveStars = collection.filter((s) => s.starGrade >= 5)` and `fourStars = collection.filter((s) => s.starGrade === 4)`.
+     - Add dedicated filter cases for 5★ (`.mystudent 5` / `5star` / `5stars` / `5s`) displaying student name, level (`Lv.${s.level}`), UE status (`[UE ${s.weaponStar}★]`), and duplicate Elephs.
+     - Add dedicated filter cases for 4★ (`.mystudent 4` / `4star` / `4stars` / `4s`).
+     - Update General Overview (`.mystudent` / `.mystudent all`) to include 5★ and 4★ sections in the breakdown summary and student listings.
+     - Update usage instructions and navigation tips to include `.mystudent 4` and `.mystudent 5`.
+     - In student detail view (`.mystudent <name>`), display Unique Weapon details (`[★★★★★ | 🔫 UE ${s.weaponStar}★]`) and level.
+  2. In `eleph.ts`:
+     - Support `filterArg === "5"` and `filterArg === "4"` for targeted 5★ and 4★ Eleph recycling.
+
+---
+
 ## ✅ Solved Tasks (Awaiting User Verification)
 
 | ID | Task Description | Status | Related Modules | Solved Date |
@@ -183,6 +203,7 @@ flowchart TD
 | `TASK-004` | **Fix `@mention` Resolution Bug in Hoshino AI Agent & Group Moderation (`autodelete`, `kick`, `disableautodelete`, `blacklist`, `whitelist`)**: Fixed `normalizeJid` returning `""` on `@xxxx` strings, added `expandUserJidVariants` (`@lid` + `@s.whatsapp.net`), enhanced `getMentions()` and `resolveUserIdentities()` with inline `@digits` + group participant LID matching, and migrated `public.agent_autodeletes.jid` | ✅ Solved | [[Hoshino-Backend/repositories/repositories\|command.repository.ts]], [[Hoshino-Backend/services/contextBuilder\|contextBuilder.ts]], [[Hoshino-Backend/services/commandLoader\|commandLoader.ts]], [[Hoshino-Backend/commands/commands\|kick.ts / autodelete.ts / hoshino.ts]] | 2026-10-31 |
 | `TASK-005` | **Fix `.squad set` Array Serialization & PostgreSQL `INT[]` Decoding Bug**: Replaced `sql.array` with `${literal}::int[]` in `setSquad()`, added `::text` casting + `parseIntArray()` in `getOrCreateProfile()`, and added space-separated + comma-separated student name parsing in `.squad set` | ✅ Solved | [[Hoshino-Backend/repositories/gacha.repository\|gacha.repository.ts]], [[Hoshino-Backend/commands/commands\|upgrade.ts]] | 2026-10-31 |
 | `TASK-006` | **Single-Responsibility Command Architecture & Unbundling Blue Archive Commands**: Split `gacha.ts` into 5 dedicated command files (`gacha.ts`, `daily.ts`, `spark.ts`, `mystudent.ts`, `eleph.ts`), `upgrade.ts` into 3 dedicated files (`upgrade.ts`, `inventory.ts`, `squad.ts`), and `raid.ts` into 2 dedicated files (`raid.ts`, `weeklyboss.ts`), and documented the Single-Responsibility Command Architecture rule | ✅ Solved | [[Hoshino-Backend/commands/commands\|Commands Matrix]], [[Hoshino-Backend/README\|Backend Architecture]] | 2026-10-31 |
+| `TASK-007` | **Extend Student Roster & Inspection to 4★ and 5★ (+UE)**: Updated `mystudent.ts` and `eleph.ts` to support querying and filtering students upgraded to 4★ and 5★ (including Unique Weapon UE1-3 display), updated roster breakdown, and supported `.mystudent 4` and `.mystudent 5` | ✅ Solved | [[Hoshino-Backend/commands/commands\|Commands Matrix]], `mystudent.ts`, `eleph.ts` | 2026-11-01 |
 
 ### Completed Checklist
 - [x] **`TASK-001`**: Decouple General AI (`.ai`) Personality from Hoshino Persona (`.hoshino`) & Fix Truncated AI Output (`Solved` - 2026-10-30)
@@ -191,3 +212,4 @@ flowchart TD
 - [x] **`TASK-004`**: Fix `@mention` Resolution Bug in Hoshino AI Agent & Group Moderation (`autodelete`, `kick`, `disableautodelete`, `blacklist`, `whitelist`) (`Solved` - 2026-10-31)
 - [x] **`TASK-005`**: Fix `.squad set` Array Serialization & PostgreSQL `INT[]` Decoding Bug (`Solved` - 2026-10-31)
 - [x] **`TASK-006`**: Single-Responsibility Command Architecture & Unbundling Blue Archive Commands (`Solved` - 2026-10-31)
+- [x] **`TASK-007`**: Extend Student Roster & Inspection to 4★ and 5★ (+UE) (`Solved` - 2026-11-01)

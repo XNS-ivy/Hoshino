@@ -11,6 +11,8 @@ const command: ICommand = {
 	usage: [
 		"eleph",
 		"claim eleph",
+		"claim eleph 5",
+		"claim eleph 4",
 		"claim eleph 3",
 		"claim eleph 2",
 		"claim eleph 1",
@@ -52,6 +54,20 @@ const command: ICommand = {
 				let nameOrIdFilter: string | undefined
 
 				if (
+					filterArg === "5" ||
+					filterArg === "5star" ||
+					filterArg === "5stars" ||
+					filterArg === "5s"
+				) {
+					starFilter = 5
+				} else if (
+					filterArg === "4" ||
+					filterArg === "4star" ||
+					filterArg === "4stars" ||
+					filterArg === "4s"
+				) {
+					starFilter = 4
+				} else if (
 					filterArg === "3" ||
 					filterArg === "3star" ||
 					filterArg === "3stars" ||
@@ -166,7 +182,7 @@ const command: ICommand = {
 
 				text += `\n🚀 *Ready to Convert?*\n`
 				text += `• Type *${ctx.prefix}claim eleph* to convert all duplicate Elephs into Pyroxenes!\n`
-				text += `• Type *${ctx.prefix}claim eleph 3* to convert only 3★ Elephs.`
+				text += `• Type *${ctx.prefix}claim eleph 5* / *3* to convert specific star Elephs.`
 			} else {
 				text += `_Sensei currently has 0 duplicate Elephs._\n`
 				text += `_Recruit duplicate students via *${ctx.prefix}gacha 10* to collect Elephs!_`
