@@ -12,6 +12,11 @@ export interface AgentDbRecord {
 	goodbyeMessage?: string | null
 	autoRead?: boolean
 	typingIndicator?: boolean
+	cooldownEnabled?: boolean
+	cooldownWindowMinutes?: number
+	cooldownQuota?: number
+	cooldownWarningThreshold?: number
+	cooldownBlacklistThreshold?: number
 	createdAt: Date
 	updatedAt: Date
 }
@@ -84,6 +89,11 @@ export class AgentRepository {
 			goodbyeMessage?: string | null
 			autoRead?: boolean
 			typingIndicator?: boolean
+			cooldownEnabled?: boolean
+			cooldownWindowMinutes?: number
+			cooldownQuota?: number
+			cooldownWarningThreshold?: number
+			cooldownBlacklistThreshold?: number
 		},
 	): Promise<AgentDbRecord | null> {
 		await this.initDatabase()
@@ -106,6 +116,26 @@ export class AgentRepository {
 			data.typingIndicator !== undefined
 				? data.typingIndicator
 				: (current.typingIndicator ?? true)
+		const cooldownEnabled =
+			data.cooldownEnabled !== undefined
+				? data.cooldownEnabled
+				: (current.cooldownEnabled ?? true)
+		const cooldownWindowMinutes =
+			data.cooldownWindowMinutes !== undefined
+				? data.cooldownWindowMinutes
+				: (current.cooldownWindowMinutes ?? 5)
+		const cooldownQuota =
+			data.cooldownQuota !== undefined
+				? data.cooldownQuota
+				: (current.cooldownQuota ?? 3)
+		const cooldownWarningThreshold =
+			data.cooldownWarningThreshold !== undefined
+				? data.cooldownWarningThreshold
+				: (current.cooldownWarningThreshold ?? 5)
+		const cooldownBlacklistThreshold =
+			data.cooldownBlacklistThreshold !== undefined
+				? data.cooldownBlacklistThreshold
+				: (current.cooldownBlacklistThreshold ?? 5)
 
 		const rows = await sql`
 			UPDATE public.agents
@@ -115,6 +145,11 @@ export class AgentRepository {
 				goodbye_message = ${goodbye ?? null},
 				auto_read = ${autoRead},
 				typing_indicator = ${typing},
+				cooldown_enabled = ${cooldownEnabled},
+				cooldown_window_minutes = ${cooldownWindowMinutes},
+				cooldown_quota = ${cooldownQuota},
+				cooldown_warning_threshold = ${cooldownWarningThreshold},
+				cooldown_blacklist_threshold = ${cooldownBlacklistThreshold},
 				updated_at = CURRENT_TIMESTAMP
 			WHERE id = ${agentId}
 			RETURNING
@@ -127,6 +162,11 @@ export class AgentRepository {
 				goodbye_message as "goodbyeMessage",
 				auto_read as "autoRead",
 				typing_indicator as "typingIndicator",
+				cooldown_enabled as "cooldownEnabled",
+				cooldown_window_minutes as "cooldownWindowMinutes",
+				cooldown_quota as "cooldownQuota",
+				cooldown_warning_threshold as "cooldownWarningThreshold",
+				cooldown_blacklist_threshold as "cooldownBlacklistThreshold",
 				created_at as "createdAt",
 				updated_at as "updatedAt"
 		`
@@ -185,6 +225,11 @@ export class AgentRepository {
 				goodbye_message as "goodbyeMessage",
 				auto_read as "autoRead",
 				typing_indicator as "typingIndicator",
+				cooldown_enabled as "cooldownEnabled",
+				cooldown_window_minutes as "cooldownWindowMinutes",
+				cooldown_quota as "cooldownQuota",
+				cooldown_warning_threshold as "cooldownWarningThreshold",
+				cooldown_blacklist_threshold as "cooldownBlacklistThreshold",
 				created_at as "createdAt", 
 				updated_at as "updatedAt"
 			FROM public.agents
@@ -209,6 +254,11 @@ export class AgentRepository {
 				goodbye_message as "goodbyeMessage",
 				auto_read as "autoRead",
 				typing_indicator as "typingIndicator",
+				cooldown_enabled as "cooldownEnabled",
+				cooldown_window_minutes as "cooldownWindowMinutes",
+				cooldown_quota as "cooldownQuota",
+				cooldown_warning_threshold as "cooldownWarningThreshold",
+				cooldown_blacklist_threshold as "cooldownBlacklistThreshold",
 				created_at as "createdAt", 
 				updated_at as "updatedAt"
 			FROM public.agents

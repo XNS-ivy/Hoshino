@@ -136,6 +136,38 @@ export interface AgentGeneralSettings {
 	goodbyeMessage?: string | null
 	autoRead: boolean
 	typingIndicator: boolean
+	cooldownEnabled?: boolean
+	cooldownWindowMinutes?: number
+	cooldownQuota?: number
+	cooldownWarningThreshold?: number
+	cooldownBlacklistThreshold?: number
+}
+
+export interface AgentBlueArchiveSettings {
+	agentId: string
+	gacha3StarRate: number
+	gacha2StarRate: number
+	gacha1StarRate: number
+	gachaSingleCost: number
+	gachaTenCost: number
+	sparkCost: number
+	dailyPyroxenes: number
+	dailyCredits: number
+	dailyResetHour: number
+	dailyRaidTickets: number
+	dailyBountyTickets: number
+	duelEnabled: boolean
+	duelMinBet: number
+	duelMaxBet: number
+	duelFeePercent: number
+	raidTicketsMax: number
+	bountyTicketsMax: number
+	raidCreditMultiplier: number
+	bountyDropMultiplier: number
+	bondXpMultiplier: number
+	relationshipRewardPyroxenes: number
+	createdAt?: string
+	updatedAt?: string
 }
 
 export interface GroupCommandItem {

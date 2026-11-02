@@ -382,22 +382,32 @@ export interface GachaExecutionResult {
 	oneStars: SchaleStudent[]
 }
 
+export interface GachaRatesConfig {
+	star3Rate?: number
+	star2Rate?: number
+	star1Rate?: number
+}
+
 /**
- * Official Blue Archive Gacha Rates:
- * 3-Star: 3.0% (Rate-Up: 0.7%)
- * 2-Star: 18.5%
- * 1-Star: 78.5%
+ * Simulates a Blue Archive Recruitment Gacha pull.
+ * Default official rates: 3★ = 3.0%, 2★ = 18.5%, 1★ = 78.5%.
+ * On a 10-pull, slot #10 is guaranteed 2★ or 3★.
  */
 export async function executeGachaPull(
 	pullCount: 1 | 10 | number = 10,
 	guarantee3Star = false,
 	rateUpStudentId?: number,
+	ratesConfig?: GachaRatesConfig,
 ): Promise<GachaExecutionResult> {
 	const allStudents = await getSchaleStudents()
 
 	const star3 = allStudents.filter((s) => s.StarGrade === 3)
 	const star2 = allStudents.filter((s) => s.StarGrade === 2)
 	const star1 = allStudents.filter((s) => s.StarGrade === 1)
+
+	const rate3 = ratesConfig?.star3Rate ?? 3.0
+	const rate2 = ratesConfig?.star2Rate ?? 18.5
+	const threshold2 = rate3 + rate2
 
 	const rateUpStudent = rateUpStudentId
 		? allStudents.find((s) => s.Id === rateUpStudentId && s.StarGrade === 3)
@@ -409,8 +419,8 @@ export async function executeGachaPull(
 		const isLastOfTen = pullCount === 10 && i === 9
 		const rand = Math.random() * 100
 
-		if (guarantee3Star || rand < 3.0) {
-			// 3★ Pull (3% or Spark Guarantee)
+		if (guarantee3Star || rand < rate3) {
+			// 3★ Pull (Configured % or Spark Guarantee)
 			let selected: SchaleStudent
 			let isRateUp = false
 
@@ -426,8 +436,8 @@ export async function executeGachaPull(
 				starGrade: 3,
 				isRateUp,
 			})
-		} else if (rand < 21.5 || isLastOfTen) {
-			// 2★ Pull (18.5% or guaranteed on 10th pull)
+		} else if (rand < threshold2 || isLastOfTen) {
+			// 2★ Pull (Configured % or guaranteed on 10th pull)
 			const selected = star2[Math.floor(Math.random() * star2.length)]!
 			results.push({
 				student: selected,

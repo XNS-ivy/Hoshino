@@ -21,6 +21,9 @@ export interface GroupSettingsItem {
 	goodbyeEnabled: boolean
 	customPrefix?: string | null
 	customizedCommandsCount?: number
+	cooldownEnabled?: boolean
+	cooldownWindowMinutes?: number | null
+	cooldownQuota?: number | null
 }
 
 interface GroupSettingsTabProps {
@@ -548,6 +551,29 @@ export const GroupSettingsTab: React.FC<GroupSettingsTabProps> = ({
 													}
 												/>
 												Goodbye Msg
+											</label>
+
+											<label
+												style={{
+													display: "flex",
+													alignItems: "center",
+													gap: "6px",
+													fontSize: "0.75rem",
+													color: group.cooldownEnabled !== false ? "#34d399" : "var(--text-muted)",
+													cursor: "pointer",
+												}}
+												title="Toggle anti-spam cooldown for this group"
+											>
+												<input
+													type="checkbox"
+													checked={group.cooldownEnabled !== false}
+													onChange={(e) =>
+														onUpdateGroupSettings(group.jid, {
+															cooldownEnabled: e.target.checked,
+														})
+													}
+												/>
+												Anti-Spam
 											</label>
 										</div>
 									</div>

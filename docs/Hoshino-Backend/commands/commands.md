@@ -73,6 +73,7 @@ updated: 2026-10-31
 | `delete.ts` | `delete`, `del` | `true` | `admin` | Deletes a replied message in the group (requires bot admin rights) |
 | `autodelete.ts` | `autodelete` | `true` | `admin` | Adds a user to the auto-delete target list strictly for this group (`public.agent_autodeletes`) |
 | `disableautodelete.ts` | `disableautodelete` | `true` | `admin` | Removes a user from the auto-delete target list in this group |
+| `cooldown.ts` | `cooldown`, `antispam` | `true` | `user`/`admin` | Checks quota status or configures group anti-spam sliding window rate limiter, quota, and auto-blacklist (`.cooldown`, `.cooldown on/off`, `.cooldown set <quota> <minutes>`, `.cooldown reset [@user]`) |
 
 
 ---

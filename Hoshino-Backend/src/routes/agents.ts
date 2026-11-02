@@ -641,6 +641,9 @@ export const agentRoutes = new Elysia({ prefix: "/api/agents" })
 				welcomeEnabled: t.Optional(t.Boolean()),
 				goodbyeEnabled: t.Optional(t.Boolean()),
 				customPrefix: t.Optional(t.Nullable(t.String())),
+				cooldownEnabled: t.Optional(t.Boolean()),
+				cooldownWindowMinutes: t.Optional(t.Nullable(t.Integer())),
+				cooldownQuota: t.Optional(t.Nullable(t.Integer())),
 			}),
 		},
 	)
@@ -1152,6 +1155,93 @@ export const agentRoutes = new Elysia({ prefix: "/api/agents" })
 		}
 	})
 
+	// GET /api/agents/:id/bluearchive/settings - Get Blue Archive game economy settings
+	.get("/:id/bluearchive/settings", async ({ params: { id }, set }) => {
+		try {
+			const safeAgentId = socketManager.sanitizeAgentId(id)
+			const settings = await gachaRepository.getBlueArchiveSettings(safeAgentId)
+			return {
+				success: true,
+				data: settings,
+			}
+		} catch (error) {
+			set.status = 500
+			return {
+				success: false,
+				message: `Failed to fetch Blue Archive settings: ${error}`,
+			}
+		}
+	})
+
+	// PATCH /api/agents/:id/bluearchive/settings - Update Blue Archive game settings
+	.patch(
+		"/:id/bluearchive/settings",
+		async ({ params: { id }, body, set }) => {
+			try {
+				const safeAgentId = socketManager.sanitizeAgentId(id)
+				const updated = await gachaRepository.updateBlueArchiveSettings(
+					safeAgentId,
+					body,
+				)
+				return {
+					success: true,
+					data: updated,
+					message: "Blue Archive settings updated successfully",
+				}
+			} catch (error) {
+				set.status = 500
+				return {
+					success: false,
+					message: `Failed to update Blue Archive settings: ${error}`,
+				}
+			}
+		},
+		{
+			body: t.Object({
+				gacha3StarRate: t.Optional(t.Number()),
+				gacha2StarRate: t.Optional(t.Number()),
+				gacha1StarRate: t.Optional(t.Number()),
+				gachaSingleCost: t.Optional(t.Integer()),
+				gachaTenCost: t.Optional(t.Integer()),
+				sparkCost: t.Optional(t.Integer()),
+				dailyPyroxenes: t.Optional(t.Integer()),
+				dailyCredits: t.Optional(t.Integer()),
+				dailyResetHour: t.Optional(t.Integer()),
+				dailyRaidTickets: t.Optional(t.Integer()),
+				dailyBountyTickets: t.Optional(t.Integer()),
+				duelEnabled: t.Optional(t.Boolean()),
+				duelMinBet: t.Optional(t.Integer()),
+				duelMaxBet: t.Optional(t.Integer()),
+				duelFeePercent: t.Optional(t.Number()),
+				raidTicketsMax: t.Optional(t.Integer()),
+				bountyTicketsMax: t.Optional(t.Integer()),
+				raidCreditMultiplier: t.Optional(t.Number()),
+				bountyDropMultiplier: t.Optional(t.Number()),
+				bondXpMultiplier: t.Optional(t.Number()),
+				relationshipRewardPyroxenes: t.Optional(t.Integer()),
+			}),
+		},
+	)
+
+	// POST /api/agents/:id/bluearchive/settings/reset - Reset to authentic defaults
+	.post("/:id/bluearchive/settings/reset", async ({ params: { id }, set }) => {
+		try {
+			const safeAgentId = socketManager.sanitizeAgentId(id)
+			const defaults = await gachaRepository.resetBlueArchiveSettings(safeAgentId)
+			return {
+				success: true,
+				data: defaults,
+				message: "Blue Archive settings reset to default successfully",
+			}
+		} catch (error) {
+			set.status = 500
+			return {
+				success: false,
+				message: `Failed to reset Blue Archive settings: ${error}`,
+			}
+		}
+	})
+
 	// GET /api/agents/:id/settings - Get agent general settings
 	.get("/:id/settings", async ({ params: { id }, set }) => {
 		try {
@@ -1170,6 +1260,11 @@ export const agentRoutes = new Elysia({ prefix: "/api/agents" })
 					goodbyeMessage: agent.goodbyeMessage,
 					autoRead: agent.autoRead ?? false,
 					typingIndicator: agent.typingIndicator ?? true,
+					cooldownEnabled: agent.cooldownEnabled ?? true,
+					cooldownWindowMinutes: agent.cooldownWindowMinutes ?? 5,
+					cooldownQuota: agent.cooldownQuota ?? 3,
+					cooldownWarningThreshold: agent.cooldownWarningThreshold ?? 5,
+					cooldownBlacklistThreshold: agent.cooldownBlacklistThreshold ?? 5,
 				},
 			}
 		} catch (error) {
@@ -1208,6 +1303,11 @@ export const agentRoutes = new Elysia({ prefix: "/api/agents" })
 				goodbyeMessage: t.Optional(t.Nullable(t.String())),
 				autoRead: t.Optional(t.Boolean()),
 				typingIndicator: t.Optional(t.Boolean()),
+				cooldownEnabled: t.Optional(t.Boolean()),
+				cooldownWindowMinutes: t.Optional(t.Integer()),
+				cooldownQuota: t.Optional(t.Integer()),
+				cooldownWarningThreshold: t.Optional(t.Integer()),
+				cooldownBlacklistThreshold: t.Optional(t.Integer()),
 			}),
 		},
 	)

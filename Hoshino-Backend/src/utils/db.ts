@@ -64,6 +64,11 @@ export async function initAuthDatabase(): Promise<void> {
 		await sql`ALTER TABLE public.agents ADD COLUMN IF NOT EXISTS goodbye_message TEXT;`
 		await sql`ALTER TABLE public.agents ADD COLUMN IF NOT EXISTS auto_read BOOLEAN DEFAULT false;`
 		await sql`ALTER TABLE public.agents ADD COLUMN IF NOT EXISTS typing_indicator BOOLEAN DEFAULT true;`
+		await sql`ALTER TABLE public.agents ADD COLUMN IF NOT EXISTS cooldown_enabled BOOLEAN DEFAULT true;`
+		await sql`ALTER TABLE public.agents ADD COLUMN IF NOT EXISTS cooldown_window_minutes INT DEFAULT 5;`
+		await sql`ALTER TABLE public.agents ADD COLUMN IF NOT EXISTS cooldown_quota INT DEFAULT 3;`
+		await sql`ALTER TABLE public.agents ADD COLUMN IF NOT EXISTS cooldown_warning_threshold INT DEFAULT 5;`
+		await sql`ALTER TABLE public.agents ADD COLUMN IF NOT EXISTS cooldown_blacklist_threshold INT DEFAULT 5;`
 
 		// 6. Create public.chats table
 		await sql`
@@ -156,10 +161,16 @@ export async function initAuthDatabase(): Promise<void> {
 				welcome_enabled BOOLEAN DEFAULT false,
 				goodbye_enabled BOOLEAN DEFAULT false,
 				custom_prefix VARCHAR(10),
+				cooldown_enabled BOOLEAN DEFAULT true,
+				cooldown_window_minutes INT,
+				cooldown_quota INT,
 				updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
 				PRIMARY KEY (agent_id, jid)
 			);
 		`
+		await sql`ALTER TABLE public.agent_group_settings ADD COLUMN IF NOT EXISTS cooldown_enabled BOOLEAN DEFAULT true;`
+		await sql`ALTER TABLE public.agent_group_settings ADD COLUMN IF NOT EXISTS cooldown_window_minutes INT;`
+		await sql`ALTER TABLE public.agent_group_settings ADD COLUMN IF NOT EXISTS cooldown_quota INT;`
 
 		// 13. Create public.agent_command_toggles table
 		await sql`
@@ -313,6 +324,36 @@ export async function initAuthDatabase(): Promise<void> {
 			INSERT INTO public.database_settings (id, auto_prune_enabled, retention_days, max_messages_per_chat, clean_media_bloat)
 			VALUES ('default', true, 7, 500, true)
 			ON CONFLICT (id) DO NOTHING;
+		`
+
+		// 19. Create public.agent_bluearchive_settings table (Blue Archive Economy & Rules)
+		await sql`
+			CREATE TABLE IF NOT EXISTS public.agent_bluearchive_settings (
+				agent_id VARCHAR(255) PRIMARY KEY,
+				gacha_3star_rate NUMERIC(5,2) DEFAULT 3.00,
+				gacha_2star_rate NUMERIC(5,2) DEFAULT 18.50,
+				gacha_1star_rate NUMERIC(5,2) DEFAULT 78.50,
+				gacha_single_cost INT DEFAULT 120,
+				gacha_ten_cost INT DEFAULT 1200,
+				spark_cost INT DEFAULT 200,
+				daily_pyroxenes INT DEFAULT 1200,
+				daily_credits INT DEFAULT 250000,
+				daily_reset_hour INT DEFAULT 6,
+				daily_raid_tickets INT DEFAULT 3,
+				daily_bounty_tickets INT DEFAULT 3,
+				duel_enabled BOOLEAN DEFAULT true,
+				duel_min_bet INT DEFAULT 10,
+				duel_max_bet INT DEFAULT 5000000,
+				duel_fee_percent NUMERIC(4,2) DEFAULT 0.00,
+				raid_tickets_max INT DEFAULT 3,
+				bounty_tickets_max INT DEFAULT 3,
+				raid_credit_multiplier NUMERIC(4,2) DEFAULT 1.00,
+				bounty_drop_multiplier NUMERIC(4,2) DEFAULT 1.00,
+				bond_xp_multiplier NUMERIC(4,2) DEFAULT 1.00,
+				relationship_reward_pyroxenes INT DEFAULT 20,
+				created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+				updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+			);
 		`
 
 		logger.system(

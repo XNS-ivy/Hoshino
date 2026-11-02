@@ -3,6 +3,7 @@ import {
 	AlertCircle,
 	CheckCircle2,
 	Crown,
+	Gamepad2,
 	Settings,
 	ShieldAlert,
 	Sliders,
@@ -15,6 +16,7 @@ import { API_BASE_URL } from "../services/api"
 import type { Agent, SenseiProfileItem } from "../types"
 import { AutoDeleteTab, type AutoDeleteItem } from "./settings/AutoDeleteTab"
 import { BlacklistTab, type BlacklistItem } from "./settings/BlacklistTab"
+import { BlueArchiveSettingsTab } from "./settings/BlueArchiveSettingsTab"
 import {
 	CommandTogglesTab,
 	type CommandToggleItem,
@@ -35,6 +37,7 @@ interface AgentSettingsModalProps {
 
 type TabType =
 	| "general"
+	| "bluearchive"
 	| "sensei"
 	| "owners"
 	| "blacklist"
@@ -84,7 +87,7 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 
 	const fetchTabData = useCallback(
 		async (tab: TabType, silent = false) => {
-			if (tab === "general") return // handled inside GeneralSettingsTab
+			if (tab === "general" || tab === "bluearchive") return // handled inside respective tabs
 			if (!silent) setLoading(true)
 			try {
 				const res = await fetch(
@@ -284,6 +287,9 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 			welcomeEnabled?: boolean
 			goodbyeEnabled?: boolean
 			customPrefix?: string | null
+			cooldownEnabled?: boolean
+			cooldownWindowMinutes?: number | null
+			cooldownQuota?: number | null
 		},
 	) => {
 		try {
@@ -503,6 +509,38 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 
 					<button
 						type="button"
+						onClick={() => setActiveTab("bluearchive")}
+						style={{
+							padding: "10px 14px",
+							fontSize: "0.85rem",
+							fontWeight: 600,
+							borderRadius: "10px 10px 0 0",
+							border: "none",
+							borderBottom:
+								activeTab === "bluearchive"
+									? "2px solid #00f2fe"
+									: "2px solid transparent",
+							background:
+								activeTab === "bluearchive"
+									? "rgba(0, 242, 254, 0.12)"
+									: "transparent",
+							color:
+								activeTab === "bluearchive"
+									? "#00f2fe"
+									: "var(--text-muted)",
+							cursor: "pointer",
+							display: "flex",
+							alignItems: "center",
+							gap: "6px",
+							whiteSpace: "nowrap",
+						}}
+					>
+						<Gamepad2 size={15} />
+						Blue Archive Config
+					</button>
+
+					<button
+						type="button"
 						onClick={() => setActiveTab("sensei")}
 						style={{
 							padding: "10px 14px",
@@ -681,6 +719,13 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 				<div style={{ flex: 1, overflowY: "auto", padding: "20px" }}>
 					{activeTab === "general" && (
 						<GeneralSettingsTab
+							agentId={agent.agentId}
+							onShowToast={showToast}
+						/>
+					)}
+
+					{activeTab === "bluearchive" && (
+						<BlueArchiveSettingsTab
 							agentId={agent.agentId}
 							onShowToast={showToast}
 						/>
