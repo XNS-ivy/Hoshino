@@ -3,6 +3,7 @@ import path from "node:path"
 import { pathToFileURL } from "node:url"
 import type { CommandContext, ICommand } from "@customTypes/command"
 import { commandRepository } from "@repositories/command.repository"
+import { agentRepository, type AgentDbRecord } from "@repositories/agent.repository"
 import { logger } from "@utils/logger"
 import type { WAMessage, WASocket } from "baileys"
 import NodeCache from "node-cache"
@@ -26,6 +27,10 @@ export class CommandLoader {
 	// Security Shield 2: Per-User Command Cooldown Cache (key: agentId:senderJid:commandName, value: expiryTimestampMs)
 	private cooldownCache = new Map<string, number>()
 
+	// Security Shield 2b: Sliding Window Rate Limiter (key: agentId:scopeJid:canonicalUserJid, value: timestamp[])
+	private userRateLimitMap = new Map<string, number[]>()
+	private agentSettingsCache = new NodeCache({ stdTTL: 30, checkperiod: 60 })
+
 	private constructor() {}
 
 	public static getInstance(): CommandLoader {
@@ -33,6 +38,42 @@ export class CommandLoader {
 			CommandLoader.instance = new CommandLoader()
 		}
 		return CommandLoader.instance
+	}
+
+	public async getAgentCooldownConfig(agentId: string): Promise<AgentDbRecord | null> {
+		const cached = this.agentSettingsCache.get<AgentDbRecord>(agentId)
+		if (cached) return cached
+		const agent = await agentRepository.findAgentById(agentId)
+		if (agent) {
+			this.agentSettingsCache.set(agentId, agent)
+		}
+		return agent
+	}
+
+	public resetUserRateLimit(
+		agentId: string,
+		scopeJid: string,
+		targetJid: string,
+	): void {
+		const canonical = targetJid.replace("@lid", "@s.whatsapp.net")
+		this.userRateLimitMap.delete(`${agentId}:${scopeJid}:${targetJid}`)
+		this.userRateLimitMap.delete(`${agentId}:${scopeJid}:${canonical}`)
+	}
+
+	public getRateLimitStatus(
+		agentId: string,
+		scopeJid: string,
+		targetJid: string,
+		windowMinutes = 5,
+	): { count: number; timestamps: number[] } {
+		const canonical = targetJid.replace("@lid", "@s.whatsapp.net")
+		const key = `${agentId}:${scopeJid}:${canonical}`
+		const now = Date.now()
+		const windowMs = windowMinutes * 60 * 1000
+		const timestamps = (this.userRateLimitMap.get(key) || []).filter(
+			(t) => now - t < windowMs,
+		)
+		return { count: timestamps.length, timestamps }
 	}
 
 	/**
@@ -460,10 +501,95 @@ export class CommandLoader {
 			}
 		}
 
-		// Security Shield 3: Anti-Spam Rate Limiter / Cooldown Guard
-		// Owners and Masters bypass cooldown checks
+		// Security Shield 3: Anti-Spam Rate Limiter / Cooldown Guard (Sliding Window & Auto-Blacklist)
+		// Owners and Masters bypass all cooldown and rate limiting checks
 		if (!isOwnerOrMaster) {
-			const cooldownSec = command.cooldown ?? 2 // Default 2 seconds cooldown
+			const canonicalUserJid =
+				senderIdentities.find((id) => id.endsWith("@s.whatsapp.net")) ||
+				senderJid
+			const scopeJid = isGroup ? jid : "private"
+
+			const agent = await this.getAgentCooldownConfig(agentId)
+			const isCooldownEnabled = isGroup
+				? (groupSettings?.cooldownEnabled ?? agent?.cooldownEnabled ?? true)
+				: (agent?.cooldownEnabled ?? true)
+
+			if (isCooldownEnabled) {
+				const windowMinutes = isGroup
+					? (groupSettings?.cooldownWindowMinutes || agent?.cooldownWindowMinutes || 5)
+					: (agent?.cooldownWindowMinutes || 5)
+				const quota = isGroup
+					? (groupSettings?.cooldownQuota || agent?.cooldownQuota || 3)
+					: (agent?.cooldownQuota || 3)
+				const warningThreshold = agent?.cooldownWarningThreshold ?? 5
+				const blacklistThreshold = agent?.cooldownBlacklistThreshold ?? 5
+
+				const windowMs = windowMinutes * 60 * 1000
+				const now = Date.now()
+				const rateLimitKey = `${agentId}:${scopeJid}:${canonicalUserJid}`
+
+				const existingTimestamps = this.userRateLimitMap.get(rateLimitKey) || []
+				const validTimestamps = existingTimestamps.filter((t) => now - t < windowMs)
+				const currentCount = validTimestamps.length
+
+				// Check blacklist threshold: e.g. 5 requests already logged, 6th triggers instant auto-blacklist
+				if (currentCount >= blacklistThreshold) {
+					this.userRateLimitMap.delete(rateLimitKey)
+					const reason = `Otomatis di-blacklist: spam perintah melebihi batas (${currentCount + 1} permintaan dalam ${windowMinutes} menit)`
+					await commandRepository.addBlacklist(agentId, senderIdentities, reason)
+					logger.warn(
+						"/services/commandLoader.ts",
+						`[${agentId}] Auto-blacklisted spammer ${senderJid} (${canonicalUserJid}) in ${jid} (attempts: ${currentCount + 1}/${windowMinutes}m)`,
+					)
+					await ctx.reply(
+						`🚫 *AKUN/NOMOR ANDA TELAH DIBLACKLIST!*\n\nSensei/pengguna (${canonicalUserJid.replace("@s.whatsapp.net", "")}) terdeteksi melakukan spam berulang kali melebihi batas toleransi (${currentCount + 1}x dalam ${windowMinutes} menit).\nNomor dan identitas Anda telah dimasukkan ke daftar hitam permanen bot Hoshino.`,
+					)
+					return
+				}
+
+				// Check warning threshold: e.g. 5th request triggers severe warning
+				if (currentCount === warningThreshold - 1) {
+					validTimestamps.push(now)
+					this.userRateLimitMap.set(rateLimitKey, validTimestamps)
+					const oldest = validTimestamps[0] ?? now
+					const remainingMs = Math.max(0, windowMs - (now - oldest))
+					const remainingSec = Math.ceil(remainingMs / 1000)
+					const remainingMin = Math.ceil(remainingMs / 60000)
+					const remainingTimeStr = remainingMin > 1 ? `${remainingMin} menit` : `${remainingSec} detik`
+
+					logger.warn(
+						"/services/commandLoader.ts",
+						`[${agentId}] User ${senderJid} hit rate limit WARNING threshold (${currentCount + 1}/${warningThreshold}) in ${jid}`,
+					)
+					await ctx.reply(
+						`⚠️ *PERINGATAN KERAS SPAM PERINTAH!*\n\nKamu telah mengirim *${currentCount + 1} perintah* dalam ${windowMinutes} menit!\n\n⛔ *PERINGATAN TERAKHIR:* Jika kamu mengirim *1 perintah lagi* sebelum cooldown selesai (sisa waktu: ±${remainingTimeStr}), akun kamu akan langsung *DIBLACKLIST PERMANEN* secara otomatis!`,
+					)
+					return
+				}
+
+				// Check quota limit: e.g. 4th request triggers cooldown notice
+				if (currentCount >= quota) {
+					validTimestamps.push(now)
+					this.userRateLimitMap.set(rateLimitKey, validTimestamps)
+					const oldest = validTimestamps[0] ?? now
+					const remainingMs = Math.max(0, windowMs - (now - oldest))
+					const remainingSec = Math.ceil(remainingMs / 1000)
+					const remainingMin = Math.ceil(remainingMs / 60000)
+					const remainingTimeStr = remainingMin > 1 ? `${remainingMin} menit` : `${remainingSec} detik`
+
+					await ctx.reply(
+						`⏳ *Batas Kuota Perintah Tercapai (Cooldown)*\n\nKamu sudah menggunakan kuota perintah (${quota} perintah per ${windowMinutes} menit).\nSilakan tunggu sekitar *${remainingTimeStr}* lagi sebelum menggunakan perintah.\n\n_Peringatan: Melakukan spam berulang dapat membuat akun kamu diblacklist permanen._`,
+					)
+					return
+				}
+
+				// Within allowed quota: log timestamp
+				validTimestamps.push(now)
+				this.userRateLimitMap.set(rateLimitKey, validTimestamps)
+			}
+
+			// Security Shield 3b: Fast per-command burst cooldown (default 2s)
+			const cooldownSec = command.cooldown ?? 2
 			const cooldownKey = `${agentId}:${senderJid}:${commandName}`
 			const now = Date.now()
 			const expiresAt = this.cooldownCache.get(cooldownKey) || 0

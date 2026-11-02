@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from "react"
 import {
 	CheckCircle2,
+	Clock,
 	MessageSquare,
 	Save,
+	ShieldAlert,
 	Sliders,
 } from "lucide-react"
 import { API_BASE_URL } from "../../services/api"
@@ -23,6 +25,11 @@ export const GeneralSettingsTab: React.FC<GeneralSettingsTabProps> = ({
 		goodbyeMessage: "Selamat tinggal @user!",
 		autoRead: false,
 		typingIndicator: true,
+		cooldownEnabled: true,
+		cooldownWindowMinutes: 5,
+		cooldownQuota: 3,
+		cooldownWarningThreshold: 5,
+		cooldownBlacklistThreshold: 5,
 	})
 	const [loading, setLoading] = useState(false)
 	const [saving, setSaving] = useState(false)
@@ -227,6 +234,142 @@ export const GeneralSettingsTab: React.FC<GeneralSettingsTabProps> = ({
 						style={{ width: "20px", height: "20px", cursor: "pointer" }}
 					/>
 				</div>
+			</div>
+
+			{/* Anti-Spam Rate Limiter & Cooldown */}
+			<div
+				style={{
+					background: "rgba(255, 255, 255, 0.04)",
+					border: "1px solid var(--border-color)",
+					borderRadius: "12px",
+					padding: "18px",
+					display: "flex",
+					flexDirection: "column",
+					gap: "16px",
+				}}
+			>
+				<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+					<div>
+						<h4 style={{ fontSize: "0.95rem", fontWeight: 600, display: "flex", alignItems: "center", gap: "8px", margin: 0 }}>
+							<ShieldAlert size={18} color="var(--primary-cyan)" /> Anti-Spam Rate Limiter & Cooldown
+						</h4>
+						<span style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: "4px", display: "block" }}>
+							Membatasi frekuensi pemanggilan perintah per individu (grup & kontak privat) untuk mencegah spam dan nomor terblokir.
+						</span>
+					</div>
+					<input
+						type="checkbox"
+						checked={settings.cooldownEnabled ?? true}
+						onChange={(e) => setSettings((prev) => ({ ...prev, cooldownEnabled: e.target.checked }))}
+						style={{ width: "20px", height: "20px", cursor: "pointer" }}
+					/>
+				</div>
+
+				{(settings.cooldownEnabled ?? true) && (
+					<div
+						style={{
+							display: "grid",
+							gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+							gap: "14px",
+							background: "rgba(0, 0, 0, 0.2)",
+							padding: "14px",
+							borderRadius: "8px",
+							border: "1px solid rgba(255, 255, 255, 0.05)",
+						}}
+					>
+						<div>
+							<label style={{ fontSize: "0.8rem", fontWeight: 600, display: "block", marginBottom: "6px", color: "var(--text-main)" }}>
+								Kuota Perintah:
+							</label>
+							<input
+								type="number"
+								min={1}
+								max={50}
+								value={settings.cooldownQuota ?? 3}
+								onChange={(e) => setSettings((prev) => ({ ...prev, cooldownQuota: Number.parseInt(e.target.value, 10) || 3 }))}
+								style={{
+									width: "100%",
+									padding: "8px 12px",
+									borderRadius: "6px",
+									background: "rgba(255, 255, 255, 0.05)",
+									border: "1px solid var(--border-color)",
+									color: "var(--text-main)",
+									fontSize: "0.88rem",
+								}}
+							/>
+							<span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>Default: 3 perintah</span>
+						</div>
+
+						<div>
+							<label style={{ fontSize: "0.8rem", fontWeight: 600, display: "block", marginBottom: "6px", color: "var(--text-main)" }}>
+								Durasi Waktu (Menit):
+							</label>
+							<input
+								type="number"
+								min={1}
+								max={60}
+								value={settings.cooldownWindowMinutes ?? 5}
+								onChange={(e) => setSettings((prev) => ({ ...prev, cooldownWindowMinutes: Number.parseInt(e.target.value, 10) || 5 }))}
+								style={{
+									width: "100%",
+									padding: "8px 12px",
+									borderRadius: "6px",
+									background: "rgba(255, 255, 255, 0.05)",
+									border: "1px solid var(--border-color)",
+									color: "var(--text-main)",
+									fontSize: "0.88rem",
+								}}
+							/>
+							<span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>Default: 5 menit</span>
+						</div>
+
+						<div>
+							<label style={{ fontSize: "0.8rem", fontWeight: 600, display: "block", marginBottom: "6px", color: "#facc15" }}>
+								Peringatan Keras (Ke-N):
+							</label>
+							<input
+								type="number"
+								min={2}
+								max={50}
+								value={settings.cooldownWarningThreshold ?? 5}
+								onChange={(e) => setSettings((prev) => ({ ...prev, cooldownWarningThreshold: Number.parseInt(e.target.value, 10) || 5 }))}
+								style={{
+									width: "100%",
+									padding: "8px 12px",
+									borderRadius: "6px",
+									background: "rgba(255, 255, 255, 0.05)",
+									border: "1px solid var(--border-color)",
+									color: "var(--text-main)",
+									fontSize: "0.88rem",
+								}}
+							/>
+							<span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>Peringatan ancaman blacklist (Default: 5)</span>
+						</div>
+
+						<div>
+							<label style={{ fontSize: "0.8rem", fontWeight: 600, display: "block", marginBottom: "6px", color: "#f87171" }}>
+								Batas Auto-Blacklist:
+							</label>
+							<input
+								type="number"
+								min={2}
+								max={50}
+								value={settings.cooldownBlacklistThreshold ?? 5}
+								onChange={(e) => setSettings((prev) => ({ ...prev, cooldownBlacklistThreshold: Number.parseInt(e.target.value, 10) || 5 }))}
+								style={{
+									width: "100%",
+									padding: "8px 12px",
+									borderRadius: "6px",
+									background: "rgba(255, 255, 255, 0.05)",
+									border: "1px solid var(--border-color)",
+									color: "var(--text-main)",
+									fontSize: "0.88rem",
+								}}
+							/>
+							<span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>Otomatis diblacklist jika melebihi ini (Default: 5)</span>
+						</div>
+					</div>
+				)}
 			</div>
 
 			{/* Save Button */}

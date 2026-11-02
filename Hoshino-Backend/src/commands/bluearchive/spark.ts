@@ -18,16 +18,18 @@ const command: ICommand = {
 	execute: async (_args: string[], ctx: CommandContext) => {
 		try {
 			const { canonicalJid: senseiJid } = await resolveCanonicalSensei(ctx)
+			const baSettings = await gachaRepository.getBlueArchiveSettings(ctx.agentId)
+			const sparkThreshold = baSettings.sparkCost ?? 200
 			const profile = await gachaRepository.getOrCreateProfile(
 				ctx.agentId,
 				senseiJid,
 			)
 
-			if (profile.sparkPoints < 200) {
+			if (profile.sparkPoints < sparkThreshold) {
 				await ctx.reply(
 					`✨ *Spark Pity System*\n\n` +
-						`Sensei, you currently have *${profile.sparkPoints}/200* Recruitment Points.\n` +
-						`You need *${200 - profile.sparkPoints}* more pulls to guarantee a 3★ student selection!\n\n` +
+						`Sensei, you currently have *${profile.sparkPoints}/${sparkThreshold}* Recruitment Points.\n` +
+						`You need *${sparkThreshold - profile.sparkPoints}* more pulls to guarantee a 3★ student selection!\n\n` +
 						`💡 *Tip:* Use *${ctx.prefix}gacha 10* to build up your recruitment points.`,
 				)
 				return
@@ -46,7 +48,7 @@ const command: ICommand = {
 			)
 
 			const caption =
-				`✨ *200 SPARK GUARANTEED RECRUITMENT COMPLETE!*\n\n` +
+				`✨ *${sparkThreshold} SPARK GUARANTEED RECRUITMENT COMPLETE!*\n\n` +
 				`🎉 *Recruited:* ⭐⭐⭐ *${picked.Name}* (${picked.School})\n` +
 				`🎯 *Status:* ${isNew ? "🆕 NEW STUDENT RECRUITED!" : `⚡ DUPLICATE (Eleph x${count - 1})`}\n\n` +
 				`Arona has safely processed your recruitment ticket, Sensei!`

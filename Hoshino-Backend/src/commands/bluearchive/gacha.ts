@@ -18,10 +18,11 @@ const command: ICommand = {
 	execute: async (args: string[], ctx: CommandContext) => {
 		const subArg = (args[0] || "").toLowerCase()
 		const { canonicalJid: senseiJid } = await resolveCanonicalSensei(ctx)
+		const baSettings = await gachaRepository.getBlueArchiveSettings(ctx.agentId)
 
 		const isSingle = subArg === "1" || subArg === "single" || subArg === "one"
 		const pullCount: 1 | 10 = isSingle ? 1 : 10
-		const cost = pullCount === 10 ? 1200 : 120
+		const cost = pullCount === 10 ? baSettings.gachaTenCost : baSettings.gachaSingleCost
 
 		// Check Balance & Deduct
 		const gachaTx = await gachaRepository.processGachaPull(
@@ -35,14 +36,18 @@ const command: ICommand = {
 			await ctx.reply(
 				`❌ *Insufficient Pyroxenes!*\n\n` +
 					`Sensei, you need *${cost} Pyroxenes* for a ${pullCount}x pull, but only have *${gachaTx.newPyroxenes} Pyroxenes* 💎.\n\n` +
-					`🎁 *Claim free 1,200 Pyroxenes:* Type *${ctx.prefix}daily* to collect today's reward!`,
+					`🎁 *Claim free Pyroxenes:* Type *${ctx.prefix}daily* to collect today's reward!`,
 			)
 			return
 		}
 
 		try {
-			// Execute Pull with official rates
-			const pullResult = await executeGachaPull(pullCount)
+			// Execute Pull with configured rates
+			const pullResult = await executeGachaPull(pullCount, false, undefined, {
+				star3Rate: baSettings.gacha3StarRate,
+				star2Rate: baSettings.gacha2StarRate,
+				star1Rate: baSettings.gacha1StarRate,
+			})
 
 			// Save all pulled students to DB collection
 			const savedDetails: { name: string; star: number; isNew: boolean }[] = []

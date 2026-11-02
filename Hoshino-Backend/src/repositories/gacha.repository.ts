@@ -1,4 +1,56 @@
 import { sql } from "@utils/db"
+import NodeCache from "node-cache"
+
+export interface AgentBlueArchiveSettings {
+	agentId: string
+	gacha3StarRate: number
+	gacha2StarRate: number
+	gacha1StarRate: number
+	gachaSingleCost: number
+	gachaTenCost: number
+	sparkCost: number
+	dailyPyroxenes: number
+	dailyCredits: number
+	dailyResetHour: number
+	dailyRaidTickets: number
+	dailyBountyTickets: number
+	duelEnabled: boolean
+	duelMinBet: number
+	duelMaxBet: number
+	duelFeePercent: number
+	raidTicketsMax: number
+	bountyTicketsMax: number
+	raidCreditMultiplier: number
+	bountyDropMultiplier: number
+	bondXpMultiplier: number
+	relationshipRewardPyroxenes: number
+	createdAt?: string
+	updatedAt?: string
+}
+
+export const DEFAULT_BLUEARCHIVE_SETTINGS: Omit<AgentBlueArchiveSettings, "agentId"> = {
+	gacha3StarRate: 3.0,
+	gacha2StarRate: 18.5,
+	gacha1StarRate: 78.5,
+	gachaSingleCost: 120,
+	gachaTenCost: 1200,
+	sparkCost: 200,
+	dailyPyroxenes: 1200,
+	dailyCredits: 250000,
+	dailyResetHour: 6,
+	dailyRaidTickets: 3,
+	dailyBountyTickets: 3,
+	duelEnabled: true,
+	duelMinBet: 10,
+	duelMaxBet: 5000000,
+	duelFeePercent: 0,
+	raidTicketsMax: 3,
+	bountyTicketsMax: 3,
+	raidCreditMultiplier: 1.0,
+	bountyDropMultiplier: 1.0,
+	bondXpMultiplier: 1.0,
+	relationshipRewardPyroxenes: 20,
+}
 
 export interface SenseiProfile {
 	agentId: string
@@ -112,6 +164,7 @@ export interface ClaimElephResult {
 
 export class GachaRepository {
 	private static instance: GachaRepository
+	private baSettingsCache = new NodeCache({ stdTTL: 60, checkperiod: 120 })
 
 	private constructor() {}
 
@@ -120,6 +173,159 @@ export class GachaRepository {
 			GachaRepository.instance = new GachaRepository()
 		}
 		return GachaRepository.instance
+	}
+
+	public async getBlueArchiveSettings(
+		agentId: string,
+	): Promise<AgentBlueArchiveSettings> {
+		const cached = this.baSettingsCache.get<AgentBlueArchiveSettings>(agentId)
+		if (cached) return cached
+
+		const rows = await sql`
+			SELECT * FROM public.agent_bluearchive_settings WHERE agent_id = ${agentId} LIMIT 1
+		`
+
+		if (rows.length === 0) {
+			const def: AgentBlueArchiveSettings = {
+				agentId,
+				...DEFAULT_BLUEARCHIVE_SETTINGS,
+			}
+			this.baSettingsCache.set(agentId, def)
+			return def
+		}
+
+		const r = rows[0]
+		const settings: AgentBlueArchiveSettings = {
+			agentId,
+			gacha3StarRate: Number(r.gacha_3star_rate ?? 3.0),
+			gacha2StarRate: Number(r.gacha_2star_rate ?? 18.5),
+			gacha1StarRate: Number(r.gacha_1star_rate ?? 78.5),
+			gachaSingleCost: Number(r.gacha_single_cost ?? 120),
+			gachaTenCost: Number(r.gacha_ten_cost ?? 1200),
+			sparkCost: Number(r.spark_cost ?? 200),
+			dailyPyroxenes: Number(r.daily_pyroxenes ?? 1200),
+			dailyCredits: Number(r.daily_credits ?? 250000),
+			dailyResetHour: Number(r.daily_reset_hour ?? 6),
+			dailyRaidTickets: Number(r.daily_raid_tickets ?? 3),
+			dailyBountyTickets: Number(r.daily_bounty_tickets ?? 3),
+			duelEnabled: r.duel_enabled ?? true,
+			duelMinBet: Number(r.duel_min_bet ?? 10),
+			duelMaxBet: Number(r.duel_max_bet ?? 5000000),
+			duelFeePercent: Number(r.duel_fee_percent ?? 0),
+			raidTicketsMax: Number(r.raid_tickets_max ?? 3),
+			bountyTicketsMax: Number(r.bounty_tickets_max ?? 3),
+			raidCreditMultiplier: Number(r.raid_credit_multiplier ?? 1.0),
+			bountyDropMultiplier: Number(r.bounty_drop_multiplier ?? 1.0),
+			bondXpMultiplier: Number(r.bond_xp_multiplier ?? 1.0),
+			relationshipRewardPyroxenes: Number(
+				r.relationship_reward_pyroxenes ?? 20,
+			),
+			createdAt: r.created_at?.toISOString?.(),
+			updatedAt: r.updated_at?.toISOString?.(),
+		}
+
+		this.baSettingsCache.set(agentId, settings)
+		return settings
+	}
+
+	public async updateBlueArchiveSettings(
+		agentId: string,
+		partial: Partial<AgentBlueArchiveSettings>,
+	): Promise<AgentBlueArchiveSettings> {
+		const current = await this.getBlueArchiveSettings(agentId)
+		const merged: AgentBlueArchiveSettings = {
+			...current,
+			...partial,
+			agentId,
+		}
+
+		await sql`
+			INSERT INTO public.agent_bluearchive_settings (
+				agent_id,
+				gacha_3star_rate,
+				gacha_2star_rate,
+				gacha_1star_rate,
+				gacha_single_cost,
+				gacha_ten_cost,
+				spark_cost,
+				daily_pyroxenes,
+				daily_credits,
+				daily_reset_hour,
+				daily_raid_tickets,
+				daily_bounty_tickets,
+				duel_enabled,
+				duel_min_bet,
+				duel_max_bet,
+				duel_fee_percent,
+				raid_tickets_max,
+				bounty_tickets_max,
+				raid_credit_multiplier,
+				bounty_drop_multiplier,
+				bond_xp_multiplier,
+				relationship_reward_pyroxenes,
+				updated_at
+			) VALUES (
+				${agentId},
+				${merged.gacha3StarRate},
+				${merged.gacha2StarRate},
+				${merged.gacha1StarRate},
+				${merged.gachaSingleCost},
+				${merged.gachaTenCost},
+				${merged.sparkCost},
+				${merged.dailyPyroxenes},
+				${merged.dailyCredits},
+				${merged.dailyResetHour},
+				${merged.dailyRaidTickets},
+				${merged.dailyBountyTickets},
+				${merged.duelEnabled},
+				${merged.duelMinBet},
+				${merged.duelMaxBet},
+				${merged.duelFeePercent},
+				${merged.raidTicketsMax},
+				${merged.bountyTicketsMax},
+				${merged.raidCreditMultiplier},
+				${merged.bountyDropMultiplier},
+				${merged.bondXpMultiplier},
+				${merged.relationshipRewardPyroxenes},
+				CURRENT_TIMESTAMP
+			)
+			ON CONFLICT (agent_id) DO UPDATE SET
+				gacha_3star_rate = EXCLUDED.gacha_3star_rate,
+				gacha_2star_rate = EXCLUDED.gacha_2star_rate,
+				gacha_1star_rate = EXCLUDED.gacha_1star_rate,
+				gacha_single_cost = EXCLUDED.gacha_single_cost,
+				gacha_ten_cost = EXCLUDED.gacha_ten_cost,
+				spark_cost = EXCLUDED.spark_cost,
+				daily_pyroxenes = EXCLUDED.daily_pyroxenes,
+				daily_credits = EXCLUDED.daily_credits,
+				daily_reset_hour = EXCLUDED.daily_reset_hour,
+				daily_raid_tickets = EXCLUDED.daily_raid_tickets,
+				daily_bounty_tickets = EXCLUDED.daily_bounty_tickets,
+				duel_enabled = EXCLUDED.duel_enabled,
+				duel_min_bet = EXCLUDED.duel_min_bet,
+				duel_max_bet = EXCLUDED.duel_max_bet,
+				duel_fee_percent = EXCLUDED.duel_fee_percent,
+				raid_tickets_max = EXCLUDED.raid_tickets_max,
+				bounty_tickets_max = EXCLUDED.bounty_tickets_max,
+				raid_credit_multiplier = EXCLUDED.raid_credit_multiplier,
+				bounty_drop_multiplier = EXCLUDED.bounty_drop_multiplier,
+				bond_xp_multiplier = EXCLUDED.bond_xp_multiplier,
+				relationship_reward_pyroxenes = EXCLUDED.relationship_reward_pyroxenes,
+				updated_at = CURRENT_TIMESTAMP
+		`
+
+		this.baSettingsCache.del(agentId)
+		return this.getBlueArchiveSettings(agentId)
+	}
+
+	public async resetBlueArchiveSettings(
+		agentId: string,
+	): Promise<AgentBlueArchiveSettings> {
+		await sql`
+			DELETE FROM public.agent_bluearchive_settings WHERE agent_id = ${agentId}
+		`
+		this.baSettingsCache.del(agentId)
+		return this.getBlueArchiveSettings(agentId)
 	}
 
 	/**
@@ -585,6 +791,7 @@ export class GachaRepository {
 		remainingMinutes?: number
 	}> {
 		const profile = await this.getOrCreateProfile(agentId, userJid)
+		const baSettings = await this.getBlueArchiveSettings(agentId)
 		const now = Date.now()
 		const WIB_OFFSET_MS = 7 * 60 * 60 * 1000
 		const nowWib = new Date(now + WIB_OFFSET_MS)
@@ -594,15 +801,16 @@ export class GachaRepository {
 		const date = nowWib.getUTCDate()
 		const hour = nowWib.getUTCHours()
 
+		const resetHour = baSettings.dailyResetHour ?? 6
 		let lastResetWibMs: number
 		let nextResetWibMs: number
 
-		if (hour < 6) {
-			lastResetWibMs = Date.UTC(year, month, date - 1, 6, 0, 0, 0)
-			nextResetWibMs = Date.UTC(year, month, date, 6, 0, 0, 0)
+		if (hour < resetHour) {
+			lastResetWibMs = Date.UTC(year, month, date - 1, resetHour, 0, 0, 0)
+			nextResetWibMs = Date.UTC(year, month, date, resetHour, 0, 0, 0)
 		} else {
-			lastResetWibMs = Date.UTC(year, month, date, 6, 0, 0, 0)
-			nextResetWibMs = Date.UTC(year, month, date + 1, 6, 0, 0, 0)
+			lastResetWibMs = Date.UTC(year, month, date, resetHour, 0, 0, 0)
+			nextResetWibMs = Date.UTC(year, month, date + 1, resetHour, 0, 0, 0)
 		}
 
 		const lastResetUtcMs = lastResetWibMs - WIB_OFFSET_MS
@@ -629,15 +837,17 @@ export class GachaRepository {
 			}
 		}
 
-		const DAILY_REWARD = 1200
-		const DAILY_CREDITS = 250000
+		const DAILY_REWARD = baSettings.dailyPyroxenes
+		const DAILY_CREDITS = baSettings.dailyCredits
+		const RAID_TICKETS = baSettings.dailyRaidTickets
+		const BOUNTY_TICKETS = baSettings.dailyBountyTickets
 		const updated = await sql`
 			UPDATE public.sensei_profiles
 			SET 
 				pyroxenes = pyroxenes + ${DAILY_REWARD},
 				credits = COALESCE(credits, 500000) + ${DAILY_CREDITS},
-				raid_tickets = GREATEST(COALESCE(raid_tickets, 0), 3),
-				bounty_tickets = GREATEST(COALESCE(bounty_tickets, 0), 3),
+				raid_tickets = GREATEST(COALESCE(raid_tickets, 0), ${RAID_TICKETS}),
+				bounty_tickets = GREATEST(COALESCE(bounty_tickets, 0), ${BOUNTY_TICKETS}),
 				last_daily = CURRENT_TIMESTAMP,
 				last_ticket_reset = CURRENT_TIMESTAMP,
 				updated_at = CURRENT_TIMESTAMP

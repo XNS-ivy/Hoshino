@@ -8,6 +8,9 @@ export interface GroupSettings {
 	welcomeEnabled: boolean
 	goodbyeEnabled: boolean
 	customPrefix?: string | null
+	cooldownEnabled?: boolean
+	cooldownWindowMinutes?: number | null
+	cooldownQuota?: number | null
 	customizedCommandsCount?: number
 }
 
@@ -367,7 +370,16 @@ export class CommandRepository {
 		groupJid: string,
 	): Promise<GroupSettings> {
 		const rows = await sql`
-			SELECT agent_id as "agentId", jid, bot_enabled as "botEnabled", welcome_enabled as "welcomeEnabled", goodbye_enabled as "goodbyeEnabled", custom_prefix as "customPrefix"
+			SELECT 
+				agent_id as "agentId", 
+				jid, 
+				bot_enabled as "botEnabled", 
+				welcome_enabled as "welcomeEnabled", 
+				goodbye_enabled as "goodbyeEnabled", 
+				custom_prefix as "customPrefix",
+				COALESCE(cooldown_enabled, true) as "cooldownEnabled",
+				cooldown_window_minutes as "cooldownWindowMinutes",
+				cooldown_quota as "cooldownQuota"
 			FROM public.agent_group_settings
 			WHERE agent_id = ${agentId} AND jid = ${groupJid}
 		`
@@ -379,6 +391,9 @@ export class CommandRepository {
 				welcomeEnabled: false,
 				goodbyeEnabled: false,
 				customPrefix: null,
+				cooldownEnabled: true,
+				cooldownWindowMinutes: null,
+				cooldownQuota: null,
 			}
 		}
 		return rows[0] as unknown as GroupSettings
@@ -404,6 +419,9 @@ export class CommandRepository {
 				COALESCE(s.welcome_enabled, false) as "welcomeEnabled",
 				COALESCE(s.goodbye_enabled, false) as "goodbyeEnabled",
 				s.custom_prefix as "customPrefix",
+				COALESCE(s.cooldown_enabled, true) as "cooldownEnabled",
+				s.cooldown_window_minutes as "cooldownWindowMinutes",
+				s.cooldown_quota as "cooldownQuota",
 				COALESCE((
 					SELECT COUNT(*)::int
 					FROM public.agent_group_commands gc
@@ -433,16 +451,37 @@ export class CommandRepository {
 			settings.customPrefix !== undefined
 				? settings.customPrefix
 				: current.customPrefix
+		const cooldownEnabled =
+			settings.cooldownEnabled !== undefined
+				? settings.cooldownEnabled
+				: (current.cooldownEnabled ?? true)
+		const cooldownWindowMinutes =
+			settings.cooldownWindowMinutes !== undefined
+				? settings.cooldownWindowMinutes
+				: current.cooldownWindowMinutes
+		const cooldownQuota =
+			settings.cooldownQuota !== undefined
+				? settings.cooldownQuota
+				: current.cooldownQuota
 
 		await sql`
-			INSERT INTO public.agent_group_settings (agent_id, jid, bot_enabled, welcome_enabled, goodbye_enabled, custom_prefix, updated_at)
-			VALUES (${agentId}, ${groupJid}, ${botEnabled}, ${welcomeEnabled}, ${goodbyeEnabled}, ${customPrefix}, CURRENT_TIMESTAMP)
+			INSERT INTO public.agent_group_settings (
+				agent_id, jid, bot_enabled, welcome_enabled, goodbye_enabled, custom_prefix,
+				cooldown_enabled, cooldown_window_minutes, cooldown_quota, updated_at
+			)
+			VALUES (
+				${agentId}, ${groupJid}, ${botEnabled}, ${welcomeEnabled}, ${goodbyeEnabled}, ${customPrefix},
+				${cooldownEnabled}, ${cooldownWindowMinutes ?? null}, ${cooldownQuota ?? null}, CURRENT_TIMESTAMP
+			)
 			ON CONFLICT (agent_id, jid)
 			DO UPDATE SET
 				bot_enabled = EXCLUDED.bot_enabled,
 				welcome_enabled = EXCLUDED.welcome_enabled,
 				goodbye_enabled = EXCLUDED.goodbye_enabled,
 				custom_prefix = EXCLUDED.custom_prefix,
+				cooldown_enabled = EXCLUDED.cooldown_enabled,
+				cooldown_window_minutes = EXCLUDED.cooldown_window_minutes,
+				cooldown_quota = EXCLUDED.cooldown_quota,
 				updated_at = CURRENT_TIMESTAMP;
 		`
 
@@ -453,6 +492,9 @@ export class CommandRepository {
 			welcomeEnabled,
 			goodbyeEnabled,
 			customPrefix,
+			cooldownEnabled,
+			cooldownWindowMinutes,
+			cooldownQuota,
 		}
 	}
 

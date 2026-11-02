@@ -580,9 +580,22 @@ const command: ICommand = {
 				}
 			}
 
-			if (betAmount < 10) {
+			const baSettings = await gachaRepository.getBlueArchiveSettings(ctx.agentId)
+			if (!baSettings.duelEnabled) {
+				await ctx.reply("⚔️ PvP Tactical Duels are currently disabled by administrator.")
+				return
+			}
+
+			if (betAmount < baSettings.duelMinBet) {
 				await ctx.reply(
-					`⚠️ Minimum PvP duel bet is *10 ${currency === "pyroxene" ? "Pyroxenes" : "Credits"}*!`,
+					`⚠️ Minimum PvP duel bet is *${baSettings.duelMinBet.toLocaleString()} ${currency === "pyroxene" ? "Pyroxenes" : "Credits"}*!`,
+				)
+				return
+			}
+
+			if (betAmount > baSettings.duelMaxBet) {
+				await ctx.reply(
+					`⚠️ Maximum PvP duel bet is *${baSettings.duelMaxBet.toLocaleString()} ${currency === "pyroxene" ? "Pyroxenes" : "Credits"}*!`,
 				)
 				return
 			}
